@@ -1,0 +1,43 @@
+From 30a9f2e5d07ec5328275bffd72858c6b4ead1988 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Tue, 20 Oct 2026 23:50:12 +0200
+Subject: [PATCH] spm: MT6765 tells the suspend whether its CPUs and infra
+ power down
+
+MT6765's mtk_spm_suspend.c defines spm_get_is_cpu_pdn and
+spm_get_is_infra_pdn from suspend_pcm_flags, as its header declares, in
+place of the uncalled spm_suspend_condition_check. Without them
+mtk_sleep.c runs weak stubs, which print "NO ... !!!" at each suspend
+and answer false.
+---
+ .../mediatek/base/power/spm/mt6765/mtk_spm_suspend.c | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm_suspend.c b/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm_suspend.c
+index 8953d7228..eedeabe63 100644
+--- a/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm_suspend.c
++++ b/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm_suspend.c
+@@ -385,14 +385,14 @@ bool spm_is_enable_sleep(void)
+ 	return true;
+ }
+ 
+-bool spm_suspend_condition_check(void)
++bool spm_get_is_cpu_pdn(void)
+ {
+-	if (is_infra_pdn(suspend_pcm_flags) && !is_cpu_pdn(suspend_pcm_flags)) {
+-		pr_info("[SLP] CANNOT SLEEP DUE TO INFRA PDN BUT CPU PDN\n");
+-		return false;
+-	}
++	return is_cpu_pdn(suspend_pcm_flags);
++}
+ 
+-	return true;
++bool spm_get_is_infra_pdn(void)
++{
++	return is_infra_pdn(suspend_pcm_flags);
+ }
+ 
+ #if !defined(CONFIG_FPGA_EARLY_PORTING)
+-- 
+2.56.0
+

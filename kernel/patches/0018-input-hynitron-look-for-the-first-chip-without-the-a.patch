@@ -1,0 +1,89 @@
+From 5675e576321982ce9893c77406992c0f544847e7 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 10:55:23 +0200
+Subject: [PATCH] input: hynitron: look for the first chip without the
+ adapter's dump
+
+- hyn_ts_data_init() probes 0x15, where the R1 has no chip, with
+  I2C_A_FILTER_MSG, so a miss skips the adapter's register dump.
+- A miss prints one line naming the chip at the fallback address.
+- mtk_i2c_transfer() clears isFilterMsg after each transfer, so the flag
+  does not hide the dump of a later transfer without it.
+---
+ drivers/i2c/busses/i2c-mtk.c                   |  2 ++
+ drivers/input/touchscreen/CST8xx/Makefile      |  1 +
+ .../input/touchscreen/CST8xx/hynitron_core.c   | 18 +++++++++++++++++-
+ 3 files changed, 20 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/i2c/busses/i2c-mtk.c b/drivers/i2c/busses/i2c-mtk.c
+index 02f6d5163..3cb071c53 100644
+--- a/drivers/i2c/busses/i2c-mtk.c
++++ b/drivers/i2c/busses/i2c-mtk.c
+@@ -1493,6 +1493,8 @@ int mtk_i2c_transfer(struct i2c_adapter *adap, struct i2c_msg *msgs, int num,
+ 	ret = __mt_i2c_transfer(i2c, msgs, num);
+ 
+ 	i2c->ext_data.isEnable = false;
++	/* The filter flag holds for this transfer only. */
++	i2c->ext_data.isFilterMsg = false;
+ 	mutex_unlock(&i2c->i2c_mutex);
+ 
+ 	mt_i2c_clock_disable(i2c);
+diff --git a/drivers/input/touchscreen/CST8xx/Makefile b/drivers/input/touchscreen/CST8xx/Makefile
+index 566c56871..4b837db0e 100644
+--- a/drivers/input/touchscreen/CST8xx/Makefile
++++ b/drivers/input/touchscreen/CST8xx/Makefile
+@@ -2,6 +2,7 @@
+ # Linux driver folder
+ 
+ ccflags-y += -I$(srctree)/drivers/input/touchscreen/mediatek/
++ccflags-y += -I$(srctree)/drivers/i2c/busses/
+ #ccflags-y += -I$(srctree)/drivers/input/touchscreen/mediatek/hynitron
+ #ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/
+ #ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/$(MTK_PLATFORM)/include/
+diff --git a/drivers/input/touchscreen/CST8xx/hynitron_core.c b/drivers/input/touchscreen/CST8xx/hynitron_core.c
+index 9e449d4ab..8a1fce675 100644
+--- a/drivers/input/touchscreen/CST8xx/hynitron_core.c
++++ b/drivers/input/touchscreen/CST8xx/hynitron_core.c
+@@ -24,6 +24,7 @@
+ 
+ #include "hynitron_core.h"
+ #include "hynitron_update_firmware.h"
++#include "i2c-mtk.h"
+ 
+ /*****************************************************************************
+ Main control platform----mtk
+@@ -1615,6 +1616,20 @@ static int hyn_parse_dt(struct device *dev, struct hynitron_ts_platform_data *pd
+ 	return ret;
+ }
+ #endif
++
++/* hyn_i2c_read() for an address that may hold no chip, without the adapter's register dump. */
++static int hyn_i2c_probe_read(struct i2c_client *client, u8 *reg, u8 *data)
++{
++	struct i2c_msg write = { .addr = client->addr, .flags = 0, .len = 1, .buf = reg };
++	struct i2c_msg read = { .addr = client->addr, .flags = I2C_M_RD, .len = 2, .buf = data };
++	int ret;
++
++	ret = mtk_i2c_transfer(client->adapter, &write, 1, I2C_A_FILTER_MSG, 0);
++	if (ret < 0)
++		return ret;
++	return mtk_i2c_transfer(client->adapter, &read, 1, I2C_A_FILTER_MSG, 0);
++}
++
+ void hyn_ts_data_init(struct i2c_client *client)
+ {
+ 	unsigned char scan_id;
+@@ -1656,8 +1671,9 @@ void hyn_ts_data_init(struct i2c_client *client)
+ 		HYN_DEBUG("client addr is different,now use default addr,please confirm. client->addr=0x%x, default iic addr=0x%x.\r\n",client->addr,HYN_MAIN_IIC_ADDR_CONFIG);
+ 	}
+ 	reg_buf[0] = 0xA6;	
+-	ret = hyn_i2c_read(hyn_ts_data->client,reg_buf,1,buf,2);
++	ret = hyn_i2c_probe_read(hyn_ts_data->client,reg_buf,buf);
+ 	if (ret < 0){
++		HYN_INFO("no chip answers at 0x%x, taking the mutual capacitance chip at 0x%x", client->addr, HYN_MAIN_IIC_ADDR_CONFIG_BACK);
+ 		hyn_ts_data->config_chip_type		=HYN_CHIP_TYPE_CONFIG_BACK;
+ 		hyn_ts_data->config_chip_product_line =HYN_CHIP_PRODUCT_LINE_MUT_CAP;				
+ 	
+-- 
+2.56.0
+

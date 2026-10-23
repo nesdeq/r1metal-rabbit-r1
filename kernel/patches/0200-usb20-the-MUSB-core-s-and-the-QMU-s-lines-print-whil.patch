@@ -1,0 +1,42 @@
+From 0c3564ae80b5ee37a3b3b5f5aefbeef0ecb34114 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 13:35:25 +0200
+Subject: [PATCH] usb20: the MUSB core's and the QMU's lines print while
+ printk.debug is set
+
+While printk.debug is set _dbg_level() and mtk_dbg_level() pass every
+level, so all of the MUSB core's DBG lines and the QMU's lines print.
+---
+ drivers/misc/mediatek/usb20/mtk_qmu.h    | 2 +-
+ drivers/misc/mediatek/usb20/musb_debug.h | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/misc/mediatek/usb20/mtk_qmu.h b/drivers/misc/mediatek/usb20/mtk_qmu.h
+index 7a38c09ab..0410e94d2 100644
+--- a/drivers/misc/mediatek/usb20/mtk_qmu.h
++++ b/drivers/misc/mediatek/usb20/mtk_qmu.h
+@@ -124,7 +124,7 @@ extern int isoc_ep_end_idx;
+ extern int isoc_ep_gpd_count;
+ static inline int mtk_dbg_level(unsigned int level)
+ {
+-	return mtk_qmu_dbg_level >= level;
++	return mtk_qmu_dbg_level >= level || printk_debugging();
+ }
+ 
+ #define LOG_EMERG		0
+diff --git a/drivers/misc/mediatek/usb20/musb_debug.h b/drivers/misc/mediatek/usb20/musb_debug.h
+index c29ae958e..71a7abd80 100644
+--- a/drivers/misc/mediatek/usb20/musb_debug.h
++++ b/drivers/misc/mediatek/usb20/musb_debug.h
+@@ -48,7 +48,7 @@ extern unsigned int musb_speed;
+ 
+ static inline int _dbg_level(unsigned int level)
+ {
+-	return level <= musb_debug;
++	return level <= musb_debug || printk_debugging();
+ }
+ #ifdef DBG
+ #undef DBG
+-- 
+2.56.0
+

@@ -1,0 +1,28 @@
+From 2f09f8ddcdb2825ba0c04c5f59b7f4ae7d252793 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 10:53:07 +0200
+Subject: [PATCH] btif: the PIO receive counts every chunk it hands on
+
+btif_rx_irq_handler adds each full 256 byte chunk to total_len before
+clearing rx_len, so its return counts every byte received.
+---
+ drivers/misc/mediatek/btif/common/btif_plat.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/btif/common/btif_plat.c b/drivers/misc/mediatek/btif/common/btif_plat.c
+index 1b7d6d799..cf4a094a8 100644
+--- a/drivers/misc/mediatek/btif/common/btif_plat.c
++++ b/drivers/misc/mediatek/btif/common/btif_plat.c
+@@ -845,8 +845,8 @@ static int btif_rx_irq_handler(struct _MTK_BTIF_INFO_STR_ *p_btif_info,
+ 		if (rx_len == local_buf_len) {
+ 			if (rx_cb)
+ 				(*rx_cb) (p_btif_info, rx_buf, rx_len);
+-			rx_len = 0;
+ 			total_len += rx_len;
++			rx_len = 0;
+ 		}
+ 		iir = BTIF_READ32(BTIF_IIR(base));
+ 	}
+-- 
+2.56.0
+

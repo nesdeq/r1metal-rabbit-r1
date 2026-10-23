@@ -1,0 +1,91 @@
+From 36709c2e32612bbda93714daae7a276c4e5cab0a Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 15:19:31 +0200
+Subject: [PATCH] wmt: the weak driver init stubs take no arguments
+
+The weak driver init stubs of wlan_drv_init.c, bluetooth_drv_init.c,
+gps_drv_init.c and fm_drv_init.c are defined with (void), as their
+prototypes declare them; clang 23 rejects the empty list.
+---
+ .../common/common_detect/drv_init/bluetooth_drv_init.c    | 2 +-
+ connectivity/common/common_detect/drv_init/fm_drv_init.c  | 2 +-
+ connectivity/common/common_detect/drv_init/gps_drv_init.c | 2 +-
+ .../common/common_detect/drv_init/wlan_drv_init.c         | 8 ++++----
+ 4 files changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/connectivity/common/common_detect/drv_init/bluetooth_drv_init.c b/connectivity/common/common_detect/drv_init/bluetooth_drv_init.c
+index 559d158..ef17b78 100644
+--- a/connectivity/common/common_detect/drv_init/bluetooth_drv_init.c
++++ b/connectivity/common/common_detect/drv_init/bluetooth_drv_init.c
+@@ -21,7 +21,7 @@
+ #include "bluetooth_drv_init.h"
+ 
+ #ifdef CONFIG_MTK_COMBO_BT
+-int __attribute__((weak)) mtk_wcn_stpbt_drv_init()
++int __attribute__((weak)) mtk_wcn_stpbt_drv_init(void)
+ {
+ 	WMT_DETECT_PR_INFO("Not implement mtk_wcn_stpbt_drv_init\n");
+ 	return 0;
+diff --git a/connectivity/common/common_detect/drv_init/fm_drv_init.c b/connectivity/common/common_detect/drv_init/fm_drv_init.c
+index 4ec149e..955eb9e 100644
+--- a/connectivity/common/common_detect/drv_init/fm_drv_init.c
++++ b/connectivity/common/common_detect/drv_init/fm_drv_init.c
+@@ -21,7 +21,7 @@
+ #include "fm_drv_init.h"
+ 
+ #ifdef CONFIG_MTK_FMRADIO
+-int __attribute__((weak)) mtk_wcn_fm_init()
++int __attribute__((weak)) mtk_wcn_fm_init(void)
+ {
+ 	WMT_DETECT_PR_INFO("no impl. mtk_wcn_fm_init\n");
+ 	return 0;
+diff --git a/connectivity/common/common_detect/drv_init/gps_drv_init.c b/connectivity/common/common_detect/drv_init/gps_drv_init.c
+index 298e4bb..6edfb4f 100644
+--- a/connectivity/common/common_detect/drv_init/gps_drv_init.c
++++ b/connectivity/common/common_detect/drv_init/gps_drv_init.c
+@@ -21,7 +21,7 @@
+ #include "gps_drv_init.h"
+ 
+ #ifdef CONFIG_MTK_COMBO_GPS
+-int __attribute__((weak)) mtk_wcn_stpgps_drv_init()
++int __attribute__((weak)) mtk_wcn_stpgps_drv_init(void)
+ {
+ 	WMT_DETECT_PR_INFO("no impl. mtk_wcn_stpgps_drv_init\n");
+ 	return 0;
+diff --git a/connectivity/common/common_detect/drv_init/wlan_drv_init.c b/connectivity/common/common_detect/drv_init/wlan_drv_init.c
+index 7b28ad9..824fd64 100644
+--- a/connectivity/common/common_detect/drv_init/wlan_drv_init.c
++++ b/connectivity/common/common_detect/drv_init/wlan_drv_init.c
+@@ -20,25 +20,25 @@
+ #include "wmt_detect.h"
+ #include "wlan_drv_init.h"
+ 
+-int __attribute__((weak)) mtk_wcn_wlan_gen4_init()
++int __attribute__((weak)) mtk_wcn_wlan_gen4_init(void)
+ {
+ 	WMT_DETECT_PR_INFO("no impl. mtk_wcn_wlan_gen4_init\n");
+ 	return 0;
+ }
+ 
+-int __attribute__((weak)) mtk_wcn_wlan_gen3_init()
++int __attribute__((weak)) mtk_wcn_wlan_gen3_init(void)
+ {
+ 	WMT_DETECT_PR_INFO("no impl. mtk_wcn_wlan_gen3_init\n");
+ 	return 0;
+ }
+ 
+-int __attribute__((weak)) mtk_wcn_wlan_gen2_init()
++int __attribute__((weak)) mtk_wcn_wlan_gen2_init(void)
+ {
+ 	WMT_DETECT_PR_INFO("no impl. mtk_wcn_wlan_gen2_init\n");
+ 	return 0;
+ }
+ 
+-int __attribute__((weak)) mtk_wcn_wmt_wifi_init()
++int __attribute__((weak)) mtk_wcn_wmt_wifi_init(void)
+ {
+ 	WMT_DETECT_PR_INFO("no impl. mtk_wcn_wmt_wifi_init\n");
+ 	return 0;
+-- 
+2.56.0
+

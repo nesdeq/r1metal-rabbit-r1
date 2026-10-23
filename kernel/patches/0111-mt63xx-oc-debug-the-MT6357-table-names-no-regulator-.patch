@@ -1,0 +1,28 @@
+From c8c44182fce0a5aa2382b221ff5a59b5686b75f4 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 19:26:52 +0200
+Subject: [PATCH] mt63xx-oc-debug: the MT6357 table names no regulator the PMIC
+ lacks
+
+mt6357_reg_oc_debug has no vcore_pr entry: no MT6357 regulator has that
+name (VCORE_PR is vcore's pre-over-current interrupt), so its lookup
+only ever fails. vcore keeps its own entry.
+---
+ drivers/mfd/mt63xx-oc-debug.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/drivers/mfd/mt63xx-oc-debug.c b/drivers/mfd/mt63xx-oc-debug.c
+index 4a6fdb5a8..c0e062753 100644
+--- a/drivers/mfd/mt63xx-oc-debug.c
++++ b/drivers/mfd/mt63xx-oc-debug.c
+@@ -56,7 +56,6 @@ static struct reg_oc_debug_t mt6357_reg_oc_debug[] = {
+ 	REG_OC_DEBUG(vmodem),
+ 	REG_OC_DEBUG(vs1),
+ 	MD_REG_OC_DEBUG(vpa, MD_REG_OC_0),
+-	REG_OC_DEBUG(vcore_pr),
+ 	MD_REG_OC_DEBUG(vfe28, MD_REG_OC_1),
+ 	REG_OC_DEBUG(vxo22),
+ 	MD_REG_OC_DEBUG(vrf18, MD_REG_OC_2),
+-- 
+2.56.0
+

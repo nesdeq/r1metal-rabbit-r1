@@ -1,0 +1,69 @@
+From 1a30e9edd116750fbd138b01618eca34d30129a2 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 11:17:22 +0200
+Subject: [PATCH] wmt: a wait that polls a condition can tell its time
+
+OSAL_WAIT_LOG(what, start) logs how long a poll took while the module
+parameter wait_log is set, which it is not by default.
+OSAL_MSLEEP_JIFFIES(ms) is the jiffies msleep(ms) waits, the bound of a
+poll that replaces such a sleep.
+---
+ .../common/common_main/linux/include/osal.h         | 13 +++++++++++++
+ connectivity/common/common_main/linux/osal.c        |  3 +++
+ 2 files changed, 16 insertions(+)
+
+diff --git a/connectivity/common/common_main/linux/include/osal.h b/connectivity/common/common_main/linux/include/osal.h
+index fd067fb..c2d0412 100644
+--- a/connectivity/common/common_main/linux/include/osal.h
++++ b/connectivity/common/common_main/linux/include/osal.h
+@@ -23,6 +23,7 @@
+ #include "osal_typedef.h"
+ #include "../../debug_utility/ring.h"
+ #include <linux/workqueue.h>
++#include <linux/ktime.h>
+ /*******************************************************************************
+ *                         C O M P I L E R   F L A G S
+ ********************************************************************************
+@@ -119,6 +120,16 @@ do { \
+ 	} \
+ } while (0)
+ 
++/* The jiffies msleep(ms) waits, the bound of a poll that replaces it. */
++#define OSAL_MSLEEP_JIFFIES(ms) (msecs_to_jiffies(ms) + 1)
++
++/* Logs a poll's time, named by what, while wait_log is set. */
++#define OSAL_WAIT_LOG(what, start) \
++do { \
++	if (osal_wait_log) \
++		pr_info("[WMT-WAIT]%s: %s took %lld us\n", __func__, what, ktime_to_us(ktime_sub(ktime_get(), start))); \
++} while (0)
++
+ /*******************************************************************************
+ *                    E X T E R N A L   R E F E R E N C E S
+ ********************************************************************************
+@@ -279,6 +290,8 @@ struct osal_op_history {
+ ********************************************************************************
+ */
+ 
++extern bool osal_wait_log;
++
+ /*******************************************************************************
+ *                           P R I V A T E   D A T A
+ ********************************************************************************
+diff --git a/connectivity/common/common_main/linux/osal.c b/connectivity/common/common_main/linux/osal.c
+index 5bb4707..e6db077 100644
+--- a/connectivity/common/common_main/linux/osal.c
++++ b/connectivity/common/common_main/linux/osal.c
+@@ -92,6 +92,9 @@ static UINT16 const crc16_table[256] = {
+ };
+ 
+ INT32 ftrace_flag;
++
++bool osal_wait_log;
++module_param_named(wait_log, osal_wait_log, bool, 0644);
+ /*******************************************************************************
+ *                  F U N C T I O N   D E C L A R A T I O N S
+ ********************************************************************************
+-- 
+2.56.0
+

@@ -1,0 +1,89 @@
+From 4c54178e1afebe00a8b4e7fd0230a833715c9646 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 13:34:10 +0200
+Subject: [PATCH] disp: the display recorder keeps no log while logging is off
+
+While printk.silent is set dprec_logger_pr keeps no line, and setting it
+empties every log ring of the display recorder, bytes and all.
+---
+ .../video/mt6765/dispsys/display_recorder.c   | 33 ++++++++++++++++++-
+ 1 file changed, 32 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/video/mt6765/dispsys/display_recorder.c b/drivers/misc/mediatek/video/mt6765/dispsys/display_recorder.c
+index 53dcbedc5..d14fa673f 100644
+--- a/drivers/misc/mediatek/video/mt6765/dispsys/display_recorder.c
++++ b/drivers/misc/mediatek/video/mt6765/dispsys/display_recorder.c
+@@ -12,6 +12,7 @@
+ #include <linux/mutex.h>
+ #include <linux/string.h>
+ #include <linux/printk.h>
++#include <linux/notifier.h>
+ #include <stdarg.h>
+ #include <linux/slab.h>
+ #include "ddp_mmp.h"
+@@ -1190,6 +1191,7 @@ static struct logger_buffer dprec_logger_buffer[DPREC_LOGGER_PR_NUM] = {
+ };
+ bool is_buffer_init;
+ char *debug_buffer;
++static struct notifier_block dprec_logger_printk_nb;
+ 
+ void init_log_buffer(void)
+ {
+@@ -1257,6 +1259,7 @@ void init_log_buffer(void)
+ 	dprec_logger_buffer[4].buffer_ptr = status_buffer;
+ 
+ 	is_buffer_init = true;
++	printk_logging_notifier_register(&dprec_logger_printk_nb);
+ 	pr_info("[DISP]%s success\n", __func__);
+ 	return;
+ err:
+@@ -1316,10 +1319,15 @@ int dprec_logger_pr(unsigned int type, char *fmt, ...)
+ 	if (type >= DPREC_LOGGER_PR_NUM)
+ 		return -1;
+ 
+-	if (!is_buffer_init)
++	if (!is_buffer_init || printk_silenced())
+ 		return -1;
+ 
+ 	spin_lock_irqsave(&dprec_logger_spinlock, flags);
++	/* tested again under the lock the emptying takes */
++	if (printk_silenced()) {
++		spin_unlock_irqrestore(&dprec_logger_spinlock, flags);
++		return -1;
++	}
+ 	if (dprec_logger_buffer[type].len < 128) {
+ 		dprec_logger_buffer[type].id++;
+ 		dprec_logger_buffer[type].id =
+@@ -1350,6 +1358,29 @@ int dprec_logger_pr(unsigned int type, char *fmt, ...)
+ 	return n;
+ }
+ 
++/* Setting printk.silent empties every log ring, bytes and all; each starts at its first slot. */
++static int dprec_logger_follow_printk(struct notifier_block *nb,
++	unsigned long event, void *unused)
++{
++	unsigned long flags = 0;
++	int type;
++
++	if (!printk_silenced() || !is_buffer_init)
++		return NOTIFY_OK;
++	spin_lock_irqsave(&dprec_logger_spinlock, flags);
++	for (type = 0; type < DPREC_LOGGER_PR_NUM; type++) {
++		dprec_logger_buffer[type].id = dprec_logger_buffer[type].count - 1;
++		dprec_logger_buffer[type].len = 0;
++	}
++	memset(err_buffer[0], 0, sizeof(char) * (DEBUG_BUFFER_SIZE - 4096));
++	spin_unlock_irqrestore(&dprec_logger_spinlock, flags);
++	return NOTIFY_OK;
++}
++
++static struct notifier_block dprec_logger_printk_nb = {
++	.notifier_call = dprec_logger_follow_printk,
++};
++
+ char *get_dprec_status_ptr(int buffer_idx)
+ {
+ 	if (buffer_idx >= dprec_logger_buffer[DPREC_LOGGER_STATUS].count)
+-- 
+2.56.0
+

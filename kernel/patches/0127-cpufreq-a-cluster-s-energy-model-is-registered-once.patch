@@ -1,0 +1,40 @@
+From e78ca37fc3da4139968f9b4988fbbf9fd0d04532 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 21:52:43 +0200
+Subject: [PATCH] cpufreq: a cluster's energy model is registered once
+
+_mt_cpufreq_init registers a cluster's energy model only where
+em_cpu_get() has none. The cpufreq core calls init again each time a
+cluster comes back online, as at every resume, where a second
+registration fails with -EEXIST.
+---
+ .../base/power/cpufreq_v1/src/mtk_cpufreq_main.c      | 11 +++++++----
+ 1 file changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/misc/mediatek/base/power/cpufreq_v1/src/mtk_cpufreq_main.c b/drivers/misc/mediatek/base/power/cpufreq_v1/src/mtk_cpufreq_main.c
+index 8cd45d3cd..a9514d155 100644
+--- a/drivers/misc/mediatek/base/power/cpufreq_v1/src/mtk_cpufreq_main.c
++++ b/drivers/misc/mediatek/base/power/cpufreq_v1/src/mtk_cpufreq_main.c
+@@ -1347,12 +1347,15 @@ static int _mt_cpufreq_init(struct cpufreq_policy *policy)
+ 	if (dev_pm_opp_of_cpumask_add_table(policy->cpus))
+ 		tag_pr_notice("failed to add opp framework table\n");
+ 
+-	pd_ret = em_register_perf_domain(policy->cpus, NR_FREQ, &em_cb);
++	/* a cluster's energy model outlives the policy rebuilt as the cluster comes back online */
++	if (!em_cpu_get(policy->cpu)) {
++		pd_ret = em_register_perf_domain(policy->cpus, NR_FREQ, &em_cb);
+ 
+-	tag_pr_notice("energy model register result %d\n", pd_ret);
++		tag_pr_notice("energy model register result %d\n", pd_ret);
+ 
+-	if (pd_ret)
+-		tag_pr_notice("energy model regist fail\n");
++		if (pd_ret)
++			tag_pr_notice("energy model regist fail\n");
++	}
+ 	if (ret)
+ 		tag_pr_notice("failed to setup frequency table\n");
+ 
+-- 
+2.56.0
+

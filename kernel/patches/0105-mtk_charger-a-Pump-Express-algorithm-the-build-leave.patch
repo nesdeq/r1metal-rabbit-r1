@@ -1,0 +1,100 @@
+From df8029d0f7beeedc6249268f87e6b49f87e9aa7b Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 19:20:50 +0200
+Subject: [PATCH] mtk_charger: a Pump Express algorithm the build leaves out is
+ not looked up
+
+charger_init_algo looks up pe4, pe2 and pe only where
+CONFIG_MTK_PUMP_EXPRESS_40_SUPPORT,
+CONFIG_MTK_PUMP_EXPRESS_PLUS_20_SUPPORT and
+CONFIG_MTK_PUMP_EXPRESS_PLUS_SUPPORT build them, so a kernel without
+them prints no "get ... fail"; one built that does not register still
+prints it.
+---
+ drivers/power/supply/mtk_charger.c | 60 ++++++++++++++++--------------
+ 1 file changed, 33 insertions(+), 27 deletions(-)
+
+diff --git a/drivers/power/supply/mtk_charger.c b/drivers/power/supply/mtk_charger.c
+index f71b1ffeb..742a1da2a 100644
+--- a/drivers/power/supply/mtk_charger.c
++++ b/drivers/power/supply/mtk_charger.c
+@@ -1447,15 +1447,17 @@ static bool charger_init_algo(struct mtk_charger *info)
+ 	struct chg_alg_device *alg;
+ 	int idx = 0;
+ 
+-	alg = get_chg_alg_by_name("pe4");
+-	info->alg[idx] = alg;
+-	if (alg == NULL)
+-		chr_err("get pe4 fail\n");
+-	else {
+-		chr_err("get pe4 success\n");
+-		alg->config = info->config;
+-		chg_alg_init_algo(alg);
+-		register_chg_alg_notifier(alg, &info->chg_alg_nb);
++	if (IS_ENABLED(CONFIG_MTK_PUMP_EXPRESS_40_SUPPORT)) {
++		alg = get_chg_alg_by_name("pe4");
++		info->alg[idx] = alg;
++		if (alg == NULL)
++			chr_err("get pe4 fail\n");
++		else {
++			chr_err("get pe4 success\n");
++			alg->config = info->config;
++			chg_alg_init_algo(alg);
++			register_chg_alg_notifier(alg, &info->chg_alg_nb);
++		}
+ 	}
+ 	idx++;
+ 
+@@ -1471,27 +1473,31 @@ static bool charger_init_algo(struct mtk_charger *info)
+ 	}
+ 	idx++;
+ 
+-	alg = get_chg_alg_by_name("pe2");
+-	info->alg[idx] = alg;
+-	if (alg == NULL)
+-		chr_err("get pe2 fail\n");
+-	else {
+-		chr_err("get pe2 success\n");
+-		alg->config = info->config;
+-		chg_alg_init_algo(alg);
+-		register_chg_alg_notifier(alg, &info->chg_alg_nb);
++	if (IS_ENABLED(CONFIG_MTK_PUMP_EXPRESS_PLUS_20_SUPPORT)) {
++		alg = get_chg_alg_by_name("pe2");
++		info->alg[idx] = alg;
++		if (alg == NULL)
++			chr_err("get pe2 fail\n");
++		else {
++			chr_err("get pe2 success\n");
++			alg->config = info->config;
++			chg_alg_init_algo(alg);
++			register_chg_alg_notifier(alg, &info->chg_alg_nb);
++		}
+ 	}
+ 	idx++;
+ 
+-	alg = get_chg_alg_by_name("pe");
+-	info->alg[idx] = alg;
+-	if (alg == NULL)
+-		chr_err("get pe fail\n");
+-	else {
+-		chr_err("get pe success\n");
+-		alg->config = info->config;
+-		chg_alg_init_algo(alg);
+-		register_chg_alg_notifier(alg, &info->chg_alg_nb);
++	if (IS_ENABLED(CONFIG_MTK_PUMP_EXPRESS_PLUS_SUPPORT)) {
++		alg = get_chg_alg_by_name("pe");
++		info->alg[idx] = alg;
++		if (alg == NULL)
++			chr_err("get pe fail\n");
++		else {
++			chr_err("get pe success\n");
++			alg->config = info->config;
++			chg_alg_init_algo(alg);
++			register_chg_alg_notifier(alg, &info->chg_alg_nb);
++		}
+ 	}
+ 
+ 	info->chg1_dev = get_charger_by_name("primary_chg");
+-- 
+2.56.0
+

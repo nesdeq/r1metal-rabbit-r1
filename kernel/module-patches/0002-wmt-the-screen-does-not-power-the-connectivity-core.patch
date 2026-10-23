@@ -1,0 +1,32 @@
+From 6ffd816100fcb43a2d158fdd487a37cf424fd368 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Sat, 10 Oct 2026 15:50:13 +0200
+Subject: [PATCH] wmt: the screen does not power the connectivity core
+
+always_pwr_on_flag is 1 in every build, so blanking and unblanking the
+screen leave the loopback function, and with it the connectivity core's
+power, alone. With it 0, the core has power whenever the screen is lit.
+---
+ connectivity/common/common_main/linux/wmt_dev.c | 5 +----
+ 1 file changed, 1 insertion(+), 4 deletions(-)
+
+diff --git a/connectivity/common/common_main/linux/wmt_dev.c b/connectivity/common/common_main/linux/wmt_dev.c
+index 238ac31..914e80c 100644
+--- a/connectivity/common/common_main/linux/wmt_dev.c
++++ b/connectivity/common/common_main/linux/wmt_dev.c
+@@ -157,11 +157,8 @@ enum wmt_init_status {
+ };
+ static INT32 gWmtInitStatus = WMT_INIT_NOT_START;
+ static wait_queue_head_t gWmtInitWq;
+-#ifdef CONFIG_MTK_COMBO_COMM_APO
++/* Set: blank and unblank do not switch the loopback function. */
+ UINT32 always_pwr_on_flag = 1;
+-#else
+-UINT32 always_pwr_on_flag;
+-#endif
+ P_WMT_PATCH_INFO pPatchInfo;
+ UINT32 pAtchNum;
+ UINT32 currentLpbkStatus;
+-- 
+2.56.0
+

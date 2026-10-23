@@ -1,0 +1,71 @@
+From 03eb6bbd4067af86a1fbb8130ed1aa8c9d52eb03 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 19:10:52 +0200
+Subject: [PATCH] mtk_battery: a property the tree leaves out keeps its default
+
+fg_read_dts_val and fg_read_dts_val_by_idx print no error for a property
+the tree leaves out (-EINVAL), which keeps its default from
+mtk_battery_table.h; one that is there and unreadable is still an error.
+multi_battery and active_table start at MULTI_BATTERY and ACTIVE_TABLE,
+so they too keep their defaults without the properties.
+---
+ drivers/power/supply/mtk_battery.c | 19 ++++++++++++++-----
+ 1 file changed, 14 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/power/supply/mtk_battery.c b/drivers/power/supply/mtk_battery.c
+index 943ee12f8..360da17d4 100755
+--- a/drivers/power/supply/mtk_battery.c
++++ b/drivers/power/supply/mtk_battery.c
+@@ -1183,13 +1183,17 @@ static int fg_read_dts_val(const struct device_node *np,
+ 		int *param, int unit)
+ {
+ 	static unsigned int val;
++	int ret;
+ 
+-	if (!of_property_read_u32(np, node_srting, &val)) {
++	ret = of_property_read_u32(np, node_srting, &val);
++	if (!ret) {
+ 		*param = (int)val * unit;
+ 		bm_debug("Get %s: %d\n",
+ 			 node_srting, *param);
+ 	} else {
+-		bm_err("Get %s failed\n", node_srting);
++		/* an absent property leaves the default of mtk_battery_table.h */
++		if (ret != -EINVAL)
++			bm_err("Get %s failed\n", node_srting);
+ 		return -1;
+ 	}
+ 	return 0;
+@@ -1200,13 +1204,17 @@ static int fg_read_dts_val_by_idx(const struct device_node *np,
+ 		int idx, int *param, int unit)
+ {
+ 	unsigned int val;
++	int ret;
+ 
+-	if (!of_property_read_u32_index(np, node_srting, idx, &val)) {
++	ret = of_property_read_u32_index(np, node_srting, idx, &val);
++	if (!ret) {
+ 		*param = (int)val * unit;
+ 		bm_debug("Get %s %d: %d\n",
+ 			 node_srting, idx, *param);
+ 	} else {
+-		bm_err("Get %s failed, idx %d\n", node_srting, idx);
++		/* an absent property leaves the default of mtk_battery_table.h */
++		if (ret != -EINVAL)
++			bm_err("Get %s failed, idx %d\n", node_srting, idx);
+ 		return -1;
+ 	}
+ 	return 0;
+@@ -1282,7 +1290,8 @@ void fg_custom_init_from_dts(struct platform_device *dev,
+ {
+ 	struct device_node *np = dev->dev.of_node;
+ 	unsigned int val;
+-	int bat_id, multi_battery, active_table, i, j, ret, column;
++	int bat_id, i, j, ret, column;
++	int multi_battery = MULTI_BATTERY, active_table = ACTIVE_TABLE;
+ 	char node_name[128];
+ 	struct fuel_gauge_custom_data *fg_cust_data;
+ 	struct fuel_gauge_table_custom_data *fg_table_cust_data;
+-- 
+2.56.0
+

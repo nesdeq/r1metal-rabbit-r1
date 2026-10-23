@@ -1,0 +1,58 @@
+From 5a3108bc234e677d575e43d62a7d6dd95e89c083 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Sat, 10 Oct 2026 14:53:39 +0200
+Subject: [PATCH] wlan: let the adaptor and gen4m be built into the kernel
+
+- Built in, the adaptor gets no MODULE_NAME and defaults to
+  wmt_chrdev_wifi.
+- CONFIG_WLAN_DRV_BUILD_IN=y sets CFG_BUILT_IN_DRIVER, as this kbuild
+  has no KBUILD_SUBDIR_CCFLAGS: gen4m then starts when WMT calls it.
+- Built in, gen4m's is_world_regdom is renamed, as net/wireless/reg.c
+  defines one.
+---
+ connectivity/wlan/adaptor/Makefile    | 5 +++++
+ connectivity/wlan/core/gen4m/Makefile | 5 ++++-
+ 2 files changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/connectivity/wlan/adaptor/Makefile b/connectivity/wlan/adaptor/Makefile
+index d28a44c..6014e5f 100644
+--- a/connectivity/wlan/adaptor/Makefile
++++ b/connectivity/wlan/adaptor/Makefile
+@@ -49,6 +49,11 @@ ccflags-y += -D MTK_WCN_WMT_STP_EXP_SYMBOL_ABSTRACT
+ 
+ ccflags-y += -D CREATE_NODE_DYNAMIC=1
+ 
++# Built in, the build passes no MODULE_NAME.
++ifeq ($(MODULE_NAME),)
++MODULE_NAME := wmt_chrdev_wifi
++endif
++
+ ifeq ($(CONFIG_WLAN_DRV_BUILD_IN),y)
+ $(warning $(MODULE_NAME) build-in boot.img)
+ obj-y += $(MODULE_NAME).o
+diff --git a/connectivity/wlan/core/gen4m/Makefile b/connectivity/wlan/core/gen4m/Makefile
+index 8f1c062..b982fcc 100644
+--- a/connectivity/wlan/core/gen4m/Makefile
++++ b/connectivity/wlan/core/gen4m/Makefile
+@@ -396,7 +396,8 @@ else
+     ccflags-y += -DCFG_WIFI_IP_SET=1
+ endif
+ 
+-ifneq ($(filter MTK_WCN_REMOVE_KERNEL_MODULE,$(KBUILD_SUBDIR_CCFLAGS)),)
++# No KBUILD_SUBDIR_CCFLAGS in this kbuild: CONFIG_WLAN_DRV_BUILD_IN counts too.
++ifneq ($(filter MTK_WCN_REMOVE_KERNEL_MODULE,$(KBUILD_SUBDIR_CCFLAGS))$(filter y,$(CONFIG_WLAN_DRV_BUILD_IN)),)
+     ccflags-y += -DCFG_BUILT_IN_DRIVER=1
+ else
+     ccflags-y += -DCFG_BUILT_IN_DRIVER=0
+@@ -585,6 +586,8 @@ ifeq ($(CONFIG_WLAN_DRV_BUILD_IN),y)
+ $(warning $(MODULE_NAME) build-in boot.img)
+ obj-y += $(MODULE_NAME).o
+ ccflags-y += -DCONFIG_WLAN_DRV_BUILD_IN=1
++# net/wireless/reg.c defines an is_world_regdom of its own.
++ccflags-y += -Dis_world_regdom=wlan_is_world_regdom
+ else
+ $(warning $(MODULE_NAME) is kernel module)
+ obj-m += $(MODULE_NAME).o
+-- 
+2.56.0
+

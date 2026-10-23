@@ -1,0 +1,34 @@
+From 44c9943345c5027782a75ef7aa33daa6348b9c1c Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Tue, 20 Oct 2026 13:05:22 +0200
+Subject: [PATCH] wlan: an NVRAM handed over before the first power on is no
+ failure
+
+wlanNvramUpdateOnTestMode logs at info that there is no device yet,
+instead of an error: an NVRAM handed over before the first power-on is
+loaded at the probe.
+---
+ connectivity/wlan/core/gen4m/os/linux/gl_init.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/connectivity/wlan/core/gen4m/os/linux/gl_init.c b/connectivity/wlan/core/gen4m/os/linux/gl_init.c
+index eb53cb1..d8328e8 100644
+--- a/connectivity/wlan/core/gen4m/os/linux/gl_init.c
++++ b/connectivity/wlan/core/gen4m/os/linux/gl_init.c
+@@ -2791,10 +2791,10 @@ static void wlanNvramUpdateOnTestMode(void)
+ 	struct REG_INFO *prRegInfo = NULL;
+ 	struct ADAPTER *prAdapter = NULL;
+ 
+-	/* <1> Sanity Check */
++	/* An NVRAM handed over before the first power on is loaded at its probe */
+ 	if (u4WlanDevNum == 0) {
+-		DBGLOG(INIT, ERROR,
+-			   "wlanNvramUpdateOnTestMode invalid!!\n");
++		DBGLOG(INIT, INFO,
++			   "no device yet, the NVRAM is loaded at its probe\n");
+ 		return;
+ 	}
+ 
+-- 
+2.56.0
+

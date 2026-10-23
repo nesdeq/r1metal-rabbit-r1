@@ -1,0 +1,90 @@
+From a8bc96c52cce13ac7c9e786433c57f35a1a3dfca Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 20:16:58 +0200
+Subject: [PATCH] mt67xx-rng: the firmware's generator seeds the crng before
+ its first reader
+
+An early_initcall feeds the generator to add_hwgenerator_randomness()
+until rng_is_initialized(), credited as hwrng_fillfn() credits it, so
+the crng is seeded before net_ns_init() reads it at pure_initcall. It
+runs on a kworker, since add_hwgenerator_randomness() calls
+kthread_should_stop(), and only where the tree's mediatek,mt67xx-rng
+node is available.
+---
+ drivers/char/hw_random/mt67xx-rng.c | 41 ++++++++++++++++++++++++++++-
+ 1 file changed, 40 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/char/hw_random/mt67xx-rng.c b/drivers/char/hw_random/mt67xx-rng.c
+index e70cbbe47..dc7a3a1f5 100644
+--- a/drivers/char/hw_random/mt67xx-rng.c
++++ b/drivers/char/hw_random/mt67xx-rng.c
+@@ -7,11 +7,15 @@
+ #include <linux/platform_device.h>
+ #include <linux/hw_random.h>
+ #include <linux/of.h>
++#include <linux/random.h>
++#include <linux/string.h>
++#include <linux/workqueue.h>
+ #include <linux/arm-smccc.h>
+ #include <linux/soc/mediatek/mtk_sip_svc.h>
+ 
+ #define PFX			KBUILD_MODNAME ": "
+ #define MT67XX_RNG_MAGIC	0x74726e67
++#define MT67XX_RNG_QUALITY	900
+ #define SMC_RET_NUM		4
+ 
+ struct mt67xx_rng_priv {
+@@ -71,7 +75,7 @@ static int mt67xx_rng_probe(struct platform_device *pdev)
+ 	priv->rng.name = KBUILD_MODNAME;
+ 	priv->rng.read = mt67xx_rng_read;
+ 	priv->rng.priv = (unsigned long)&pdev->dev;
+-	priv->rng.quality = 900;
++	priv->rng.quality = MT67XX_RNG_QUALITY;
+ 
+ 	ret = devm_hwrng_register(&pdev->dev, &priv->rng);
+ 	if (ret) {
+@@ -99,6 +103,41 @@ static struct platform_driver mt67xx_rng_driver = {
+ 
+ module_platform_driver(mt67xx_rng_driver);
+ 
++/* Credits the generator as hwrng_fillfn() does until the crng is seeded, on a kworker, since add_hwgenerator_randomness() asks kthread_should_stop() */
++static void mt67xx_rng_seed(struct work_struct *work)
++{
++	uint32_t val[SMC_RET_NUM];
++
++	while (!rng_is_initialized()) {
++		__rng_sec_read(val);
++		add_hwgenerator_randomness((const char *)val, sizeof(val),
++					   sizeof(val) * MT67XX_RNG_QUALITY * 8 >> 10);
++	}
++	memzero_explicit(val, sizeof(val));
++}
++
++static DECLARE_WORK(mt67xx_rng_seed_work, mt67xx_rng_seed);
++
++/* Seeds the crng before its first reader, net_ns_init() at pure_initcall */
++static int __init mt67xx_rng_seed_early(void)
++{
++	struct device_node *np;
++	bool available;
++
++	np = of_find_compatible_node(NULL, NULL, "mediatek,mt67xx-rng");
++	if (!np)
++		return 0;
++	available = of_device_is_available(np);
++	of_node_put(np);
++	if (!available)
++		return 0;
++
++	schedule_work(&mt67xx_rng_seed_work);
++	flush_work(&mt67xx_rng_seed_work);
++	return 0;
++}
++early_initcall(mt67xx_rng_seed_early);
++
+ MODULE_DESCRIPTION("Mediatek MT67XX Random Number Generator Driver");
+ MODULE_AUTHOR("Neal Liu <neal.liu@mediatek.com>");
+ MODULE_LICENSE("GPL");
+-- 
+2.56.0
+

@@ -1,0 +1,65 @@
+From 85b9f72387a8358c6ef2dfcd3ae2b18f9efe37a5 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 18:28:20 +0200
+Subject: [PATCH] printk: printk.silent stops all logging while it is set
+
+While printk.silent (command line or sysfs) is set, vprintk_store
+returns at once: no record of any level is stored and no console
+prints. Setting it empties the record buffer and drops a pending
+continuation, so no reader finds what was logged before. It is off by
+default.
+---
+ kernel/printk/printk.c | 30 ++++++++++++++++++++++++++++++
+ 1 file changed, 30 insertions(+)
+
+diff --git a/kernel/printk/printk.c b/kernel/printk/printk.c
+index c65b13947..84cfe85ad 100644
+--- a/kernel/printk/printk.c
++++ b/kernel/printk/printk.c
+@@ -2106,6 +2106,33 @@ static size_t log_output(int facility, int level, enum log_flags lflags, const c
+ #endif
+ }
+ 
++/* While set nothing is logged: no record of any level is stored, and no console prints. */
++static bool printk_silent;
++
++/* Setting printk.silent empties the record buffer and drops a pending continuation, so no reader finds what was logged before. */
++static int printk_silent_set(const char *val, const struct kernel_param *kp)
++{
++	unsigned long flags;
++	int ret = param_set_bool(val, kp);
++
++	if (ret || !printk_silent)
++		return ret;
++	logbuf_lock_irqsave(flags);
++	cont.len = 0;
++	log_first_seq = log_next_seq;
++	log_first_idx = log_next_idx;
++	clear_seq = log_first_seq;
++	clear_idx = log_first_idx;
++	logbuf_unlock_irqrestore(flags);
++	return 0;
++}
++
++static const struct kernel_param_ops printk_silent_ops = {
++	.set = printk_silent_set,
++	.get = param_get_bool,
++};
++module_param_cb(silent, &printk_silent_ops, &printk_silent, 0644);
++
+ /* Must be called under logbuf_lock. */
+ int vprintk_store(int facility, int level,
+ 		  const char *dict, size_t dictlen,
+@@ -2116,6 +2143,9 @@ int vprintk_store(int facility, int level,
+ 	size_t text_len;
+ 	enum log_flags lflags = 0;
+ 
++	if (unlikely(READ_ONCE(printk_silent)))
++		return 0;
++
+ 	/*
+ 	 * The printf needs to come first; we need the syslog
+ 	 * prefix which might be passed-in as a parameter.
+-- 
+2.56.0
+

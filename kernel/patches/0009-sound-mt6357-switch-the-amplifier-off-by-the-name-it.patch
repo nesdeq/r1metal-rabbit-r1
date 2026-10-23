@@ -1,0 +1,29 @@
+From e21687a8b9419be9e4c370bdd18ba8915030c027 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 12 Oct 2026 21:15:01 +0200
+Subject: [PATCH] sound: mt6357: switch the amplifier off by the name its
+ profile has
+
+The off profile in aw87xxx_acf.bin is named "Off", and the driver
+matches names exactly. Given "OFF" it powers the amplifier down, then
+finds no profile "OFF" to power on and logs two errors.
+---
+ sound/soc/mediatek/codec/mt6357/mtk-soc-codec-6357.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/sound/soc/mediatek/codec/mt6357/mtk-soc-codec-6357.c b/sound/soc/mediatek/codec/mt6357/mtk-soc-codec-6357.c
+index 182ac4a0e..e9a73e580 100644
+--- a/sound/soc/mediatek/codec/mt6357/mtk-soc-codec-6357.c
++++ b/sound/soc/mediatek/codec/mt6357/mtk-soc-codec-6357.c
+@@ -164,7 +164,7 @@ int (*set_hp_impedance_ctl)(bool enable) = NULL;
+ 	extern int aw87xxx_add_codec_controls(void *codec);
+ 	extern int aw87xxx_set_profile(int dev_index, char *profile);
+ 
+-	static char *aw_profile[] = {"Music", "OFF"};
++	static char *aw_profile[] = {"Music", "Off"};
+ 	enum aw87xxx_dev_index {
+ 		AW_DEV_0 = 0,
+ 	};
+-- 
+2.56.0
+

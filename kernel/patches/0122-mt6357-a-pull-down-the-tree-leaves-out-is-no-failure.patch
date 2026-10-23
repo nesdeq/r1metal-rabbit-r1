@@ -1,0 +1,49 @@
+From 82d5f40b087d02448109cf3410be7840ae6a66e5 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 20:04:06 +0200
+Subject: [PATCH] mt6357: a pull-down the tree leaves out is no failure
+
+mtk_codec_dev_probe prints nothing for an absent always_pull_down_enable
+or always_pull_low_off (-EINVAL), which keeps the default 0, and prints
+any other read failure with its code.
+---
+ .../mediatek/codec/mt6357/mtk-soc-codec-6357.c   | 16 ++++++++++------
+ 1 file changed, 10 insertions(+), 6 deletions(-)
+
+diff --git a/sound/soc/mediatek/codec/mt6357/mtk-soc-codec-6357.c b/sound/soc/mediatek/codec/mt6357/mtk-soc-codec-6357.c
+index e9a73e580..6dcb6c50f 100644
+--- a/sound/soc/mediatek/codec/mt6357/mtk-soc-codec-6357.c
++++ b/sound/soc/mediatek/codec/mt6357/mtk-soc-codec-6357.c
+@@ -6209,9 +6209,11 @@ static int mtk_codec_dev_probe(struct platform_device *pdev)
+ 				     &always_pull_down_enable);
+ 		if (ret) {
+ 			always_pull_down_enable = 0;
+-			dev_info(&pdev->dev,
+-				"%s(), get always_pull_down_enable fail, default 0\n",
+-				__func__);
++			/* -EINVAL: the tree gives none, and the default 0 stands */
++			if (ret != -EINVAL)
++				dev_info(&pdev->dev,
++					"%s(), always_pull_down_enable unreadable (%d), default 0\n",
++					__func__, ret);
+ 		}
+ 		/* check if enable always PullDown */
+ 		ret = of_property_read_u32(pdev->dev.of_node,
+@@ -6219,9 +6221,11 @@ static int mtk_codec_dev_probe(struct platform_device *pdev)
+ 				     &always_pull_low_off);
+ 		if (ret) {
+ 			always_pull_low_off = 0;
+-			dev_info(&pdev->dev,
+-				"%s(), get always_pull_low_off fail, default 0\n",
+-				__func__);
++			/* -EINVAL: the tree gives none, and the default 0 stands */
++			if (ret != -EINVAL)
++				dev_info(&pdev->dev,
++					"%s(), always_pull_low_off unreadable (%d), default 0\n",
++					__func__, ret);
+ 		}
+ 		pr_debug("%s(), always_pull_down_enable = %d always_pull_low_off = %d\n",
+ 				 __func__, always_pull_down_enable,
+-- 
+2.56.0
+

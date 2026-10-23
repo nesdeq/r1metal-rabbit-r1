@@ -1,0 +1,32 @@
+From 8e0f79e6b4423410288260507d4bb375bab34145 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 10:37:50 +0200
+Subject: [PATCH] wmt: being told the link to the chip is no error
+
+opfunc_hif_conf logs "WMT HIF info added" and "WMT HIF already exist" at
+info, not error: both are successes.
+---
+ connectivity/common/common_main/core/wmt_core.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/connectivity/common/common_main/core/wmt_core.c b/connectivity/common/common_main/core/wmt_core.c
+index 54de1c7..5f70562 100644
+--- a/connectivity/common/common_main/core/wmt_core.c
++++ b/connectivity/common/common_main/core/wmt_core.c
+@@ -1174,11 +1174,11 @@ static INT32 opfunc_hif_conf(P_WMT_OP pWmtOp)
+ 	}
+ 
+ 	if (gMtkWmtCtx.wmtInfoBit & WMT_OP_HIF_BIT) {
+-		WMT_ERR_FUNC("WMT-CORE: WMT HIF already exist. Just return\n");
++		WMT_INFO_FUNC("WMT-CORE: WMT HIF already exist. Just return\n");
+ 		return 0;
+ 	} else {
+ 		gMtkWmtCtx.wmtInfoBit |= WMT_OP_HIF_BIT;
+-		WMT_ERR_FUNC("WMT-CORE: WMT HIF info added\n");
++		WMT_INFO_FUNC("WMT-CORE: WMT HIF info added\n");
+ 	}
+ 
+ 	osal_memcpy(&gMtkWmtCtx.wmtHifConf,
+-- 
+2.56.0
+

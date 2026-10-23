@@ -1,0 +1,114 @@
+From 2fdd7a5f3556e5d47610cd24d3227f1042794d82 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 13:26:34 +0200
+Subject: [PATCH] bootprof: no boot events are kept while logging is off
+
+While printk.silent is set bootprof_log_boot keeps no event, and setting
+it frees every event kept. mt_bootprof_show reads the events under
+bootprof_lock, so none is freed while it prints.
+---
+ drivers/misc/mediatek/mtprof/bootprof.c | 39 ++++++++++++++++++++++++-
+ 1 file changed, 38 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/mtprof/bootprof.c b/drivers/misc/mediatek/mtprof/bootprof.c
+index 3a5453143..2c7d438d5 100644
+--- a/drivers/misc/mediatek/mtprof/bootprof.c
++++ b/drivers/misc/mediatek/mtprof/bootprof.c
+@@ -6,6 +6,7 @@
+ #include <linux/kallsyms.h>
+ #include <linux/module.h>
+ #include <linux/moduleparam.h>
++#include <linux/notifier.h>
+ #include <linux/proc_fs.h>
+ #include <linux/printk.h>
+ #include <linux/platform_device.h>
+@@ -101,7 +102,7 @@ void bootprof_log_boot(char *str)
+ 		return;
+ 	}
+ 
+-	if (!enabled)
++	if (!enabled || printk_silenced())
+ 		return;
+ 	n = strlen(str) + 1;
+ 
+@@ -109,6 +110,9 @@ void bootprof_log_boot(char *str)
+ 	pr_info("BOOTPROF:%10lld.%06ld:%s\n", msec_high(ts), msec_low(ts), str);
+ 
+ 	mutex_lock(&bootprof_lock);
++	/* tested again under the lock the dropping takes */
++	if (printk_silenced())
++		goto out;
+ 	if (log_count >= (LOGS_PER_BUF * BUF_COUNT)) {
+ 		pr_info("[BOOTPROF] not enuough bootprof buffer\n");
+ 		goto out;
+@@ -266,6 +270,34 @@ static void mt_bootprof_switch(int on)
+ 	mutex_unlock(&bootprof_lock);
+ }
+ 
++/* Setting printk.silent frees every boot event kept. */
++static int bootprof_follow_printk(struct notifier_block *nb,
++	unsigned long event, void *unused)
++{
++	int i;
++
++	if (!printk_silenced())
++		return NOTIFY_OK;
++	mutex_lock(&bootprof_lock);
++	for (i = 0; i < log_count; i++) {
++		struct log_t *p = &bootprof[i / LOGS_PER_BUF][i % LOGS_PER_BUF];
++
++		kfree(p->comm_event);
++		p->comm_event = NULL;
++	}
++	for (i = 1; i < BUF_COUNT; i++) {
++		kfree(bootprof[i]);
++		bootprof[i] = NULL;
++	}
++	log_count = 0;
++	mutex_unlock(&bootprof_lock);
++	return NOTIFY_OK;
++}
++
++static struct notifier_block bootprof_printk_nb = {
++	.notifier_call = bootprof_follow_printk,
++};
++
+ static ssize_t
+ mt_bootprof_write(struct file *filp, const char *ubuf, size_t cnt, loff_t *data)
+ {
+@@ -322,6 +354,8 @@ static int mt_bootprof_show(struct seq_file *m, void *v)
+ 		   msec_high(timestamp_on), msec_low(timestamp_on),
+ 		   msec_high(BOOTPROF_THRESHOLD));
+ 
++	/* bootprof_follow_printk frees the events under this lock */
++	mutex_lock(&bootprof_lock);
+ 	for (i = 0; i < log_count; i++) {
+ 		p = &bootprof[i / LOGS_PER_BUF][i % LOGS_PER_BUF];
+ 		if (!p->comm_event)
+@@ -333,6 +367,7 @@ static int mt_bootprof_show(struct seq_file *m, void *v)
+ 			   p->pid, p->comm_event,
+ 			   p->comm_event + TASK_COMM_LEN);
+ 	}
++	mutex_unlock(&bootprof_lock);
+ 
+ 	seq_printf(m, "%10lld.%06ld : OFF\n",
+ 		   msec_high(timestamp_off), msec_low(timestamp_off));
+@@ -454,6 +489,7 @@ static int __init bootprof_init(void)
+ 	bootprof_bootloader();
+ 	tp_init();
+ 	mt_bootprof_switch(1);
++	printk_logging_notifier_register(&bootprof_printk_nb);
+ fail:
+ 	return 0;
+ }
+@@ -507,6 +543,7 @@ static int __init init_bootprof_buf(void)
+ 
+ 	bootprof_bootloader();
+ 	mt_bootprof_switch(1);
++	printk_logging_notifier_register(&bootprof_printk_nb);
+ fail:
+ 	return 0;
+ }
+-- 
+2.56.0
+

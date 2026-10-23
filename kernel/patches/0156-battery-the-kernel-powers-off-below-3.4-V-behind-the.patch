@@ -1,0 +1,134 @@
+From c8d5bead5238b4325d3bcf0439f81b28fd28eb87 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 10:19:44 +0200
+Subject: [PATCH] battery: the kernel powers off below 3.4 V behind the
+ firmware's cut
+
+low_bat_net_work reads the gauge's voltage and current every 10 s and
+powers off, after a sync, once the last 6 readings average under
+BAT_VOLTAGE_LOW_BOUND (3400 mV) while discharging; a suspend empties the
+window. Upstream's voltage cut, LOW_BAT_VOLT, is never armed on MT6357.
+---
+ drivers/power/supply/mtk_battery.c | 64 ++++++++++++++++++++++++++++++
+ drivers/power/supply/mtk_battery.h |  9 +++++
+ 2 files changed, 73 insertions(+)
+
+diff --git a/drivers/power/supply/mtk_battery.c b/drivers/power/supply/mtk_battery.c
+index 360da17d4..a5b9da2fa 100755
+--- a/drivers/power/supply/mtk_battery.c
++++ b/drivers/power/supply/mtk_battery.c
+@@ -22,6 +22,8 @@
+ #include <linux/sched.h>	/* For wait queue*/
+ #include <linux/skbuff.h>	/* netlink */
+ #include <linux/socket.h>	/* netlink */
++#include <linux/suspend.h>
++#include <linux/syscalls.h>	/* ksys_sync */
+ #include <linux/time.h>
+ #include <linux/vmalloc.h>
+ #include <linux/wait.h>		/* For wait queue*/
+@@ -2962,6 +2964,62 @@ static int power_misc_routine_thread(void *arg)
+ 	return 0;
+ }
+ 
++static void low_bat_net_work(struct work_struct *work)
++{
++	struct shutdown_controller *sdc = container_of(to_delayed_work(work),
++		struct shutdown_controller, net_work);
++	int vbat = 0, ibat = 0, i, vbat_sum = 0, ibat_sum = 0;
++	bool read, low = false;
++
++	read = gauge_get_property(GAUGE_PROP_BATTERY_VOLTAGE, &vbat) >= 0 &&
++		gauge_get_property(GAUGE_PROP_BATTERY_CURRENT, &ibat) >= 0;
++	mutex_lock(&sdc->lock);
++	if (read) {
++		sdc->net_vbat[sdc->net_idx] = vbat;
++		sdc->net_ibat[sdc->net_idx] = ibat;
++		sdc->net_idx = (sdc->net_idx + 1) % LOW_BAT_NET_SAMPLES;
++		if (sdc->net_count < LOW_BAT_NET_SAMPLES)
++			sdc->net_count++;
++	}
++	if (sdc->net_count == LOW_BAT_NET_SAMPLES) {
++		for (i = 0; i < LOW_BAT_NET_SAMPLES; i++) {
++			vbat_sum += sdc->net_vbat[i];
++			ibat_sum += sdc->net_ibat[i];
++		}
++		low = vbat_sum < BAT_VOLTAGE_LOW_BOUND * LOW_BAT_NET_SAMPLES &&
++			ibat_sum < 0;
++	}
++	mutex_unlock(&sdc->lock);
++
++	if (low) {
++		pr_crit("battery: a mean of %d mV over %d s while discharging, under %d mV: powering off\n",
++			vbat_sum / LOW_BAT_NET_SAMPLES,
++			LOW_BAT_NET_SAMPLES * LOW_BAT_NET_PERIOD_SEC,
++			BAT_VOLTAGE_LOW_BOUND);
++		ksys_sync();
++		kernel_power_off();
++	}
++
++	queue_delayed_work(system_freezable_power_efficient_wq,
++		&sdc->net_work, LOW_BAT_NET_PERIOD_SEC * HZ);
++}
++
++static int low_bat_net_pm_event(struct notifier_block *nb,
++	unsigned long event, void *unused)
++{
++	struct shutdown_controller *sdc =
++		container_of(nb, struct shutdown_controller, pm_nb);
++
++	/* a sleep ends the window: after it the readings start anew */
++	if (event == PM_SUSPEND_PREPARE) {
++		mutex_lock(&sdc->lock);
++		sdc->net_count = 0;
++		mutex_unlock(&sdc->lock);
++	}
++
++	return NOTIFY_DONE;
++}
++
+ static int mtk_power_misc_psy_event(
+ 	struct notifier_block *nb, unsigned long event, void *v)
+ {
+@@ -3000,6 +3058,12 @@ void mtk_power_misc_init(struct mtk_battery *gm)
+ 
+ 	gm->sdc.psy_nb.notifier_call = mtk_power_misc_psy_event;
+ 	power_supply_reg_notifier(&gm->sdc.psy_nb);
++
++	INIT_DELAYED_WORK(&gm->sdc.net_work, low_bat_net_work);
++	gm->sdc.pm_nb.notifier_call = low_bat_net_pm_event;
++	register_pm_notifier(&gm->sdc.pm_nb);
++	queue_delayed_work(system_freezable_power_efficient_wq,
++		&gm->sdc.net_work, LOW_BAT_NET_PERIOD_SEC * HZ);
+ }
+ 
+ int battery_psy_init(struct platform_device *pdev)
+diff --git a/drivers/power/supply/mtk_battery.h b/drivers/power/supply/mtk_battery.h
+index df7728090..a738fa732 100644
+--- a/drivers/power/supply/mtk_battery.h
++++ b/drivers/power/supply/mtk_battery.h
+@@ -734,6 +734,9 @@ struct simulator_log {
+ #define AVGVBAT_ARRAY_SIZE 30
+ #define INIT_VOLTAGE 3450
+ #define BATTERY_SHUTDOWN_TEMPERATURE 60
++/* low_bat_net_work averages the last 6 readings, taken 10 s apart */
++#define LOW_BAT_NET_PERIOD_SEC 10
++#define LOW_BAT_NET_SAMPLES 6
+ 
+ struct shutdown_condition {
+ 	bool is_overheat;
+@@ -759,6 +762,12 @@ struct shutdown_controller {
+ 	int vbat_lt;
+ 	int vbat_lt_lv1;
+ 	int shutdown_cond_flag;
++	struct delayed_work net_work;
++	struct notifier_block pm_nb;
++	int net_vbat[LOW_BAT_NET_SAMPLES];
++	int net_ibat[LOW_BAT_NET_SAMPLES];
++	int net_idx;
++	int net_count;
+ };
+ 
+ struct BAT_EC_Struct {
+-- 
+2.56.0
+

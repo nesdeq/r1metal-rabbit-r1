@@ -1,0 +1,44 @@
+From afaeeb0138d6db54fa154e1cfc46716ab2b55150 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 16:09:09 +0200
+Subject: [PATCH] irqchip: gic-v3: the target-all affinity records its
+ effective mask
+
+With MTK_GIC_TARGET_ALL both successful exits of gic_set_affinity()
+record the mask asked for as the effective affinity; genirq warns for an
+interrupt without one. A wider mask routes to any CPU, which IROUTER
+cannot narrow.
+---
+ drivers/irqchip/irq-gic-v3.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/irqchip/irq-gic-v3.c b/drivers/irqchip/irq-gic-v3.c
+index 5d704b384..0526c08f8 100644
+--- a/drivers/irqchip/irq-gic-v3.c
++++ b/drivers/irqchip/irq-gic-v3.c
+@@ -833,8 +833,10 @@ static int gic_set_affinity(struct irq_data *d, const struct cpumask *mask_val,
+ 	 * no need to update when:
+ 	 * input mask is equal to the current setting
+ 	 */
+-	if (cpumask_equal(d->common->affinity, mask_val))
++	if (cpumask_equal(d->common->affinity, mask_val)) {
++		irq_data_update_effective_affinity(d, mask_val);
+ 		return IRQ_SET_MASK_OK_NOCOPY;
++	}
+ 
+ 	/*
+ 	 * cpumask_first_and() returns >= nr_cpu_ids
+@@ -872,6 +874,10 @@ static int gic_set_affinity(struct irq_data *d, const struct cpumask *mask_val,
+ 		gic_unmask_irq(d);
+ 	else
+ 		gic_dist_wait_for_rwp();
++
++	/* effective as asked: a wider mask routes to any CPU, which IROUTER cannot narrow */
++	irq_data_update_effective_affinity(d, mask_val);
++
+ 	return IRQ_SET_MASK_OK;
+ #endif
+ }
+-- 
+2.56.0
+

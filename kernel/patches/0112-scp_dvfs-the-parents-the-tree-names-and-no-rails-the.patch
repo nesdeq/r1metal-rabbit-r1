@@ -1,0 +1,46 @@
+From 849645b5b3b379ddb09271a50942162cd5846d27 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 19:29:16 +0200
+Subject: [PATCH] scp_dvfs: the parents the tree names, and no rails the OPPs
+ leave alone
+
+mt_scp_dvfs_pdrv_probe asks for nothing the R1's tree leaves out:
+- The SCP mux's parents are taken from clk_pll_0 upward only as far as
+  clock-names names them; a named one that cannot be got is an error.
+- Where the last OPP's vcore and vsram are 0xff, no PMIC change, it
+  looks up neither sshub rail and skips mt_pmic_sshub_init.
+---
+ drivers/misc/mediatek/scp/cm4/scp_dvfs.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/drivers/misc/mediatek/scp/cm4/scp_dvfs.c b/drivers/misc/mediatek/scp/cm4/scp_dvfs.c
+index d558ac66d..7c1d57248 100644
+--- a/drivers/misc/mediatek/scp/cm4/scp_dvfs.c
++++ b/drivers/misc/mediatek/scp/cm4/scp_dvfs.c
+@@ -1582,6 +1582,11 @@ static int __init mt_scp_dvfs_pdrv_probe(struct platform_device *pdev)
+ 		if (ret < 0 || ret >= 15)
+ 			goto fail;
+ 
++		/* the mux has as many parents as the tree names */
++		if (of_property_match_string(pdev->dev.of_node, "clock-names",
++				buf) < 0)
++			break;
++
+ 		mt_scp_pll->clk_pll[i] = devm_clk_get(&pdev->dev, buf);
+ 		if (IS_ERR(mt_scp_pll->clk_pll[i])) {
+ 			dev_notice(&pdev->dev,
+@@ -1697,6 +1702,11 @@ static int __init mt_scp_dvfs_pdrv_probe(struct platform_device *pdev)
+ 	goto pass;
+ #endif
+ 
++	/* a last OPP with vcore and vsram 0xff means no PMIC change, as in scp_set_pmic_vcore */
++	if (opp[dvfs->scp_opp_num - 1].vcore == 0xff &&
++		opp[dvfs->scp_opp_num - 1].vsram == 0xff)
++		goto pass;
++
+ 	/* get Vcore/Vsram Regulator */
+ 	reg_vcore = devm_regulator_get_optional(&pdev->dev, "sshub-vcore");
+ 	if (IS_ERR(reg_vcore) || !reg_vcore) {
+-- 
+2.56.0
+

@@ -1,0 +1,29 @@
+From 3b1cee358b9cfea570ff4f52b1ed7ab519ef3461 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Tue, 20 Oct 2026 11:06:56 +0200
+Subject: [PATCH] tcpc: a VBUS level read from the chip is told as such
+
+tcpci_check_vbus_valid_from_ic tells a VBUS level read from the chip
+that differs from the last alert's as the level read, not as a warning:
+the read is how the Type-C code learns a change the chip raises no alert
+for.
+---
+ drivers/misc/mediatek/typec/tcpc/tcpci.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/typec/tcpc/tcpci.c b/drivers/misc/mediatek/typec/tcpc/tcpci.c
+index f90acfa17..756b9031b 100644
+--- a/drivers/misc/mediatek/typec/tcpc/tcpci.c
++++ b/drivers/misc/mediatek/typec/tcpc/tcpci.c
+@@ -87,7 +87,7 @@ int tcpci_check_vbus_valid_from_ic(struct tcpc_device *tcpc)
+ 
+ 	if (tcpci_get_power_status(tcpc, &power_status) == 0) {
+ 		if (vbus_level != tcpc->vbus_level) {
+-			TCPC_INFO("[Warning] ps_changed %d -> %d\n",
++			TCPC_INFO("VBUS level %d -> %d, read from the chip\n",
+ 				vbus_level, tcpc->vbus_level);
+ 		}
+ 	}
+-- 
+2.56.0
+

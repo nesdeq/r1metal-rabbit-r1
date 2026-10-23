@@ -1,0 +1,85 @@
+From b7aabd2778e25fae6c821c04006981239302ad24 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 11:12:53 +0200
+Subject: [PATCH] pwrap: the helpers without a wrapper read the probed one
+
+- pwrap_probe sets the file-scope wrp, which its local of the same name
+  hides, so the helpers that read it find the probed wrapper.
+- pwrap_dump_ap_register only reads; upstream also writes monitor
+  registers no register map defines, which land on PWRAP_MUX_SEL.
+- A failed Write Test returns -EFAULT.
+- A negative platform_get_irq is returned as it is, so a deferral
+  defers.
+---
+ drivers/soc/mediatek/mtk-pmic-wrap.c | 26 +++++++++++++-------------
+ 1 file changed, 13 insertions(+), 13 deletions(-)
+
+diff --git a/drivers/soc/mediatek/mtk-pmic-wrap.c b/drivers/soc/mediatek/mtk-pmic-wrap.c
+index 922a5cd16..8ab5bd891 100644
+--- a/drivers/soc/mediatek/mtk-pmic-wrap.c
++++ b/drivers/soc/mediatek/mtk-pmic-wrap.c
+@@ -1330,6 +1330,12 @@ struct pmic_wrapper_type {
+ 
+ static struct pmic_wrapper *wrp;
+ 
++/* pwrap_probe's local wrp hides this one */
++static void pwrap_set_wrapper(struct pmic_wrapper *probed)
++{
++	wrp = probed;
++}
++
+ static u32 pwrap_readl(struct pmic_wrapper *wrp, enum pwrap_regs reg);
+ static void pwrap_writel(struct pmic_wrapper *wrp, u32 val,
+ 			       enum pwrap_regs reg);
+@@ -1430,19 +1436,6 @@ static inline void pwrap_dump_ap_register(void)
+ 		dev_dbg(wrp->dev, "addr:0x%p = 0x%x\n",
+ 			reg_addr, readl(reg_addr));
+ 	}
+-
+-	pwrap_writel(wrp, 0x0, PWRAP_WACS2_EN);
+-
+-	if (HAS_CAP(wrp->master->caps, PWRAP_CAP_MONITOR_V1)) {
+-		pwrap_writel(wrp, 0x8, PWRAP_MONITOR_CTRL_0);
+-		pwrap_writel(wrp, 0x5, PWRAP_MONITOR_CTRL_0);
+-	} else if (HAS_CAP(wrp->master->caps, PWRAP_CAP_MONITOR_V2)) {
+-		pwrap_writel(wrp, 0x800, PWRAP_MONITOR_CTRL);
+-		pwrap_writel(wrp, 0x5, PWRAP_MONITOR_CTRL);
+-	}
+-
+-	pwrap_writel(wrp, 0x1, PWRAP_WACS2_EN);
+-
+ }
+ 
+ static inline void pwrap_dump_pmic_register(void)
+@@ -3266,7 +3259,12 @@ static int pwrap_probe(struct platform_device *pdev)
+ 	if (HAS_CAP(wrp->master->caps, PWRAP_CAP_INT1_EN))
+ 		pwrap_writel(wrp, wrp->master->int1_en_all, PWRAP_INT1_EN);
+ 
++	pwrap_set_wrapper(wrp);
+ 	irq = platform_get_irq(pdev, 0);
++	if (irq < 0) {
++		ret = irq;
++		goto err_out2;
++	}
+ 	ret = devm_request_irq(wrp->dev, irq, pwrap_interrupt,
+ 			       IRQF_TRIGGER_HIGH, "mt-pmic-pwrap", wrp);
+ 	if (ret)
+@@ -3287,6 +3285,7 @@ static int pwrap_probe(struct platform_device *pdev)
+ 		    (rdata != PWRAP_DEW_WRITE_TEST_VAL)) {
+ 			dev_notice(wrp->dev,
+ 				"[PWRAP] Write Test fail, rdata=0x%x\n", rdata);
++			ret = -EFAULT;
+ 			goto err_out2;
+ 		} else {
+ 			dev_notice(wrp->dev, "[PWRAP] Write Test pass\n");
+@@ -3303,6 +3302,7 @@ static int pwrap_probe(struct platform_device *pdev)
+ 	return 0;
+ 
+ err_out2:
++	pwrap_set_wrapper(NULL);
+ 	if (HAS_CAP(wrp->master->caps, PWRAP_CAP_ULPOSC_CLK))
+ 		clk_disable_unprepare(wrp->clk_ulposc);
+ 	clk_disable_unprepare(wrp->clk_wrap);
+-- 
+2.56.0
+

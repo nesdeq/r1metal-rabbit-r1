@@ -1,0 +1,122 @@
+From 15fb0fb82e96f9abb12c2482dd9772aa6f0f535b Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 10:55:23 +0200
+Subject: [PATCH] input: hynitron: a checksum that disagrees once is not an
+ error
+
+A read whose ESD counter and checksum disagree is retried, up to five
+times, with an info line of the six bytes; only five misses in a row are
+an error. A single miss is expected, as the chip can move its counter
+between the reads of the counter and of the checksum.
+hyn_esd_get_status() at init retries the same way.
+---
+ .../touchscreen/CST8xx/hynitron_esd_check.c   | 58 ++++++++++---------
+ 1 file changed, 32 insertions(+), 26 deletions(-)
+
+diff --git a/drivers/input/touchscreen/CST8xx/hynitron_esd_check.c b/drivers/input/touchscreen/CST8xx/hynitron_esd_check.c
+index 501756306..6bbfd5205 100644
+--- a/drivers/input/touchscreen/CST8xx/hynitron_esd_check.c
++++ b/drivers/input/touchscreen/CST8xx/hynitron_esd_check.c
+@@ -14,6 +14,7 @@
+ 
+ #define SWITCH_ESD_OFF                  0
+ #define SWITCH_ESD_ON                   1
++#define HYN_ESD_READ_TRIES              5
+ 
+ 
+ extern int hyn_reset_proc(int hdelayms);
+@@ -192,11 +193,26 @@ void hyn_esd_switch(s32 on)
+ 
+ }
+ 
++/* Reads the ESD counter and checksum: 1 if they agree, 0 if not, below 0 on a bus error. */
++static int hyn_esd_read_once(unsigned char *buf)
++{
++	int ret;
++
++	buf[0] = HYN_REG_MUT_ESD_VALUE>>8;
++	buf[1] = HYN_REG_MUT_ESD_VALUE&0xff;
++	ret = cst3xx_i2c_read_register(hyn_ts_data->client, buf, 6);
++	if (ret <= 0)
++		return -EIO;
++	if ((buf[0]+buf[1]+buf[2]+buf[3]+0xA5) == ((buf[4]<<8)+buf[5]))
++		return 1;
++	HYN_INFO("ESD counter and checksum disagree: %*ph", 6, buf);
++	return 0;
++}
++
+ static void hyn_esd_check_func(struct work_struct *work)
+ {
+     int retry = 0;
+ 	int ret;
+-	int check_sum;
+ 	unsigned char buf[8];
+ 
+ 	HYN_FUNC_ENTER();
+@@ -220,18 +236,11 @@ static void hyn_esd_check_func(struct work_struct *work)
+ 
+ 	if(hyn_ts_data->config_chip_product_line==HYN_CHIP_PRODUCT_LINE_MUT_CAP){
+ 
+-		while(retry++ < 5) {
+-			buf[0] = HYN_REG_MUT_ESD_VALUE>>8;
+-			buf[1] = HYN_REG_MUT_ESD_VALUE&0xff;
+-			ret = cst3xx_i2c_read_register(hyn_ts_data->client, buf, 6);
+-			if (ret > 0){		
+-				check_sum = buf[0]+buf[1]+buf[2]+buf[3]+0xA5;
+-				if(check_sum != ( (buf[4]<<8)+ buf[5])){
+-		            HYN_ERROR("hyn_esd_check_func iic read check_sum error.\n");
+-				}else{
+-					break;
+-				}		
+-			}else{
++		while(retry++ < HYN_ESD_READ_TRIES) {
++			ret = hyn_esd_read_once(buf);
++			if (ret > 0)
++				break;
++			if (ret < 0){
+            			HYN_ERROR("hyn_esd_check_func iic error" );
+            			goto hyn_esd_check_init;
+ 			}
+@@ -242,7 +251,7 @@ static void hyn_esd_check_func(struct work_struct *work)
+ 
+ 	}
+ 	
+-    if((retry==6)||(retry==0)|| (ret<0)){
++    if((retry>HYN_ESD_READ_TRIES)||(retry==0)|| (ret<0)){
+ 		HYN_ERROR("hyn_esd_check_func iic read esd data error,please check firmware,driver and hardware.\n");
+ 		goto END;
+     }
+@@ -278,21 +287,18 @@ static void hyn_esd_check_func(struct work_struct *work)
+ int hyn_esd_get_status(void)
+ {
+ 	u8 buf[7];
+-	int ret=-1;
+-	u16 check_sum=0;
++	int tries;
+ 	HYN_FUNC_ENTER();
+ 	
+-	buf[0] = HYN_REG_MUT_ESD_VALUE>>8;
+-	buf[1] = HYN_REG_MUT_ESD_VALUE&0xff;
+-	ret = cst3xx_i2c_read_register(hyn_ts_data->client, buf, 6);
+-	check_sum = buf[0]+buf[1]+buf[2]+buf[3]+0xA5;
+-	if(check_sum != ( (buf[4]<<8)+ buf[5])){
++	for (tries = 0; tries < HYN_ESD_READ_TRIES; tries++) {
++		if (hyn_esd_read_once(buf) > 0) {
++			HYN_FUNC_EXIT();
++			return 1;
++		}
++		mdelay(2);
++	}
+         HYN_ERROR(" esd check sum error.\n ");
+-		return -1;
+-	}	
+-	
+-	HYN_FUNC_EXIT();
+-	return 1;
++	return -1;
+ }
+ 	
+ void hyn_esd_init(void)
+-- 
+2.56.0
+

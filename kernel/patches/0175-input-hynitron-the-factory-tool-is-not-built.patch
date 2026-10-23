@@ -1,0 +1,129 @@
+From e9d0305cc1ad1c8afb3eaa5b2640c4ccadb3e0c9 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 10:51:16 +0200
+Subject: [PATCH] input: hynitron: the factory tool is not built
+
+ANDROID_TOOL_SURPORT and HYN_SYSFS_NODE_EN are 0, so Hynitron's factory
+and debug tool, with its world-writable proc file, debug thread and
+sysfs attributes, is not built: its command packs reach any address on
+the touch bus and flash firmware from any path, and its handlers overrun
+stack buffers. hynitron_touch_setmode, which the resume calls, moves out
+of the tool's block and stays built.
+---
+ .../touchscreen/CST8xx/hynitron_config.h      |  4 +-
+ .../touchscreen/CST8xx/hynitron_tool_debug.c  | 76 +++++++++----------
+ 2 files changed, 40 insertions(+), 40 deletions(-)
+
+diff --git a/drivers/input/touchscreen/CST8xx/hynitron_config.h b/drivers/input/touchscreen/CST8xx/hynitron_config.h
+index e2906b9c7..bb24b241e 100644
+--- a/drivers/input/touchscreen/CST8xx/hynitron_config.h
++++ b/drivers/input/touchscreen/CST8xx/hynitron_config.h
+@@ -89,9 +89,9 @@
+  * 1:enable,0:disable
+  *
+ */
+-#define ANDROID_TOOL_SURPORT					1
++#define ANDROID_TOOL_SURPORT					0
+ 
+-#define HYN_SYSFS_NODE_EN                       1
++#define HYN_SYSFS_NODE_EN                       0
+ 
+ 
+ #endif /*HYNITRON_CONFIG_H__*/
+diff --git a/drivers/input/touchscreen/CST8xx/hynitron_tool_debug.c b/drivers/input/touchscreen/CST8xx/hynitron_tool_debug.c
+index 9363fa82b..ce6d6458c 100644
+--- a/drivers/input/touchscreen/CST8xx/hynitron_tool_debug.c
++++ b/drivers/input/touchscreen/CST8xx/hynitron_tool_debug.c
+@@ -39,6 +39,44 @@
+ #define HYN_TP_OPEN_TX_DROP_RATIO      25
+ #define HYN_TP_SHORT_RX_TX_RESISTANCE  600
+ 
++int hynitron_touch_setmode(struct i2c_client *client,int mode,int isMult)
++{
++    unsigned char buf[2];
++    int ret;
++    HYN_FUNC_ENTER();
++    hyn_ts_data->work_mode = mode;
++    hyn_ts_data->hyn_irq_flag = 0;
++
++    buf[0] = isMult ? 0xD1 : 0x00;
++    switch (mode)
++    {
++        case HYN_WORK_MODE_DIFF:
++		buf[1] = isMult ? 0x0D : 0x07;
++              break;
++        case HYN_WORK_MODE_RAWDATA:
++              buf[1] = isMult ? 0x0A : 0x06;
++              break;
++        case HYN_WORK_MODE_FACTORY:
++              buf[1] = isMult ? 0x19 : 0x04;
++              break;
++        default://reset
++              buf[1] = isMult ? 0x09 : 0x00;
++              break;
++
++    }
++
++    if(isMult)
++		    ret = i2c_master_send(client, buf, 2);
++    else
++	ret = hyn_i2c_write(client, buf, 2);
++		if(ret < 0) {
++			HYN_ERROR(" cst3xx Write command normal mode failed.error:%d.\n", ret);
++		}
++    HYN_FUNC_EXIT();
++
++    return ret;
++}
++
+ #if HYN_AUTO_FACTORY_TEST_EN
+ char factory_test[512];
+ int hyn_factory_touch_test(void);
+@@ -486,44 +524,6 @@ void hynitron_wait_event_wait(void)
+ 
+ }
+ 
+-int hynitron_touch_setmode(struct i2c_client *client,int mode,int isMult)
+-{
+-    unsigned char buf[2];
+-    int ret;
+-    HYN_FUNC_ENTER();
+-    hyn_ts_data->work_mode = mode;
+-    hyn_ts_data->hyn_irq_flag = 0;
+-    
+-    buf[0] = isMult ? 0xD1 : 0x00;
+-    switch (mode)
+-    {
+-        case HYN_WORK_MODE_DIFF:
+-		buf[1] = isMult ? 0x0D : 0x07;
+-              break;
+-        case HYN_WORK_MODE_RAWDATA:
+-              buf[1] = isMult ? 0x0A : 0x06;
+-              break;
+-        case HYN_WORK_MODE_FACTORY:
+-              buf[1] = isMult ? 0x19 : 0x04;
+-              break;
+-        default://reset
+-              buf[1] = isMult ? 0x09 : 0x00;
+-              break;
+-          
+-    }
+-   	
+-    if(isMult)
+-		    ret = i2c_master_send(client, buf, 2); 
+-    else
+-      	ret = hyn_i2c_write(client, buf, 2);
+-		if(ret < 0) {				
+-			HYN_ERROR(" cst3xx Write command normal mode failed.error:%d.\n", ret);
+-		}	
+-    HYN_FUNC_EXIT();
+-    
+-    return ret;
+-}
+-
+ #define RESET_IC 	0x0A
+ #define WRITE_IIC 	0x1A
+ #define READ_IIC 	0x2A
+-- 
+2.56.0
+

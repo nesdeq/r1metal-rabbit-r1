@@ -1,0 +1,37 @@
+From e79e394377c178843f2e90bbbb58a04ad9d02670 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 20:03:28 +0200
+Subject: [PATCH] init: init's standard files are /dev/null where no console
+ has a tty
+
+Where /dev/console fails to open, kernel_init_freeable opens /dev/null
+for init's standard files and says so at info, so init starts with
+file descriptors 0 to 2; the error prints only when both fail.
+---
+ init/main.c | 10 +++++++---
+ 1 file changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/init/main.c b/init/main.c
+index c0117704a..59972278b 100644
+--- a/init/main.c
++++ b/init/main.c
+@@ -1188,9 +1188,13 @@ static noinline void __init kernel_init_freeable(void)
+ 
+ 	do_basic_setup();
+ 
+-	/* Open the /dev/console on the rootfs, this should never fail */
+-	if (ksys_open((const char __user *) "/dev/console", O_RDWR, 0) < 0)
+-		pr_err("Warning: unable to open an initial console.\n");
++	/* Init's standard files are the console, or /dev/null where no console has a tty. */
++	if (ksys_open((const char __user *) "/dev/console", O_RDWR, 0) < 0) {
++		if (ksys_open((const char __user *) "/dev/null", O_RDWR, 0) < 0)
++			pr_err("Warning: unable to open an initial console.\n");
++		else
++			pr_info("No console has a tty: init's standard files are /dev/null\n");
++	}
+ 
+ 	(void) ksys_dup(0);
+ 	(void) ksys_dup(0);
+-- 
+2.56.0
+

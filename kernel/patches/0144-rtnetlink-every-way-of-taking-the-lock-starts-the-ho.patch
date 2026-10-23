@@ -1,0 +1,47 @@
+From f496d2a4b8fd8571fd75d5282c0d3d1d318c89ce Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Tue, 20 Oct 2026 13:28:36 +0200
+Subject: [PATCH] rtnetlink: every way of taking the lock starts the hold
+ monitor's clock
+
+rtnl_lock_killable() and rtnl_trylock() record their holder with
+rtnl_get_btrace() once they hold the lock, as rtnl_lock() does, so the
+hold monitor measures their holds from their start, not from the last
+rtnl_lock().
+---
+ net/core/rtnetlink.c | 12 ++++++++++--
+ 1 file changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/net/core/rtnetlink.c b/net/core/rtnetlink.c
+index 131e64886..d044a8c8d 100644
+--- a/net/core/rtnetlink.c
++++ b/net/core/rtnetlink.c
+@@ -160,7 +160,11 @@ EXPORT_SYMBOL(rtnl_lock);
+ 
+ int rtnl_lock_killable(void)
+ {
+-	return mutex_lock_killable(&rtnl_mutex);
++	int ret = mutex_lock_killable(&rtnl_mutex);
++
++	if (!ret)
++		rtnl_get_btrace(current);
++	return ret;
+ }
+ EXPORT_SYMBOL(rtnl_lock_killable);
+ 
+@@ -207,7 +211,11 @@ EXPORT_SYMBOL(rtnl_unlock);
+ 
+ int rtnl_trylock(void)
+ {
+-	return mutex_trylock(&rtnl_mutex);
++	int ret = mutex_trylock(&rtnl_mutex);
++
++	if (ret)
++		rtnl_get_btrace(current);
++	return ret;
+ }
+ EXPORT_SYMBOL(rtnl_trylock);
+ 
+-- 
+2.56.0
+

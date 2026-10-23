@@ -1,0 +1,95 @@
+From 9c7f96efcdcc7f7381d588edeb1327ce4a081c48 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 13:26:34 +0200
+Subject: [PATCH] btif: no packets are logged while logging is off
+
+While printk.silent is set btif_log_buf_dmp_in keeps no packet, and
+setting it empties the Tx and Rx packet logs of every port, bytes and
+all.
+---
+ drivers/misc/mediatek/btif/common/mtk_btif.c | 42 +++++++++++++++++++-
+ 1 file changed, 41 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/btif/common/mtk_btif.c b/drivers/misc/mediatek/btif/common/mtk_btif.c
+index 6cb2e49c1..9ab6052d6 100644
+--- a/drivers/misc/mediatek/btif/common/mtk_btif.c
++++ b/drivers/misc/mediatek/btif/common/mtk_btif.c
+@@ -12,6 +12,7 @@
+ #include <linux/fs.h>
+ #include <linux/cdev.h>
+ #include <linux/poll.h>
++#include <linux/notifier.h>
+ #include <uapi/linux/sched/types.h>
+ #include <asm/cacheflush.h>
+ 
+@@ -2992,13 +2993,18 @@ int btif_log_buf_dmp_in(struct _btif_log_queue_t_ *p_log_que,
+ 		p_log_que, p_buf, len);
+ 		return 0;
+ 	}
+-	if (!(p_log_que->enable))
++	if (!(p_log_que->enable) || printk_silenced())
+ 		return 0;
+ 
+ 	dir = p_log_que->dir == BTIF_TX ? "Tx" : "Rx";
+ 	output_flag = p_log_que->output_flag;
+ 
+ 	spin_lock_irqsave(&(p_log_que->lock), flags);
++	/* tested again under the lock the emptying takes */
++	if (printk_silenced()) {
++		spin_unlock_irqrestore(&p_log_que->lock, flags);
++		return 0;
++	}
+ 
+ /*get next log buffer for record usage*/
+ 	p_log_buf = p_log_que->p_queue + p_log_que->in;
+@@ -3202,6 +3208,39 @@ int btif_log_buf_reset(struct _btif_log_queue_t_ *p_log_que)
+ 	return 0;
+ }
+ 
++/* Drops every packet a log queue holds, bytes and all. */
++static void btif_log_buf_clear(struct _btif_log_queue_t_ *p_log_que)
++{
++	unsigned long flags;
++
++	spin_lock_irqsave(&p_log_que->lock, flags);
++	p_log_que->in = 0;
++	p_log_que->out = 0;
++	p_log_que->size = 0;
++	memset(p_log_que->p_queue, 0,
++		sizeof(struct _btif_log_buf_t_) * BTIF_LOG_ENTRY_NUM);
++	spin_unlock_irqrestore(&p_log_que->lock, flags);
++}
++
++/* Setting printk.silent empties the packet logs of every port. */
++static int btif_log_follow_printk(struct notifier_block *nb,
++	unsigned long event, void *unused)
++{
++	int index;
++
++	if (!printk_silenced())
++		return NOTIFY_OK;
++	for (index = 0; index < BTIF_PORT_NR; index++) {
++		btif_log_buf_clear(&g_btif[index].tx_log);
++		btif_log_buf_clear(&g_btif[index].rx_log);
++	}
++	return NOTIFY_OK;
++}
++
++static struct notifier_block btif_log_printk_nb = {
++	.notifier_call = btif_log_follow_printk,
++};
++
+ int btif_log_buf_init(struct _mtk_btif_ *p_btif)
+ {
+ /*tx log buffer init*/
+@@ -3437,6 +3476,7 @@ static int BTIF_init(void)
+ 
+ 		mutex_init(&g_btif[index].ops_mtx);
+ 	}
++	printk_logging_notifier_register(&btif_log_printk_nb);
+ 
+ /*Debug purpose initialization*/
+ 
+-- 
+2.56.0
+

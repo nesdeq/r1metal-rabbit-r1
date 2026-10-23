@@ -1,0 +1,134 @@
+From 5f3a6477b5ed2f222799a73d30be596895ee0e3d Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 21:55:56 +0200
+Subject: [PATCH] musb QMU: a queue's routine change of state is told as
+ information
+
+QMU_WARN keeps only faults:
+- A queue's enable and disable, musb_disable_q_all() and a gadget's fifo
+  flush print with QMU_STATE, at info, as the routine events they are.
+- The host's per transfer "non isoc", "bulk???" and "others use qmu???"
+  print with QMU_DBG.
+---
+ drivers/misc/mediatek/usb20/mtk_qmu.c     | 10 +++++-----
+ drivers/misc/mediatek/usb20/mtk_qmu.h     |  4 ++++
+ drivers/misc/mediatek/usb20/musb_gadget.c |  4 ++--
+ drivers/misc/mediatek/usb20/musb_qmu.c    |  4 ++--
+ 4 files changed, 13 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/misc/mediatek/usb20/mtk_qmu.c b/drivers/misc/mediatek/usb20/mtk_qmu.c
+index c3535de73..7ec83f0e2 100644
+--- a/drivers/misc/mediatek/usb20/mtk_qmu.c
++++ b/drivers/misc/mediatek/usb20/mtk_qmu.c
+@@ -625,7 +625,7 @@ void mtk_qmu_enable(struct musb *musb, u8 ep_num, u8 isRx)
+ 	musb_ep_select(mbase, ep_num);
+ 
+ 	if (isRx) {
+-		QMU_WARN("enable RQ(%d)\n", ep_num);
++		QMU_STATE("enable RQ(%d)\n", ep_num);
+ 
+ 		Rx_enable[ep_num] = true;
+ 
+@@ -703,7 +703,7 @@ void mtk_qmu_enable(struct musb *musb, u8 ep_num, u8 isRx)
+ 		MGC_WriteQMU32(base, MGC_O_QMU_RQCSR(ep_num), DQMU_QUE_START);
+ 
+ 	} else {
+-		QMU_WARN("enable TQ(%d)\n", ep_num);
++		QMU_STATE("enable TQ(%d)\n", ep_num);
+ 
+ 		Tx_enable[ep_num] = true;
+ 
+@@ -843,7 +843,7 @@ static void mtk_qmu_disable(u8 ep_num, u8 isRx)
+ 	}
+ 
+ 	if (state_change)
+-		QMU_WARN("disable %s(%d)\n", isRx ? "RQ" : "TQ", ep_num);
++		QMU_STATE("disable %s(%d)\n", isRx ? "RQ" : "TQ", ep_num);
+ 
+ 	mtk_qmu_stop(ep_num, isRx);
+ 	if (isRx) {
+@@ -1522,7 +1522,7 @@ void h_qmu_done_tx(struct musb *musb, u8 ep_num)
+ 				&& urb->transfer_buffer_length >=
+ 					QMU_RX_SPLIT_THRE
+ 				&& usb_pipeout(urb->pipe)) {
+-			QMU_WARN("bulk???\n");
++			QMU_DBG("bulk???\n");
+ 			urb->actual_length += TGPD_GET_BUF_LEN(gpd);
+ 			qh->offset += TGPD_GET_BUF_LEN(gpd);
+ 			qh->iso_idx++;
+@@ -1540,7 +1540,7 @@ void h_qmu_done_tx(struct musb *musb, u8 ep_num)
+ 			done = (qh->iso_idx == urb->number_of_packets)
+ 					? true : false;
+ 		} else {
+-			QMU_WARN("others use qmu???\n");
++			QMU_DBG("others use qmu???\n");
+ 			urb->actual_length = TGPD_GET_BUF_LEN(gpd);
+ 			qh->offset = TGPD_GET_BUF_LEN(gpd);
+ 			done = true;
+diff --git a/drivers/misc/mediatek/usb20/mtk_qmu.h b/drivers/misc/mediatek/usb20/mtk_qmu.h
+index 2e9f72890..7a38c09ab 100644
+--- a/drivers/misc/mediatek/usb20/mtk_qmu.h
++++ b/drivers/misc/mediatek/usb20/mtk_qmu.h
+@@ -150,11 +150,15 @@ static inline int mtk_dbg_level(unsigned int level)
+ #define QMU_DBG(format, args...) do {if (mtk_dbg_level(LOG_DBG)) \
+ 	pr_notice("QMU_DBG,<%s %d>, " format, __func__, __LINE__, ## args);  } \
+ 	while (0)
++/* a queue's routine change of state, told whatever the debug level */
++#define QMU_STATE(format, args...) \
++	pr_info("QMU,<%s %d>, " format, __func__, __LINE__, ## args)
+ #else
+ #define QMU_ERR(format, args...) do {} while (0)
+ #define QMU_WARN(format, args...) do {} while (0)
+ #define QMU_INFO(format, args...) do {} while (0)
+ #define QMU_DBG(format, args...) do {} while (0)
++#define QMU_STATE(format, args...) do {} while (0)
+ #endif
+ 
+ 
+diff --git a/drivers/misc/mediatek/usb20/musb_gadget.c b/drivers/misc/mediatek/usb20/musb_gadget.c
+index 8acd01444..44aee4e32 100644
+--- a/drivers/misc/mediatek/usb20/musb_gadget.c
++++ b/drivers/misc/mediatek/usb20/musb_gadget.c
+@@ -2009,7 +2009,7 @@ static void musb_gadget_fifo_flush(struct usb_ep *ep)
+ 
+ 	if (musb_ep->is_in) {
+ #ifdef CONFIG_MTK_MUSB_QMU_SUPPORT
+-		QMU_WARN("fifo flush(%d), sw(%d)\n", epnum, ep->address);
++		QMU_STATE("fifo flush(%d), sw(%d)\n", epnum, ep->address);
+ 		musb_flush_qmu(epnum, TXQ);
+ 		musb_restart_qmu(musb, epnum, TXQ);
+ #endif
+@@ -2028,7 +2028,7 @@ static void musb_gadget_fifo_flush(struct usb_ep *ep)
+ 		}
+ 	} else {
+ #ifdef CONFIG_MTK_MUSB_QMU_SUPPORT
+-		QMU_WARN("fifo flush(%d), sw(%d)\n", epnum, ep->address);
++		QMU_STATE("fifo flush(%d), sw(%d)\n", epnum, ep->address);
+ 		musb_flush_qmu(epnum, RXQ);
+ 		musb_restart_qmu(musb, epnum, RXQ);
+ #endif
+diff --git a/drivers/misc/mediatek/usb20/musb_qmu.c b/drivers/misc/mediatek/usb20/musb_qmu.c
+index 14cf6412c..99b1c4d72 100644
+--- a/drivers/misc/mediatek/usb20/musb_qmu.c
++++ b/drivers/misc/mediatek/usb20/musb_qmu.c
+@@ -327,7 +327,7 @@ void musb_disable_q_all(struct musb *musb)
+ {
+ 	u32 ep_num;
+ 
+-	QMU_WARN("disable_q_all\n");
++	QMU_STATE("disable_q_all\n");
+ 	mtk_host_active_dev_resource_reset();
+ #ifdef CONFIG_MTK_UAC_POWER_SAVING
+ 	low_power_timer_resource_reset();
+@@ -691,7 +691,7 @@ int mtk_kick_CmdQ(struct musb *musb,
+ 		}
+ 	} else {
+ 		/* Must be the bulk transfer type */
+-		QMU_WARN("non isoc\n");
++		QMU_DBG("non isoc\n");
+ 		pBuffer = urb->transfer_dma;
+ 		if (urb->transfer_buffer_length < QMU_RX_SPLIT_THRE) {
+ 			if (gpd_free_count < 1) {
+-- 
+2.56.0
+

@@ -1,0 +1,105 @@
+From 665d78065c5568c3237b73908b8585cd4b93b495 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Sat, 10 Oct 2026 16:54:59 +0200
+Subject: [PATCH] wlan: without a country only channels 1 to 11 are spoken on
+ first
+
+With no country set, the radio sends first only on channels 1 to 11:
+default_regdom_ww and the default passive scan table sent to the chip
+mark every other channel NO_IR, and radar's channels DFS. Channels 12
+and 13 take NL80211_RRF_AUTO_BW to stay usable at 40 MHz, and
+REGULATORY_DISABLE_BEACON_HINTS keeps a heard beacon from lifting NO_IR.
+---
+ .../wlan/core/gen4m/mgmt/rlm_domain.c         | 43 +++++++++++--------
+ .../wlan/core/gen4m/os/linux/gl_cfg80211.c    |  3 ++
+ 2 files changed, 29 insertions(+), 17 deletions(-)
+
+diff --git a/connectivity/wlan/core/gen4m/mgmt/rlm_domain.c b/connectivity/wlan/core/gen4m/mgmt/rlm_domain.c
+index cf60ee0..9830884 100644
+--- a/connectivity/wlan/core/gen4m/mgmt/rlm_domain.c
++++ b/connectivity/wlan/core/gen4m/mgmt/rlm_domain.c
+@@ -362,17 +362,26 @@ const struct ieee80211_regdomain default_regdom_ww = {
+ };
+ #else
+ const struct ieee80211_regdomain default_regdom_ww = {
+-	.n_reg_rules = 4,
++	.n_reg_rules = 7,
+ 	.alpha2 = "99",
+ 	.reg_rules = {
+-	/* channels 1..13 */
+-	REG_RULE_LIGHT(2412-10, 2472+10, 40, 0),
++	/* channels 1..11 */
++	REG_RULE_LIGHT(2412-10, 2462+10, 40, 0),
++	/* channels 12,13 */
++	REG_RULE_LIGHT(2467-10, 2472+10, 20,
++		       NL80211_RRF_NO_IR | NL80211_RRF_AUTO_BW),
+ 	/* channels 14 */
+-	REG_RULE_LIGHT(2484-10, 2484+10, 20, 0),
+-	/* channel 36..64 */
+-	REG_RULE_LIGHT(5150-10, 5350+10, BW_5G, 0),
+-	/* channel 100..165 */
+-	REG_RULE_LIGHT(5470-10, 5850+10, BW_5G, 0),
++	REG_RULE_LIGHT(2484-10, 2484+10, 20, NL80211_RRF_NO_IR),
++	/* channels 36..48 */
++	REG_RULE_LIGHT(5180-10, 5240+10, BW_5G, NL80211_RRF_NO_IR),
++	/* channels 52..64 */
++	REG_RULE_LIGHT(5260-10, 5320+10, BW_5G,
++		       NL80211_RRF_NO_IR | NL80211_RRF_DFS),
++	/* channels 100..144 */
++	REG_RULE_LIGHT(5500-10, 5720+10, BW_5G,
++		       NL80211_RRF_NO_IR | NL80211_RRF_DFS),
++	/* channels 149..165 */
++	REG_RULE_LIGHT(5745-10, 5825+10, BW_5G, NL80211_RRF_NO_IR),
+ 	}
+ };
+ #endif
+@@ -1138,23 +1147,23 @@ struct DOMAIN_INFO_ENTRY arSupportedRegDomains_Passive[] = {
+ 	}
+ 	,
+ 	{
+-		/* Default passive scan channel table: ch52~64, ch100~144 */
++		/* Default passive scan channel table: ch12~14, ch36~165 */
+ 		NULL,
+ 		0,
+ 		{
+-			{81, BAND_2G4, CHNL_SPAN_5, 1, 0, FALSE}
+-			,			/* CH_SET_2G4_1_14_NA */
+-			{82, BAND_2G4, CHNL_SPAN_5, 14, 0, FALSE}
+-			,
++			{81, BAND_2G4, CHNL_SPAN_5, 12, 2, FALSE}
++			,			/* CH_SET_2G4_12_13 */
++			{82, BAND_2G4, CHNL_SPAN_5, 14, 1, FALSE}
++			,			/* CH_SET_2G4_14_14 */
+ 
+-			{115, BAND_5G, CHNL_SPAN_20, 36, 0, FALSE}
+-			,			/* CH_SET_UNII_LOW_NA */
++			{115, BAND_5G, CHNL_SPAN_20, 36, 4, FALSE}
++			,			/* CH_SET_UNII_LOW_36_48 */
+ 			{118, BAND_5G, CHNL_SPAN_20, 52, 4, TRUE}
+ 			,			/* CH_SET_UNII_MID_52_64 */
+ 			{121, BAND_5G, CHNL_SPAN_20, 100, 12, TRUE}
+ 			,			/* CH_SET_UNII_WW_100_144 */
+-			{125, BAND_5G, CHNL_SPAN_20, 149, 0, FALSE}
+-						/* CH_SET_UNII_UPPER_NA */
++			{125, BAND_5G, CHNL_SPAN_20, 149, 5, FALSE}
++						/* CH_SET_UNII_UPPER_149_165 */
+ #if (CFG_SUPPORT_WIFI_6G == 1)
+ 			,
+ 			{131, BAND_6G, CHNL_SPAN_20, 1, 0, FALSE}
+diff --git a/connectivity/wlan/core/gen4m/os/linux/gl_cfg80211.c b/connectivity/wlan/core/gen4m/os/linux/gl_cfg80211.c
+index e80dd8d..bc656cc 100644
+--- a/connectivity/wlan/core/gen4m/os/linux/gl_cfg80211.c
++++ b/connectivity/wlan/core/gen4m/os/linux/gl_cfg80211.c
+@@ -6150,6 +6150,9 @@ cfg80211_regd_set_wiphy(IN struct wiphy *prWiphy)
+ 
+ 	/*ignore the hint from IE*/
+ 	prWiphy->regulatory_flags |= REGULATORY_COUNTRY_IE_IGNORE;
++
++	/*keep NO_IR on a channel where a beacon is heard*/
++	prWiphy->regulatory_flags |= REGULATORY_DISABLE_BEACON_HINTS;
+ #endif
+ 
+ 
+-- 
+2.56.0
+

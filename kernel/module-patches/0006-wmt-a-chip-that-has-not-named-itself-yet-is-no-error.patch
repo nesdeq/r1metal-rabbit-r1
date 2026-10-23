@@ -1,0 +1,45 @@
+From e8819ff01f9fdaac31b21a2fa9986eb4749c4e6c Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 10:37:07 +0200
+Subject: [PATCH] wmt: a chip that has not named itself yet is no error
+
+- A chip id read before the chip reports 0x10020300 logs at info, as the
+  first read after power-on returns 0.
+- The tries run out at retry -1, not 0, so a success on the tenth try
+  passes; the closing error says whether the id or the ROM patch failed.
+---
+ connectivity/common/common_main/platform/mt6765.c | 13 +++++++++++--
+ 1 file changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/connectivity/common/common_main/platform/mt6765.c b/connectivity/common/common_main/platform/mt6765.c
+index 1a030bc..f5bd0ce 100644
+--- a/connectivity/common/common_main/platform/mt6765.c
++++ b/connectivity/common/common_main/platform/mt6765.c
+@@ -886,13 +886,22 @@ static INT32 polling_consys_chipid(VOID)
+ 
+ 			if (consys_dl_rom_patch(consys_ver_id, consys_fw_ver) == 0)
+ 				break;
++			WMT_PLAT_PR_ERR("ROM patch download failed after version id(0x%08x)\n", consys_ver_id);
++		} else {
++			/* The id reads 0 for a while after power-on: no fault. */
++			WMT_PLAT_PR_INFO("CONSYS version id(0x%08x) not there yet, retry(%d)\n", consys_ver_id, retry);
+ 		}
+-		WMT_PLAT_PR_ERR("Read CONSYS version id(0x%08x)", consys_ver_id);
+ 		msleep(20);
+ 	}
+ 
+-	if (retry <= 0)
++	/* a break on the last try leaves retry at 0, running out -1 */
++	if (retry < 0) {
++		if (consys_ver_id != 0x10020300)
++			WMT_PLAT_PR_ERR("Read CONSYS version id(0x%08x) failed, never the expected one\n", consys_ver_id);
++		else
++			WMT_PLAT_PR_ERR("ROM patch download failed at every try\n");
+ 		return -1;
++	}
+ 
+ 	consys_ver_id = CONSYS_REG_READ(conn_reg.mcu_top_misc_off_base + CONSYS_CONF_ID_OFFSET);
+ 	WMT_PLAT_PR_INFO("consys configuration id(0x%x)\n", consys_ver_id & 0xF);
+-- 
+2.56.0
+

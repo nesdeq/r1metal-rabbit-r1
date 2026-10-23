@@ -1,0 +1,30 @@
+From d26654b6f952718a48ecc5660a6052edb421c703 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 10:55:13 +0200
+Subject: [PATCH] pbm: a battery voltage that failed is not taken for
+ millivolts
+
+ma_to_mw holds get_battery_volt's result in an int, so an error is
+caught by its bat_vol <= 0 test and the budget uses its 4 V default. In
+an unsigned int the error passes as about 4.29e9 mV and wraps the
+budget.
+---
+ drivers/misc/mediatek/base/power/pbm_v4/mtk_pbm.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/base/power/pbm_v4/mtk_pbm.c b/drivers/misc/mediatek/base/power/pbm_v4/mtk_pbm.c
+index 4b0d9bd7d..29f5b1a62 100644
+--- a/drivers/misc/mediatek/base/power/pbm_v4/mtk_pbm.c
++++ b/drivers/misc/mediatek/base/power/pbm_v4/mtk_pbm.c
+@@ -191,7 +191,7 @@ static int get_battery_volt(void)
+ #endif
+ unsigned int ma_to_mw(unsigned int val)
+ {
+-	unsigned int bat_vol = 0;
++	int bat_vol = 0;
+ 	unsigned int ret_val = 0;
+ 
+ 	bat_vol = get_battery_volt();	/* return mV */
+-- 
+2.56.0
+

@@ -1,0 +1,39 @@
+From 78f6372cb21e65dc98653401de23382a10fc8632 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 10:44:12 +0200
+Subject: [PATCH] wlan: the host interface keeps its ownership until the
+ power-off has read its registers
+
+halHifPowerOffWifi hands the host interface back to the firmware after
+its last register access, not before. Handed back first, where the chip
+is sleepy, firmware ownership refuses those accesses and the power-off
+check passes unverified.
+---
+ connectivity/wlan/core/gen4m/os/linux/hif/common/hal_pdma.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/connectivity/wlan/core/gen4m/os/linux/hif/common/hal_pdma.c b/connectivity/wlan/core/gen4m/os/linux/hif/common/hal_pdma.c
+index db185f8..60e0aea 100644
+--- a/connectivity/wlan/core/gen4m/os/linux/hif/common/hal_pdma.c
++++ b/connectivity/wlan/core/gen4m/os/linux/hif/common/hal_pdma.c
+@@ -3426,7 +3426,6 @@ uint32_t halHifPowerOffWifi(IN struct ADAPTER *prAdapter)
+ 	prHifInfo->fgIsPowerOff = true;
+ 
+ 	/* prAdapter->fgWiFiInSleepyState = TRUE; */
+-	RECLAIM_POWER_CONTROL_TO_PM(prAdapter, FALSE);
+ 
+ 	rStatus = wlanCheckWifiFunc(prAdapter, FALSE);
+ 
+@@ -3439,6 +3438,9 @@ uint32_t halHifPowerOffWifi(IN struct ADAPTER *prAdapter)
+ 	if (prBusInfo->disableSwInterrupt)
+ 		prBusInfo->disableSwInterrupt(prAdapter);
+ 
++	/* Only after the last register access: firmware ownership blocks them. */
++	RECLAIM_POWER_CONTROL_TO_PM(prAdapter, FALSE);
++
+ 	return rStatus;
+ }
+ 
+-- 
+2.56.0
+

@@ -1,0 +1,62 @@
+From 51f64ab692511c5f6fa5caee1b6474a8aa33622f Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 11:56:47 +0200
+Subject: [PATCH] wlan: a deauth answered to a class 3 frame tells an error
+ only when sending failed
+
+nicEventSendDeauth and nicRxSendDeauthPacket report an
+authSendDeauthFrame status only where it is neither success nor
+WLAN_STATUS_FAILURE, a frame left unanswered on purpose. Upstream
+nicEventSendDeauth logs "Send Deauth Error" on success.
+---
+ connectivity/wlan/core/gen4m/nic/nic_cmd_event.c | 11 ++++++-----
+ connectivity/wlan/core/gen4m/nic/nic_rx.c        |  3 ++-
+ 2 files changed, 8 insertions(+), 6 deletions(-)
+
+diff --git a/connectivity/wlan/core/gen4m/nic/nic_cmd_event.c b/connectivity/wlan/core/gen4m/nic/nic_cmd_event.c
+index 38ede32..8893a40 100644
+--- a/connectivity/wlan/core/gen4m/nic/nic_cmd_event.c
++++ b/connectivity/wlan/core/gen4m/nic/nic_cmd_event.c
+@@ -4216,6 +4216,7 @@ void nicEventSendDeauth(IN struct ADAPTER *prAdapter,
+ 			IN struct WIFI_EVENT *prEvent)
+ {
+ 	struct SW_RFB rSwRfb;
++	uint32_t u4Status;
+ 
+ 	DBGLOG(NIC, INFO, "%s\n", __func__);
+ #if DBG
+@@ -4230,12 +4231,12 @@ void nicEventSendDeauth(IN struct ADAPTER *prAdapter,
+ 
+ 	/* receive packets without StaRec */
+ 	rSwRfb.pvHeader = (struct WLAN_MAC_HEADER *)prEvent->aucBuffer;
+-	if (authSendDeauthFrame(prAdapter, NULL, NULL, &rSwRfb,
++	u4Status = authSendDeauthFrame(prAdapter, NULL, NULL, &rSwRfb,
+ 			REASON_CODE_CLASS_3_ERR,
+-			(PFN_TX_DONE_HANDLER) NULL) == WLAN_STATUS_SUCCESS) {
+-
+-		DBGLOG(RX, ERROR, "Send Deauth Error\n");
+-	}
++			(PFN_TX_DONE_HANDLER) NULL);
++	/* WLAN_STATUS_FAILURE is a frame authSendDeauthFrame leaves unanswered on purpose */
++	if (u4Status != WLAN_STATUS_SUCCESS && u4Status != WLAN_STATUS_FAILURE)
++		DBGLOG(RX, ERROR, "Send Deauth Error 0x%x\n", u4Status);
+ }
+ 
+ void nicEventUpdateRddStatus(IN struct ADAPTER *prAdapter,
+diff --git a/connectivity/wlan/core/gen4m/nic/nic_rx.c b/connectivity/wlan/core/gen4m/nic/nic_rx.c
+index bc66448..a48efd8 100644
+--- a/connectivity/wlan/core/gen4m/nic/nic_rx.c
++++ b/connectivity/wlan/core/gen4m/nic/nic_rx.c
+@@ -1516,7 +1516,8 @@ static void nicRxSendDeauthPacket(IN struct ADAPTER *prAdapter,
+ 		&rSwRfb,
+ 		REASON_CODE_CLASS_3_ERR,
+ 		NULL);
+-	if (u4Status != WLAN_STATUS_SUCCESS)
++	/* WLAN_STATUS_FAILURE is a frame authSendDeauthFrame leaves unanswered on purpose */
++	if (u4Status != WLAN_STATUS_SUCCESS && u4Status != WLAN_STATUS_FAILURE)
+ 		DBGLOG(NIC, WARN, "u4Status: %d\n", u4Status);
+ }
+ 
+-- 
+2.56.0
+

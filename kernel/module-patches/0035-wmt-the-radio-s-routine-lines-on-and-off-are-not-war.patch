@@ -1,0 +1,160 @@
+From 975da892e5b922be87d16ad047c65af2aecdb389 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 20:04:37 +0200
+Subject: [PATCH] wmt: the radio's routine lines on and off are not warnings
+
+- The chip identity, the worker's op line, the WLAN probe and remove
+  lines and STP's "STP Not Ready" note print at info.
+- The SoC's I2S and GPS sync pin stubs print at debug.
+- mtk_wcn_soc_aif_ctrl logs "fail" only on a failure and "ok" only on
+  success.
+- mtk_wcn_soc_sw_init leaves power save to the caller's
+  ENABLE_PSM_MONITOR, as STP is not ready yet and the enable fails.
+---
+ .../common/common_main/core/stp_core.c         |  4 ++--
+ .../common/common_main/core/wmt_func.c         |  8 ++++----
+ .../common/common_main/core/wmt_ic_soc.c       | 18 +++++-------------
+ connectivity/common/common_main/core/wmt_lib.c |  2 +-
+ .../common_main/platform/wmt_plat_alps.c       |  4 ++--
+ 5 files changed, 14 insertions(+), 22 deletions(-)
+
+diff --git a/connectivity/common/common_main/core/stp_core.c b/connectivity/common/common_main/core/stp_core.c
+index 80abc6b..eb4541d 100644
+--- a/connectivity/common/common_main/core/stp_core.c
++++ b/connectivity/common/common_main/core/stp_core.c
+@@ -1673,7 +1673,7 @@ INT32 mtk_wcn_stp_psm_enable(INT32 idle_time_to_sleep)
+ 		|| mtk_wcn_stp_is_sdio_mode() || mtk_wcn_stp_is_btif_fullset_mode()))
+ 		return stp_psm_enable(STP_PSM_CORE(stp_core_ctx), idle_time_to_sleep);
+ 
+-	STP_WARN_FUNC("STP Not Ready, Dont do Sleep/Wakeup\n");
++	STP_INFO_FUNC("STP Not Ready, Dont do Sleep/Wakeup\n");
+ 	return -1;
+ }
+ 
+@@ -1693,7 +1693,7 @@ INT32 mtk_wcn_stp_psm_disable(VOID)
+ 		|| mtk_wcn_stp_is_sdio_mode() || mtk_wcn_stp_is_btif_fullset_mode()))
+ 		return stp_psm_disable(STP_PSM_CORE(stp_core_ctx));
+ 
+-	STP_WARN_FUNC("STP Not Ready, Dont do Sleep/Wakeup\n");
++	STP_INFO_FUNC("STP Not Ready, Dont do Sleep/Wakeup\n");
+ 	return 0;
+ }
+ 
+diff --git a/connectivity/common/common_main/core/wmt_func.c b/connectivity/common/common_main/core/wmt_func.c
+index d0374a4..e5b91d7 100644
+--- a/connectivity/common/common_main/core/wmt_func.c
++++ b/connectivity/common/common_main/core/wmt_func.c
+@@ -793,13 +793,13 @@ INT32 wmt_func_wifi_on(P_WMT_IC_OPS pOps, P_WMT_GEN_CONF pConf)
+ 		return wmt_func_wifi_ctrl(FUNC_ON);
+ 
+ 	if (mtk_wcn_wlan_probe != NULL) {
+-		WMT_WARN_FUNC("WMT-FUNC: wmt wlan func on before wlan probe\n");
++		WMT_INFO_FUNC("WMT-FUNC: wmt wlan func on before wlan probe\n");
+ 		iRet = (*mtk_wcn_wlan_probe) ();
+ 		if (iRet) {
+ 			WMT_ERR_FUNC("WMT-FUNC: wmt call wlan probe fail(%d)\n", iRet);
+ 			iRet = -1;
+ 		} else {
+-			WMT_WARN_FUNC("WMT-FUNC: wmt call wlan probe ok\n");
++			WMT_INFO_FUNC("WMT-FUNC: wmt call wlan probe ok\n");
+ 		}
+ 	} else {
+ 		WMT_ERR_FUNC("WMT-FUNC: null pointer mtk_wcn_wlan_probe\n");
+@@ -819,13 +819,13 @@ INT32 wmt_func_wifi_off(P_WMT_IC_OPS pOps, P_WMT_GEN_CONF pConf)
+ 		return wmt_func_wifi_ctrl(FUNC_OFF);
+ 
+ 	if (mtk_wcn_wlan_remove != NULL) {
+-		WMT_WARN_FUNC("WMT-FUNC: wmt wlan func on before wlan remove\n");
++		WMT_INFO_FUNC("WMT-FUNC: wmt wlan func on before wlan remove\n");
+ 		iRet = (*mtk_wcn_wlan_remove) ();
+ 		if (iRet) {
+ 			WMT_ERR_FUNC("WMT-FUNC: wmt call wlan remove fail(%d)\n", iRet);
+ 			iRet = -1;
+ 		} else {
+-			WMT_WARN_FUNC("WMT-FUNC: wmt call wlan remove ok\n");
++			WMT_INFO_FUNC("WMT-FUNC: wmt call wlan remove ok\n");
+ 		}
+ 	} else {
+ 		WMT_ERR_FUNC("WMT-FUNC: null pointer mtk_wcn_wlan_remove\n");
+diff --git a/connectivity/common/common_main/core/wmt_ic_soc.c b/connectivity/common/common_main/core/wmt_ic_soc.c
+index 47ea4f3..32f11da 100644
+--- a/connectivity/common/common_main/core/wmt_ic_soc.c
++++ b/connectivity/common/common_main/core/wmt_ic_soc.c
+@@ -1746,16 +1746,7 @@ static INT32 mtk_wcn_soc_sw_init(P_WMT_HIF_CONF pWmtHifConf)
+ 	}
+ #endif
+ 
+-#if CFG_WMT_PS_SUPPORT
+-	osal_assert(gp_soc_info != NULL);
+-	if (gp_soc_info != NULL) {
+-		if (gp_soc_info->bPsmSupport != MTK_WCN_BOOL_FALSE)
+-			wmt_lib_ps_enable();
+-		else
+-			wmt_lib_ps_disable();
+-	}
+-#endif
+-
++	/* STP is not ready here; the caller's ENABLE_PSM_MONITOR starts PSM. */
+ 	WMT_STEP_DO_ACTIONS_FUNC(STEP_TRIGGER_POINT_POWER_ON_END);
+ 
+ 	return 0;
+@@ -1889,9 +1880,10 @@ static INT32 mtk_wcn_soc_aif_ctrl(WMT_IC_PIN_STATE state, UINT32 flag)
+ #endif
+ 	}
+ 
+-	if (!ret)
++	if (ret)
+ 		WMT_WARN_FUNC("new state(%d) fail(%d)\n", state, ret);
+-	WMT_INFO_FUNC("new state(%d) ok\n", state);
++	else
++		WMT_INFO_FUNC("new state(%d) ok\n", state);
+ 
+ 	return ret;
+ }
+@@ -2035,7 +2027,7 @@ static INT32 mtk_wcn_soc_ver_check(VOID)
+ 		WMT_ERR_FUNC("0x%x: hw_ver(0x%x) find wmt ic info fail\n", wmt_ic_ops_soc.icId, hw_ver);
+ 		return -3;
+ 	}
+-	WMT_WARN_FUNC("0x%x: ic info: %s.%s (0x%x/0x%x, HWVER:0x%04x, patch_ext:%s)\n",
++	WMT_INFO_FUNC("0x%x: ic info: %s.%s (0x%x/0x%x, HWVER:0x%04x, patch_ext:%s)\n",
+ 		      wmt_ic_ops_soc.icId, p_info->cChipName, p_info->cChipVersion,
+ 		      hw_ver, fw_ver, p_info->u4HwVer, p_info->cPatchNameExt);
+ 
+diff --git a/connectivity/common/common_main/core/wmt_lib.c b/connectivity/common/common_main/core/wmt_lib.c
+index 283ccb9..c536e28 100644
+--- a/connectivity/common/common_main/core/wmt_lib.c
++++ b/connectivity/common/common_main/core/wmt_lib.c
+@@ -1472,7 +1472,7 @@ static INT32 wmtd_worker_thread(void *pvData)
+ 			iResult = -2;
+ 			WMT_WARN_FUNC("Whole chip resetting, opid (0x%x) failed, iRet(%d)\n", pOp->op.opId, iResult);
+ 		} else {
+-			WMT_WARN_FUNC("opid: 0x%x", pOp->op.opId);
++			WMT_INFO_FUNC("opid: 0x%x\n", pOp->op.opId);
+ 			wmt_lib_set_worker_op(pWmtDev, pOp);
+ 			osal_timer_start(&gDevWmt.worker_timer, MAX_FUNC_ON_TIME);
+ 			iResult = wmt_core_opid(&pOp->op);
+diff --git a/connectivity/common/common_main/platform/wmt_plat_alps.c b/connectivity/common/common_main/platform/wmt_plat_alps.c
+index e0de64d..1eb8fa2 100644
+--- a/connectivity/common/common_main/platform/wmt_plat_alps.c
++++ b/connectivity/common/common_main/platform/wmt_plat_alps.c
+@@ -1283,7 +1283,7 @@ static INT32 wmt_plat_cmb_i2s_ctrl(ENUM_PIN_STATE state)
+ 
+ static INT32 wmt_plat_soc_i2s_ctrl(ENUM_PIN_STATE state)
+ {
+-	WMT_PLAT_PR_WARN("host i2s pin not defined!!!\n");
++	WMT_PLAT_PR_DBG("host i2s pin not defined!!!\n");
+ 
+ 	return 0;
+ }
+@@ -1332,7 +1332,7 @@ static INT32 wmt_plat_cmb_gps_sync_ctrl(ENUM_PIN_STATE state)
+ 
+ static INT32 wmt_plat_soc_gps_sync_ctrl(ENUM_PIN_STATE state)
+ {
+-	WMT_PLAT_PR_WARN("host gps sync pin not defined!!!\n");
++	WMT_PLAT_PR_DBG("host gps sync pin not defined!!!\n");
+ 
+ 	return 0;
+ }
+-- 
+2.56.0
+

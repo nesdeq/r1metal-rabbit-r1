@@ -1,0 +1,110 @@
+From db17a3fdf88ddf60754aa6e310b7cade69c4ad0c Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 20:03:27 +0200
+Subject: [PATCH] spm: idle wake reasons print only when dynamic debug switches
+ them on
+
+Deep idle and SODI print an idle exit's wake reason only while the
+"idle wake reason" dynamic debug callsite is on, at KERN_DEBUG, in
+place of a warning; a PCM assert stays an error, and a suspend's wake
+reason is info. The display does not call mtk_idle_disp_is_ready,
+which only prints that it is unsupported.
+---
+ .../mediatek/base/power/spm/mt6765/mtk_spm_idle.c     | 11 +++++++++--
+ .../mediatek/base/power/spm/mt6765/mtk_spm_internal.c |  6 +++---
+ .../misc/mediatek/video/mt6765/videox/disp_lowpower.c |  3 ---
+ 3 files changed, 12 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm_idle.c b/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm_idle.c
+index 3ae957338..d57a4ed8d 100644
+--- a/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm_idle.c
++++ b/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm_idle.c
+@@ -5,6 +5,7 @@
+ 
+ #include <linux/init.h>
+ #include <linux/kernel.h>
++#include <linux/dynamic_debug.h>
+ #include <linux/module.h>
+ #include <linux/spinlock.h>
+ 
+@@ -441,6 +442,9 @@ static unsigned int mtk_dpidle_output_log(
+ 	if (op_cond & MTK_IDLE_OPT_SLEEP_DPIDLE)
+ 		return __spm_output_wake_reason(wakesta, true, "sleep_dpidle");
+ 
++	if (!wakesta->assert_pc && !dynamic_debug_enabled("idle wake reason\n"))
++		return WR_NONE;
++
+ 	if (!(idle_flag & MTK_IDLE_LOG_REDUCE)) {
+ 		print_log = true;
+ 	} else {
+@@ -453,7 +457,7 @@ static unsigned int mtk_dpidle_output_log(
+ 	}
+ 
+ 	if (print_log) {
+-		pr_info("Power/swap op_cond = 0x%x\n", op_cond);
++		printk(KERN_DEBUG "Power/swap op_cond = 0x%x\n", op_cond);
+ 		wr = __spm_output_wake_reason(
+ 			wakesta, false, mtk_idle_name(idle_type));
+ 		if (idle_flag & MTK_IDLE_LOG_RESOURCE_USAGE)
+@@ -476,6 +480,9 @@ static unsigned int mtk_sodi_output_log(
+ 	if (idle_flag & MTK_IDLE_LOG_DISABLE)
+ 		return WR_NONE;
+ 
++	if (!wakesta->assert_pc && !dynamic_debug_enabled("idle wake reason\n"))
++		return WR_NONE;
++
+ 	if (!(idle_flag & MTK_IDLE_LOG_REDUCE)) {
+ 		print_log = true;
+ 	} else {
+@@ -488,7 +495,7 @@ static unsigned int mtk_sodi_output_log(
+ 	}
+ 
+ 	if (print_log) {
+-		printk_deferred("[name:spm&]Power/swap op_cond = 0x%x\n"
++		printk_deferred(KERN_DEBUG "[name:spm&]Power/swap op_cond = 0x%x\n"
+ 			, op_cond);
+ 		wr = __spm_output_wake_reason(
+ 			wakesta, false, mtk_idle_name(idle_type));
+diff --git a/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm_internal.c b/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm_internal.c
+index c19ce495b..fe9bcdf33 100644
+--- a/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm_internal.c
++++ b/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm_internal.c
+@@ -183,7 +183,7 @@ unsigned int __spm_output_wake_reason(
+ 			" debug_flag = 0x%x 0x%x\n",
+ 			wakesta->debug_flag, wakesta->debug_flag1);
+ 
+-		printk_deferred("[name:spm&]%s", log_buf);
++		printk_deferred(KERN_ERR "[name:spm&]%s", log_buf);
+ 		return WR_PCM_ASSERT;
+ 	}
+ 
+@@ -268,10 +268,10 @@ unsigned int __spm_output_wake_reason(
+ 	WARN_ON(log_size >= LOG_BUF_OUT_SZ);
+ 
+ 	if (!suspend)
+-		printk_deferred("[name:spm&][SPM] %s", log_buf);
++		printk_deferred(KERN_DEBUG "[name:spm&][SPM] %s", log_buf);
+ 	else {
+ 		aee_sram_printk("%s", log_buf);
+-		printk_deferred("[name:spm&][SPM] %s", log_buf);
++		printk_deferred(KERN_INFO "[name:spm&][SPM] %s", log_buf);
+ 	}
+ 
+ 	return wr;
+diff --git a/drivers/misc/mediatek/video/mt6765/videox/disp_lowpower.c b/drivers/misc/mediatek/video/mt6765/videox/disp_lowpower.c
+index cdfcfbaf5..a39550edd 100644
+--- a/drivers/misc/mediatek/video/mt6765/videox/disp_lowpower.c
++++ b/drivers/misc/mediatek/video/mt6765/videox/disp_lowpower.c
+@@ -1304,9 +1304,6 @@ void primary_display_sodi_rule_init(void)
+ 	/* enable sodi when display driver is ready */
+ #ifndef CONFIG_FPGA_EARLY_PORTING
+ 	ddp_set_spm_mode(DDP_CG_MODE, NULL);
+-#ifdef CONFIG_MTK_BASE_POWER
+-	mtk_idle_disp_is_ready(true);
+-#endif
+ #endif
+ #endif
+ }
+-- 
+2.56.0
+

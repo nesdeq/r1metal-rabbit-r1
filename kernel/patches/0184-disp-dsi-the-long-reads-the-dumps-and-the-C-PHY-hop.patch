@@ -1,0 +1,133 @@
+From 4fd2c69cfd12d585acf0ca821387ca435360e70f Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 11:17:57 +0200
+Subject: [PATCH] disp: dsi: the long reads, the dumps and the C-PHY hop
+
+- DSI_dcs_read_lcm_reg_v2 and _v3 copy a long read's bytes 8 and 9 from
+  DSI_RX_DATA3, not DSI_RX_DATA2.
+- They return 0, their failure, where a register base is unmapped; -1
+  reads as a length of 4294967295.
+- A long read's word count weighs its high byte as 256, not 16.
+- Without backup slots the ESD compare stops after the first command,
+  the only one the RX registers hold.
+- dsi_analysis leaves DSI_REG as ddp_dsi_init mapped it, not every entry
+  at DSI0.
+- DSI_DumpRegisters prints the DBG8 and DBG9 counters as numbers.
+- DSI_CPHY_clk_setting takes the hopping data rate where one is given.
+---
+ .../mediatek/video/mt6765/dispsys/ddp_dsi.c   | 27 ++++++++++---------
+ 1 file changed, 14 insertions(+), 13 deletions(-)
+
+diff --git a/drivers/misc/mediatek/video/mt6765/dispsys/ddp_dsi.c b/drivers/misc/mediatek/video/mt6765/dispsys/ddp_dsi.c
+index d76b62fd7..df53403d1 100644
+--- a/drivers/misc/mediatek/video/mt6765/dispsys/ddp_dsi.c
++++ b/drivers/misc/mediatek/video/mt6765/dispsys/ddp_dsi.c
+@@ -355,12 +355,12 @@ enum DSI_STATUS DSI_DumpRegisters(enum DISP_MODULE_ENUM module, int level)
+ 			}
+ 			DSI_DBG8_Status =
+ 				(INREG32(dsi_base_addr + 0x168)) & 0x3fff;
+-			DDPDUMP("DSI%d state8 WORD_COUNTER(cmd mode):%s\n",
+-				i, _dsi_cmd_mode_parse_state(DSI_DBG8_Status));
++			DDPDUMP("DSI%d state8 WORD_COUNTER(cmd mode):%u\n",
++				i, DSI_DBG8_Status);
+ 			DSI_DBG9_Status =
+ 				(INREG32(dsi_base_addr + 0x16C)) & 0x3fffff;
+-			DDPDUMP("DSI%d state9 LINE_COUNTER(cmd mode):%s\n",
+-				i, _dsi_cmd_mode_parse_state(DSI_DBG9_Status));
++			DDPDUMP("DSI%d state9 LINE_COUNTER(cmd mode):%u\n",
++				i, DSI_DBG9_Status);
+ 		}
+ 	}
+ 	if (level >= 1) {
+@@ -1663,7 +1663,7 @@ void DSI_CPHY_clk_setting(enum DISP_MODULE_ENUM module,
+ 		data_Rate_dyn = dsi_params->data_rate_dyn != 0 ?
+ 						dsi_params->data_rate_dyn :
+ 						dsi_params->PLL_CLOCK_dyn * 2;
+-		if (!data_Rate_dyn)
++		if (data_Rate_dyn)
+ 			data_Rate = data_Rate_dyn;
+ 	}
+ #ifdef CONFIG_MTK_HIGH_FRAME_RATE
+@@ -3179,7 +3179,7 @@ UINT32 DSI_dcs_read_lcm_reg_v2(enum DISP_MODULE_ENUM module,
+ 	if (!((unsigned long)DSI_REG[i]) ||
+ 		!((unsigned long)DSI_CMDQ_REG[i])) {
+ 		DISPERR("DSI%d register addr invalid\n", i);
+-		return -1;
++		return 0;
+ 	}
+ 
+ 	if (DSI_REG[d]->DSI_MODE_CTRL.MODE) {
+@@ -3349,7 +3349,7 @@ UINT32 DSI_dcs_read_lcm_reg_v2(enum DISP_MODULE_ENUM module,
+ 		 */
+ 		if (packet_type == 0x1A || packet_type == 0x1C) {
+ 			recv_data_cnt =
+-				read_data0.byte1 + read_data0.byte2 * 16;
++				read_data0.byte1 + read_data0.byte2 * 256;
+ 			if (recv_data_cnt > 10) {
+ 				DISPCHECK(
+ 					"DSI read long packet data exceeds 10 bytes,size:%d\n",
+@@ -3380,7 +3380,7 @@ UINT32 DSI_dcs_read_lcm_reg_v2(enum DISP_MODULE_ENUM module,
+ 					(void *)&read_data1, 4);
+ 				memcpy((void *)buffer + 4,
+ 					(void *)&read_data2, 4);
+-				memcpy((void *)buffer + 8, (void *)&read_data2,
++				memcpy((void *)buffer + 8, (void *)&read_data3,
+ 				    recv_data_cnt - 8);
+ 			}
+ 		} else if (packet_type == 0x11 || packet_type == 0x12 ||
+@@ -3475,7 +3475,7 @@ UINT32 DSI_dcs_read_lcm_reg_v3(enum DISP_MODULE_ENUM module,
+ 	if (!((unsigned long)DSI_REG[i]) ||
+ 		!((unsigned long)DSI_CMDQ_REG[i])) {
+ 		DISPERR("DSI%d register addr invalid\n", i);
+-		return -1;
++		return 0;
+ 	}
+ 
+ 	if (DSI_REG[d]->DSI_MODE_CTRL.MODE) {
+@@ -3647,7 +3647,7 @@ UINT32 DSI_dcs_read_lcm_reg_v3(enum DISP_MODULE_ENUM module,
+ 		 */
+ 		if (packet_type == 0x1A || packet_type == 0x1C) {
+ 			recv_data_cnt =
+-				read_data0.byte1 + read_data0.byte2 * 16;
++				read_data0.byte1 + read_data0.byte2 * 256;
+ 			if (recv_data_cnt > 10) {
+ 				DISPCHECK(
+ 					"DSI read long packet data exceeds 10 bytes,size:%d\n",
+@@ -3678,7 +3678,7 @@ UINT32 DSI_dcs_read_lcm_reg_v3(enum DISP_MODULE_ENUM module,
+ 					(void *)&read_data1, 4);
+ 				memcpy((void *)buffer + 4,
+ 					(void *)&read_data2, 4);
+-				memcpy((void *)buffer + 8, (void *)&read_data2,
++				memcpy((void *)buffer + 8, (void *)&read_data3,
+ 				    recv_data_cnt - 8);
+ 			}
+ 		} else if (packet_type == 0x11 || packet_type == 0x12 ||
+@@ -6232,7 +6232,6 @@ void dsi_analysis(enum DISP_MODULE_ENUM module)
+ 
+ 	DDPDUMP("== DISP DSI ANALYSIS ==\n");
+ 	for (i = 0; i < module_num; i++) {
+-		DSI_REG[i] = (struct DSI_REGS *)DISPSYS_DSI0_BASE;
+ #ifndef CONFIG_FPGA_EARLY_PORTING
+ 		DDPDUMP("MIPITX Clock: %d\n", dsi_phy_get_clk(module));
+ #endif
+@@ -6476,6 +6475,8 @@ int ddp_dsi_build_cmdq(enum DISP_MODULE_ENUM module,
+ 					&DSI_REG[dsi_i]->DSI_RX_DATA2));
+ 				DSI_OUTREG32(NULL, &read_data3, AS_UINT32(
+ 					&DSI_REG[dsi_i]->DSI_RX_DATA3));
++			} else {
++				break;
+ 			}
+ 
+ 			lcm_esd_tb = &dsi_params->lcm_esd_check_table[i];
+@@ -6527,7 +6528,7 @@ int ddp_dsi_build_cmdq(enum DISP_MODULE_ENUM module,
+ 			/* 0x22: dcs short read response(2 byte return) */
+ 			if (packet_type == 0x1A || packet_type == 0x1C) {
+ 				recv_data_cnt = read_data0.byte1
+-					+ read_data0.byte2 * 16;
++					+ read_data0.byte2 * 256;
+ 
+ 				if (recv_data_cnt > RT_MAX_NUM) {
+ 					DISPDBG
+-- 
+2.56.0
+

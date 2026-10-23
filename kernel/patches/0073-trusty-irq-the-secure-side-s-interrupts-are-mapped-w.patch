@@ -1,0 +1,41 @@
+From a9b727e50baa61fcea4f5157afc747770f5762c0 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 20:03:28 +0200
+Subject: [PATCH] trusty-irq: the secure side's interrupts are mapped with
+ their types
+
+trusty-irq maps the secure side's SPIs as IRQ_TYPE_LEVEL_HIGH, as
+GICD_ICFGR and the sysirq polarity hold them, and its PPI, the
+hypervisor timer, as IRQ_TYPE_LEVEL_LOW, like the tree's timer PPIs.
+IRQ_TYPE_NONE has the GIC warn with a stack trace at every boot.
+---
+ drivers/misc/mediatek/geniezone/gz-trusty/trusty-irq.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/misc/mediatek/geniezone/gz-trusty/trusty-irq.c b/drivers/misc/mediatek/geniezone/gz-trusty/trusty-irq.c
+index 9e8826acc..9c0c819b9 100644
+--- a/drivers/misc/mediatek/geniezone/gz-trusty/trusty-irq.c
++++ b/drivers/misc/mediatek/geniezone/gz-trusty/trusty-irq.c
+@@ -391,7 +391,8 @@ static int trusty_irq_init_normal_irq(struct trusty_irq_state *is, int tirq)
+ 		oirq.args_count = 3;
+ 		oirq.args[0] = GIC_SPI;
+ 		oirq.args[1] = irq - 32;
+-		oirq.args[2] = 0;
++		/* The secure side's SPIs are level and not inverted, as GICD_ICFGR and the sysirq polarity hold them. */
++		oirq.args[2] = IRQ_TYPE_LEVEL_HIGH;
+ 
+ 		irq = irq_create_of_mapping(&oirq);
+ 		if (irq == 0) {
+@@ -485,7 +486,8 @@ static int trusty_irq_init_per_cpu_irq(struct trusty_irq_state *is, int tirq)
+ 		oirq.args_count = 3;
+ 		oirq.args[0] = GIC_PPI;
+ 		oirq.args[1] = irq - 16;
+-		oirq.args[2] = 0;
++		/* The secure side's PPI is the hypervisor timer, low level like the timer PPIs the tree describes. */
++		oirq.args[2] = IRQ_TYPE_LEVEL_LOW;
+ 
+ 		irq = irq_create_of_mapping(&oirq);
+ 		if (irq == 0) {
+-- 
+2.56.0
+

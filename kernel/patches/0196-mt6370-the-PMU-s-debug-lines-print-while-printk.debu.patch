@@ -1,0 +1,27 @@
+From 55a7d0f727c099536374efbde28c9c291e1dbb1b Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 13:29:38 +0200
+Subject: [PATCH] mt6370: the PMU's debug lines print while printk.debug is set
+
+mt_dbg, the MT6370 PMU's debug lines, prints while printk.debug is set
+as well as where dbg_log_en is set.
+---
+ drivers/misc/mediatek/pmic/mt6370/inc/mt6370_pmu.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/pmic/mt6370/inc/mt6370_pmu.h b/drivers/misc/mediatek/pmic/mt6370/inc/mt6370_pmu.h
+index 26ea35fa8..de01c2ff9 100644
+--- a/drivers/misc/mediatek/pmic/mt6370/inc/mt6370_pmu.h
++++ b/drivers/misc/mediatek/pmic/mt6370/inc/mt6370_pmu.h
+@@ -12,7 +12,7 @@
+ 
+ #define mt_dbg(dev, fmt, ...) \
+ 	do { \
+-		if (dbg_log_en) \
++		if (dbg_log_en || printk_debugging()) \
+ 			dev_dbg(dev, fmt, ##__VA_ARGS__); \
+ 	} while (0)
+ 
+-- 
+2.56.0
+

@@ -1,0 +1,132 @@
+From 844d976afcee1dfdef69a98d761a57ba0539bc71 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 20:03:27 +0200
+Subject: [PATCH] thermal, PBM: the GPU stubs print only in a kernel built for
+ a GPU
+
+The weak GPU frequency stubs of the thermal and PBM code print that
+the function is missing only with CONFIG_MTK_GPU_SUPPORT, as
+mtk_get_gpu_loading's does: without a GPU driver they run at every
+update. PBM's over-budget line is info, not a warning.
+---
+ drivers/misc/mediatek/base/power/pbm_v4/mtk_pbm.c         | 6 +++++-
+ drivers/misc/mediatek/thermal/common/ap_thermal_limit.c   | 2 ++
+ .../misc/mediatek/thermal/common/coolers/mtk_cooler_atm.c | 4 ++++
+ .../thermal/common/thermal_zones/mtk_ts_cpu_noBank.c      | 8 ++++++++
+ 4 files changed, 19 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/base/power/pbm_v4/mtk_pbm.c b/drivers/misc/mediatek/base/power/pbm_v4/mtk_pbm.c
+index 5cb8c38ed..6238a0fa7 100644
+--- a/drivers/misc/mediatek/base/power/pbm_v4/mtk_pbm.c
++++ b/drivers/misc/mediatek/base/power/pbm_v4/mtk_pbm.c
+@@ -127,7 +127,9 @@ mt_ppm_get_leakage_mw(enum ppm_cluster_lkg cluster)
+ unsigned int __attribute__ ((weak))
+ mt_gpufreq_get_leakage_mw(void)
+ {
++#ifdef CONFIG_MTK_GPU_SUPPORT
+ 	pr_warn_ratelimited("%s not ready\n", __func__);
++#endif
+ 	return 0;
+ }
+ 
+@@ -140,7 +142,9 @@ mt_ppm_dlpt_set_limit_by_pbm(unsigned int limited_power)
+ void __attribute__ ((weak))
+ mt_gpufreq_set_power_limit_by_pbm(unsigned int limited_power)
+ {
++#ifdef CONFIG_MTK_GPU_SUPPORT
+ 	pr_warn_ratelimited("%s not ready\n", __func__);
++#endif
+ }
+ 
+ #if (defined(CONFIG_MACH_MT6877) \
+@@ -392,7 +396,7 @@ static void pbm_allocate_budget_manager(void)
+ 			pre_tocpu = tocpu;
+ 			pre_togpu = togpu;
+ 		} else if ((cpu > tocpu) || (gpu > togpu)) {
+-			pr_warn_ratelimited
++			pr_info_ratelimited
+ 				("(C/G)=%d,%d => (D/L/M1/F/C/G)=%d,%d,%d,%d,%d,%d (Multi:%d),%d\n",
+ 				cpu, gpu, dlpt, leakage, md1, flash, tocpu, togpu,
+ 				multiple, cpu_lower_bound);
+diff --git a/drivers/misc/mediatek/thermal/common/ap_thermal_limit.c b/drivers/misc/mediatek/thermal/common/ap_thermal_limit.c
+index 76ebd98f7..a6936b1a2 100644
+--- a/drivers/misc/mediatek/thermal/common/ap_thermal_limit.c
++++ b/drivers/misc/mediatek/thermal/common/ap_thermal_limit.c
+@@ -114,7 +114,9 @@ mt_cpufreq_thermal_protect(unsigned int limited_power)
+ void __attribute__ ((weak))
+ mt_gpufreq_thermal_protect(unsigned int limited_power)
+ {
++#ifdef CONFIG_MTK_GPU_SUPPORT
+ 	pr_notice(TSCPU_LOG_TAG "E_WF: %s doesn't exist\n", __func__);
++#endif
+ }
+ 
+ 
+diff --git a/drivers/misc/mediatek/thermal/common/coolers/mtk_cooler_atm.c b/drivers/misc/mediatek/thermal/common/coolers/mtk_cooler_atm.c
+index be4f3d0e3..b8d9448e6 100644
+--- a/drivers/misc/mediatek/thermal/common/coolers/mtk_cooler_atm.c
++++ b/drivers/misc/mediatek/thermal/common/coolers/mtk_cooler_atm.c
+@@ -459,13 +459,17 @@ mtk_get_gpu_loading(unsigned int *pLoading)
+ unsigned int  __attribute__((weak))
+ mt_gpufreq_get_min_power(void)
+ {
++#ifdef CONFIG_MTK_GPU_SUPPORT
+ 	pr_notice("E_WF: %s doesn't exist\n", __func__);
++#endif
+ 	return 0;
+ }
+ unsigned int  __attribute__((weak))
+ mt_gpufreq_get_max_power(void)
+ {
++#ifdef CONFIG_MTK_GPU_SUPPORT
+ 	pr_notice("E_WF: %s doesn't exist\n", __func__);
++#endif
+ 	return 0;
+ }
+ void __attribute__ ((weak))
+diff --git a/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_cpu_noBank.c b/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_cpu_noBank.c
+index edf4d03a8..141015f1e 100644
+--- a/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_cpu_noBank.c
++++ b/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_cpu_noBank.c
+@@ -268,7 +268,9 @@ static int g_is_TempOutsideNormalRange;
+ 	unsigned int  __attribute__((weak))
+ mt_gpufreq_get_max_power(void)
+ {
++#ifdef CONFIG_MTK_GPU_SUPPORT
+ 	pr_notice("E_WF: %s doesn't exist\n", __func__);
++#endif
+ 	return 0;
+ }
+ 
+@@ -311,7 +313,9 @@ mt_cpufreq_thermal_5A_limit(bool enable)
+ 	unsigned int __attribute__ ((weak))
+ mt_gpufreq_get_cur_freq(void)
+ {
++#ifdef CONFIG_MTK_GPU_SUPPORT
+ 	pr_notice("E_WF: %s doesn't exist\n", __func__);
++#endif
+ 	return 0;
+ }
+ 
+@@ -325,14 +329,18 @@ mt_ppm_thermal_get_max_power(void)
+ 	unsigned int  __attribute__((weak))
+ mt_gpufreq_get_seg_max_opp_index(void)
+ {
++#ifdef CONFIG_MTK_GPU_SUPPORT
+ 	pr_notice("E_WF: %s doesn't exist\n", __func__);
++#endif
+ 	return 0;
+ }
+ 
+ 	unsigned int  __attribute__((weak))
+ mt_gpufreq_get_dvfs_table_num(void)
+ {
++#ifdef CONFIG_MTK_GPU_SUPPORT
+ 	pr_notice("E_WF: %s doesn't exist\n", __func__);
++#endif
+ 	return 0;
+ }
+ 
+-- 
+2.56.0
+

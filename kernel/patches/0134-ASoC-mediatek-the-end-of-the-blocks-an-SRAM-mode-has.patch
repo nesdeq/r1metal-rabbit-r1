@@ -1,0 +1,32 @@
+From 79b34b9eec54328452590a008ef5cea58d83ce9b Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 23:01:31 +0200
+Subject: [PATCH] ASoC: mediatek: the end of the blocks an SRAM mode has is
+ told as information
+
+CheckSramAvail's stop at the first block the SRAM mode leaves out prints
+at info: a request the blocks before it cannot hold, as a microphone
+capture in the normal mode, is refused, and the PCM driver serves it
+from DRAM.
+---
+ sound/soc/mediatek/common_int/mtk-soc-afe-control.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/sound/soc/mediatek/common_int/mtk-soc-afe-control.c b/sound/soc/mediatek/common_int/mtk-soc-afe-control.c
+index 0ac4fce2b..b3f8f7bcc 100644
+--- a/sound/soc/mediatek/common_int/mtk-soc-afe-control.c
++++ b/sound/soc/mediatek/common_int/mtk-soc-afe-control.c
+@@ -3393,8 +3393,9 @@ bool CheckSramAvail(unsigned int mSramLength, unsigned int *mSramBlockidx,
+ 			StartRecord = false;
+ 		}
+ 
++		/* the first block the SRAM mode leaves out ends the blocks it has */
+ 		if (SramBlock->mValid == 0) {
+-			pr_warn("%s SramBlock->mValid == 0 i = %d\n", __func__,
++			pr_info("%s SramBlock->mValid == 0 i = %d\n", __func__,
+ 				i);
+ 			break;
+ 		}
+-- 
+2.56.0
+

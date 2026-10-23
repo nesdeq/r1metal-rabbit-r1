@@ -1,0 +1,31 @@
+From 418275f63ae3bbe89a07c512f079aee83ee99b30 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 23:12:38 +0200
+Subject: [PATCH] wlan: an empty timer list has no next expiry to be late
+
+cnmTimerStartTimer checks the root timer's next expiry only while timers
+are pending: an emptied list keeps a stale expiry, 0 after a power-on,
+which logs "Invalid NextExpiredSysTime" at the next start.
+---
+ connectivity/wlan/core/gen4m/mgmt/cnm_timer.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/connectivity/wlan/core/gen4m/mgmt/cnm_timer.c b/connectivity/wlan/core/gen4m/mgmt/cnm_timer.c
+index 37e5e26..1917ddc 100644
+--- a/connectivity/wlan/core/gen4m/mgmt/cnm_timer.c
++++ b/connectivity/wlan/core/gen4m/mgmt/cnm_timer.c
+@@ -521,8 +521,9 @@ void cnmTimerStartTimer(IN struct ADAPTER *prAdapter, IN struct TIMER *prTimer,
+ 	rCurSysTime = kalGetTimeTick();
+ 	rExpiredSysTime = rCurSysTime + rTimeoutSystime;
+ 
+-	/* Check if root timer expired but not timeout. */
+-	if (TIME_BEFORE(prRootTimer->rNextExpiredSysTime, rCurSysTime) &&
++	/* Check if root timer expired but not timeout; an empty list has no next expiry. */
++	if (!LINK_IS_EMPTY(prTimerList) &&
++		TIME_BEFORE(prRootTimer->rNextExpiredSysTime, rCurSysTime) &&
+ 		!test_bit(GLUE_FLAG_TIMEOUT_BIT,
+ 				       &prAdapter->prGlueInfo->ulFlag)) {
+ 		log_dbg(CNM, WARN, "Invalid NextExpiredSysTime: %u, currentSysTime: %u\n",
+-- 
+2.56.0
+

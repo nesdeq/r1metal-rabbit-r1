@@ -1,0 +1,62 @@
+From 377bad707cb536b0f2eadc07cd4060a23784c3b4 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Tue, 20 Oct 2026 11:06:39 +0200
+Subject: [PATCH] tcpc: a wakeup with no policy engine to wake is no failed
+ event
+
+pd_put_deferred_tcp_event tells the refusal of a TCP_DPM_EVT_DUMMY event
+at info with its reason: a dummy only wakes the policy engine, whose
+ready reactions do the work at its next ready state anyway. Every other
+refused event is still an error.
+---
+ drivers/misc/mediatek/typec/tcpc/tcpci_event.c | 17 ++++++++++++++---
+ 1 file changed, 14 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/misc/mediatek/typec/tcpc/tcpci_event.c b/drivers/misc/mediatek/typec/tcpc/tcpci_event.c
+index 9c9b72549..f4533892c 100644
+--- a/drivers/misc/mediatek/typec/tcpc/tcpci_event.c
++++ b/drivers/misc/mediatek/typec/tcpc/tcpci_event.c
+@@ -473,12 +473,17 @@ bool pd_put_deferred_tcp_event(
+ {
+ 	bool ret = true;
+ 	struct pd_port *pd_port = &tcpc->pd_port;
++	/* A dummy only wakes the policy engine: refused, nothing is lost */
++	bool wakeup = tcp_event->event_id == TCP_DPM_EVT_DUMMY;
+ 
+ 	mutex_lock(&pd_port->pd_lock);
+ 	mutex_lock(&tcpc->access_lock);
+ 
+ 	if (!tcpc->pd_pe_running || tcpc->pd_wait_pe_idle) {
+-		PD_ERR("pd_put_tcp_event failed0\n");
++		if (wakeup)
++			PE_INFO("no policy engine runs to be woken\n");
++		else
++			PD_ERR("pd_put_tcp_event failed0\n");
+ 		ret = false;
+ 		goto unlock_out;
+ 	}
+@@ -493,13 +498,19 @@ bool pd_put_deferred_tcp_event(
+ 	}
+ 
+ 	if (tcpc->tcp_event_count >= TCP_EVENT_BUF_SIZE) {
+-		PD_ERR("pd_put_tcp_event failed1\n");
++		if (wakeup)
++			PE_INFO("the event queue is full, its events wake the policy engine\n");
++		else
++			PD_ERR("pd_put_tcp_event failed1\n");
+ 		ret = false;
+ 		goto unlock_out;
+ 	}
+ 
+ 	if (tcpc->pd_wait_hard_reset_complete) {
+-		PD_ERR("pd_put_tcp_event failed2\n");
++		if (wakeup)
++			PE_INFO("a hard reset is under way, the policy engine runs anew after it\n");
++		else
++			PD_ERR("pd_put_tcp_event failed2\n");
+ 		ret = false;
+ 		goto unlock_out;
+ 	}
+-- 
+2.56.0
+

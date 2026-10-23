@@ -1,0 +1,67 @@
+From 5bdd04954a5c0f569cc456c3c1a3b87d53147e93 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 10:08:20 +0200
+Subject: [PATCH] tcpc: Try.SNK's tenfold waits are its own two
+
+tcpc_enable_timer stretches tenfold only Try.SNK's own timers, tDRPTry
+and tTryCCDebounce, and tells Try.SNK by tcpc_typec_in_try_snk instead
+of the number 11, which is typec_try_snk only with
+CONFIG_TYPEC_CAP_TRY_SOURCE. Upstream stretches every timer started in
+Try.SNK, the legacy cable check's 5 s among them.
+---
+ drivers/misc/mediatek/typec/tcpc/inc/tcpci_typec.h | 1 +
+ drivers/misc/mediatek/typec/tcpc/tcpci_timer.c     | 5 ++++-
+ drivers/misc/mediatek/typec/tcpc/tcpci_typec.c     | 9 +++++++++
+ 3 files changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/typec/tcpc/inc/tcpci_typec.h b/drivers/misc/mediatek/typec/tcpc/inc/tcpci_typec.h
+index 8b7db46b4..191c57e54 100644
+--- a/drivers/misc/mediatek/typec/tcpc/inc/tcpci_typec.h
++++ b/drivers/misc/mediatek/typec/tcpc/inc/tcpci_typec.h
+@@ -9,6 +9,7 @@
+ 
+ struct tcpc_device;
+ extern bool tcpc_typec_is_act_as_sink_role(struct tcpc_device *tcpc);
++extern bool tcpc_typec_in_try_snk(struct tcpc_device *tcpc);
+ 
+ /******************************************************************************
+  *  Call following function to trigger TYPEC Connection State Change
+diff --git a/drivers/misc/mediatek/typec/tcpc/tcpci_timer.c b/drivers/misc/mediatek/typec/tcpc/tcpci_timer.c
+index 34320bd3c..3be550b8d 100644
+--- a/drivers/misc/mediatek/typec/tcpc/tcpci_timer.c
++++ b/drivers/misc/mediatek/typec/tcpc/tcpci_timer.c
+@@ -1237,7 +1237,10 @@ void tcpc_enable_timer(struct tcpc_device *tcpc, uint32_t timer_id)
+ 
+ 	tout = tcpc_timer_timeout[timer_id];
+ 
+-	if (tcpc->typec_state == /*typec_try_snk*/11) {
++	/* Rabbit's tuning: Try.SNK waits ten times tDRPTry and tTryCCDebounce */
++	if ((timer_id == TYPEC_TRY_TIMER_DRP_TRY ||
++	     timer_id == TYPEC_TIMER_TRYCCDEBOUNCE) &&
++	    tcpc_typec_in_try_snk(tcpc)) {
+ 		printk(KERN_INFO "mt6370 pd_dbg_info [%s] state match delaytime fixed from %d\n", __func__, tout);
+ 		tout *= 10;
+ 	}
+diff --git a/drivers/misc/mediatek/typec/tcpc/tcpci_typec.c b/drivers/misc/mediatek/typec/tcpc/tcpci_typec.c
+index 492e39393..3382a4a96 100644
+--- a/drivers/misc/mediatek/typec/tcpc/tcpci_typec.c
++++ b/drivers/misc/mediatek/typec/tcpc/tcpci_typec.c
+@@ -1524,6 +1524,15 @@ bool tcpc_typec_is_act_as_sink_role(struct tcpc_device *tcpc)
+ 	return as_sink;
+ }
+ 
++bool tcpc_typec_in_try_snk(struct tcpc_device *tcpc)
++{
++#ifdef CONFIG_TYPEC_CAP_TRY_SINK
++	return tcpc->typec_state == typec_try_snk;
++#else
++	return false;
++#endif	/* CONFIG_TYPEC_CAP_TRY_SINK */
++}
++
+ static inline bool typec_handle_cc_changed_entry(struct tcpc_device *tcpc)
+ {
+ 	TYPEC_INFO("[CC_Change] %d/%d\n", typec_get_cc1(), typec_get_cc2());
+-- 
+2.56.0
+

@@ -1,0 +1,49 @@
+From af328a64da9225b2233ddab73bcf09f5f0dfce95 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 19:01:35 +0200
+Subject: [PATCH] ccci mt6765: the modem platform asks for no pinctrl it does
+ not use
+
+md_cd_get_modem_hw_info has no CONFIG_PINCTRL_ELBRUS branch and prints
+no "gpio pinctrl is not ready yet" error: no Kconfig defines the option,
+and nothing uses the pinctrl handle its branch takes.
+---
+ .../misc/mediatek/eccci/mt6765/md_sys1_platform.c | 15 ---------------
+ 1 file changed, 15 deletions(-)
+
+diff --git a/drivers/misc/mediatek/eccci/mt6765/md_sys1_platform.c b/drivers/misc/mediatek/eccci/mt6765/md_sys1_platform.c
+index aa8958821..8ac8ebc86 100644
+--- a/drivers/misc/mediatek/eccci/mt6765/md_sys1_platform.c
++++ b/drivers/misc/mediatek/eccci/mt6765/md_sys1_platform.c
+@@ -49,9 +49,6 @@ static struct ccci_clk_node clk_table[] = {
+ 	{ NULL,	"scp-sys-md1-main"},
+ 
+ };
+-#if defined(CONFIG_PINCTRL_ELBRUS)
+-static struct pinctrl *mdcldma_pinctrl;
+-#endif
+ 
+ //volatile unsigned int devapc_check_flag = 1;
+ 
+@@ -189,18 +186,6 @@ int md_cd_get_modem_hw_info(struct platform_device *dev_ptr,
+ 		if ((hw_info->plat_ptr == NULL) || (hw_info->plat_val == NULL))
+ 			return -1;
+ 		hw_info->plat_val->offset_epof_md1 = 7*1024+0x234;
+-#if defined(CONFIG_PINCTRL_ELBRUS)
+-		mdcldma_pinctrl = devm_pinctrl_get(&dev_ptr->dev);
+-		if (IS_ERR(mdcldma_pinctrl)) {
+-			CCCI_ERROR_LOG(dev_cfg->index, TAG,
+-				"modem %d get mdcldma_pinctrl failed\n",
+-							dev_cfg->index + 1);
+-			return -1;
+-		}
+-#else
+-		CCCI_ERROR_LOG(dev_cfg->index, TAG,
+-			"gpio pinctrl is not ready yet, use workaround.\n");
+-#endif
+ 		for (idx = 0; idx < ARRAY_SIZE(clk_table); idx++) {
+ 			clk_table[idx].clk_ref = devm_clk_get(&dev_ptr->dev,
+ 				clk_table[idx].clk_name);
+-- 
+2.56.0
+

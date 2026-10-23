@@ -1,0 +1,141 @@
+From e594b50365ffe9174128d114362e8060481cb037 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 13:46:19 +0200
+Subject: [PATCH] wlan: every class of the driver's lines prints while
+ printk.debug is set
+
+DBG_CLASS_ON() holds a class on where its module's mask has it or while
+printk_debugging() is true. The DBGLOG macros, TOOL_PRINTLOG,
+scanlog_dbg and two dumps that test a mask use it, so TRACE, LOUD and
+TEMP lines print while printk.debug is set.
+---
+ connectivity/wlan/core/gen4m/include/debug.h  | 24 +++++++++----------
+ .../wlan/core/gen4m/include/mgmt/scan.h       |  3 +--
+ connectivity/wlan/core/gen4m/mgmt/rate.c      |  2 +-
+ connectivity/wlan/core/gen4m/mgmt/rlm.c       |  2 +-
+ 4 files changed, 15 insertions(+), 16 deletions(-)
+
+diff --git a/connectivity/wlan/core/gen4m/include/debug.h b/connectivity/wlan/core/gen4m/include/debug.h
+index 79f5efb..f6ce01e 100644
+--- a/connectivity/wlan/core/gen4m/include/debug.h
++++ b/connectivity/wlan/core/gen4m/include/debug.h
+@@ -648,10 +648,13 @@ enum WAKE_DATA_TYPE {
+ #define DBGLOG_MEM32(_Module, _Class, _StartAddr, _Length)
+ #define DBGLOG_MEM128(_Module, _Class, _StartAddr, _Length)
+ #else
++/* A class prints where its module's mask holds it, and every class while printk.debug is set. */
++#define DBG_CLASS_ON(_Mod, _Clz) \
++	((aucDebugModule[DBG_##_Mod##_IDX] & DBG_CLASS_##_Clz) || \
++	 printk_debugging())
+ #define DBGLOG(_Mod, _Clz, _Fmt, ...) \
+ 	do { \
+-		if ((aucDebugModule[DBG_##_Mod##_IDX] & \
+-			 DBG_CLASS_##_Clz) == 0) \
++		if (!DBG_CLASS_ON(_Mod, _Clz)) \
+ 			break; \
+ 		LOG_FUNC("[%u]%s:(" #_Mod " " #_Clz ") " _Fmt, \
+ 			 KAL_GET_CURRENT_THREAD_ID(), \
+@@ -659,8 +662,7 @@ enum WAKE_DATA_TYPE {
+ 	} while (0)
+ #define DBGLOG_LIMITED(_Mod, _Clz, _Fmt, ...) \
+ 	do { \
+-		if ((aucDebugModule[DBG_##_Mod##_IDX] & \
+-			 DBG_CLASS_##_Clz) == 0) \
++		if (!DBG_CLASS_ON(_Mod, _Clz)) \
+ 			break; \
+ 		LOG_FUNC_LIMITED("[%u]%s:(" #_Mod " " #_Clz ") " _Fmt, \
+ 			KAL_GET_CURRENT_THREAD_ID(), \
+@@ -668,8 +670,7 @@ enum WAKE_DATA_TYPE {
+ 	} while (0)
+ #define DBGFWLOG(_Mod, _Clz, _Fmt, ...) \
+ 	do { \
+-		if ((aucDebugModule[DBG_##_Mod##_IDX] & \
+-			 DBG_CLASS_##_Clz) == 0) \
++		if (!DBG_CLASS_ON(_Mod, _Clz)) \
+ 			break; \
+ 		wlanPrintFwLog(NULL, 0, DEBUG_MSG_TYPE_DRIVER, \
+ 			 "[%u]%s:(" #_Mod " " #_Clz ") " _Fmt, \
+@@ -678,35 +679,34 @@ enum WAKE_DATA_TYPE {
+ 	} while (0)
+ #define TOOL_PRINTLOG(_Mod, _Clz, _Fmt, ...) \
+ 	do { \
+-		if ((aucDebugModule[DBG_##_Mod##_IDX] & \
+-			 DBG_CLASS_##_Clz) == 0) \
++		if (!DBG_CLASS_ON(_Mod, _Clz)) \
+ 			break; \
+ 		LOG_FUNC(_Fmt, ##__VA_ARGS__); \
+ 	} while (0)
+ #define DBGLOG_HEX(_Mod, _Clz, _Adr, _Len) \
+ 	{ \
+-		if (aucDebugModule[DBG_##_Mod##_IDX] & DBG_CLASS_##_Clz) { \
++		if (DBG_CLASS_ON(_Mod, _Clz)) { \
+ 			LOG_FUNC("%s:(" #_Mod " " #_Clz ")\n", __func__); \
+ 			dumpHex((uint8_t *)(_Adr), (uint32_t)(_Len)); \
+ 		} \
+ 	}
+ #define DBGLOG_MEM8(_Mod, _Clz, _Adr, _Len) \
+ 	{ \
+-		if (aucDebugModule[DBG_##_Mod##_IDX] & DBG_CLASS_##_Clz) { \
++		if (DBG_CLASS_ON(_Mod, _Clz)) { \
+ 			LOG_FUNC("%s:(" #_Mod " " #_Clz ")\n", __func__); \
+ 			dumpMemory8((uint8_t *)(_Adr), (uint32_t)(_Len)); \
+ 		} \
+ 	}
+ #define DBGLOG_MEM32(_Mod, _Clz, _Adr, _Len) \
+ 	{ \
+-		if (aucDebugModule[DBG_##_Mod##_IDX] & DBG_CLASS_##_Clz) { \
++		if (DBG_CLASS_ON(_Mod, _Clz)) { \
+ 			LOG_FUNC("%s:(" #_Mod " " #_Clz ")\n", __func__); \
+ 			dumpMemory32((uint32_t *)(_Adr), (uint32_t)(_Len)); \
+ 		} \
+ 	}
+ #define DBGLOG_MEM128(_Mod, _Clz, _Adr, _Len) \
+ 	{ \
+-		if (aucDebugModule[DBG_##_Mod##_IDX] & DBG_CLASS_##_Clz) { \
++		if (DBG_CLASS_ON(_Mod, _Clz)) { \
+ 			dumpMemory128((uint32_t *)(_Adr), (uint32_t)(_Len)); \
+ 		} \
+ 	}
+diff --git a/connectivity/wlan/core/gen4m/include/mgmt/scan.h b/connectivity/wlan/core/gen4m/include/mgmt/scan.h
+index 4d4d216..27c7762 100644
+--- a/connectivity/wlan/core/gen4m/include/mgmt/scan.h
++++ b/connectivity/wlan/core/gen4m/include/mgmt/scan.h
+@@ -767,8 +767,7 @@ extern const char aucScanLogPrefix[][SCAN_LOG_PREFIX_MAX_LEN];
+ #else /* DBG_DISABLE_ALL_LOG */
+ #define scanlog_dbg(prefix, _Clz, _Fmt, ...) \
+ 	do { \
+-		if ((aucDebugModule[DBG_SCN_IDX] & \
+-			DBG_CLASS_##_Clz) == 0) \
++		if (!DBG_CLASS_ON(SCN, _Clz)) \
+ 			break; \
+ 		LOG_FUNC("[%u]SCANLOG:(SCN " #_Clz ") %s " _Fmt, \
+ 			KAL_GET_CURRENT_THREAD_ID(), \
+diff --git a/connectivity/wlan/core/gen4m/mgmt/rate.c b/connectivity/wlan/core/gen4m/mgmt/rate.c
+index ca4031f..84314c3 100644
+--- a/connectivity/wlan/core/gen4m/mgmt/rate.c
++++ b/connectivity/wlan/core/gen4m/mgmt/rate.c
+@@ -202,7 +202,7 @@ rateGetRateSetFromIEs(
+ 		 */
+ 		ASSERT(prIeSupportedRate->ucLength <= RATE_NUM_SW);
+ 
+-		if (aucDebugModule[DBG_P2P_IDX] & DBG_CLASS_TRACE) {
++		if (DBG_CLASS_ON(P2P, TRACE)) {
+ 			DBGLOG(RLM, TRACE, "Dump supported rate\n");
+ 			dumpMemory8((uint8_t *) prIeSupportedRate,
+ 				(uint32_t) prIeSupportedRate->ucLength);
+diff --git a/connectivity/wlan/core/gen4m/mgmt/rlm.c b/connectivity/wlan/core/gen4m/mgmt/rlm.c
+index 839a230..9d0838d 100644
+--- a/connectivity/wlan/core/gen4m/mgmt/rlm.c
++++ b/connectivity/wlan/core/gen4m/mgmt/rlm.c
+@@ -2577,7 +2577,7 @@ static uint8_t rlmRecIeInfoForClient(struct ADAPTER *prAdapter,
+ 	ASSERT(pucIE);
+ 
+ 	DBGLOG(RLM, LOUD, "Dump beacon content from FW\n");
+-	if (aucDebugModule[DBG_RLM_IDX] & DBG_CLASS_LOUD)
++	if (DBG_CLASS_ON(RLM, LOUD))
+ 		dumpMemory8((uint8_t *) pucIE, (uint32_t) u2IELength);
+ 
+ 	prStaRec = prBssInfo->prStaRecOfAP;
+-- 
+2.56.0
+

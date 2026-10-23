@@ -1,0 +1,45 @@
+From 79f787e326fcfdb7c897c753b29cd07fe2611660 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 18:21:51 +0200
+Subject: [PATCH] rtnetlink: the lock monitor's timer stops at the unlock
+
+__rtnl_unlock clears the holder flag and deletes rtnl_chk_timer before
+it releases the mutex. Upstream leaves the timer armed, so it prints
+that no process holds the lock after every use, and clears the flag
+after the release, where it can wipe the next holder's.
+---
+ net/core/rtnetlink.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/net/core/rtnetlink.c b/net/core/rtnetlink.c
+index 8bbb43b26..131e64886 100644
+--- a/net/core/rtnetlink.c
++++ b/net/core/rtnetlink.c
+@@ -138,6 +138,7 @@ static void rtnl_print_btrace(struct timer_list *unused)
+ void rtnl_relase_btrace(void)
+ {
+ 	rtnl_instance.flag = 0;
++	del_timer(&rtnl_chk_timer);
+ }
+ 
+ struct rtnl_link {
+@@ -185,6 +186,7 @@ void __rtnl_unlock(void)
+ 			rtnl_instance.pid,
+ 			rtnl_instance.start, rtnl_instance.end);
+ 
++	rtnl_relase_btrace();
+ 	mutex_unlock(&rtnl_mutex);
+ 
+ 	while (head) {
+@@ -194,8 +196,6 @@ void __rtnl_unlock(void)
+ 		cond_resched();
+ 		head = next;
+ 	}
+-
+-	rtnl_relase_btrace();
+ }
+ 
+ void rtnl_unlock(void)
+-- 
+2.56.0
+

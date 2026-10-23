@@ -1,0 +1,30 @@
+From ba51c0e41296b7bfb7e31d75d2780615e450f4a7 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 15:44:37 +0200
+Subject: [PATCH] musb: a suspend latched before a bus reset is cleared with
+ the reset
+
+musb_g_reset clears a SUSPEND or RESUME latched in INTRUSB before it
+enables them. The controller latches SUSPEND while the bus idles before
+the host's first reset; unmasked, that stale SUSPEND marks the gadget
+inactive, it refuses GET_DESCRIPTOR, and the host resets it again.
+---
+ drivers/misc/mediatek/usb20/musb_gadget.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/misc/mediatek/usb20/musb_gadget.c b/drivers/misc/mediatek/usb20/musb_gadget.c
+index ba3ef2214..4e417dc69 100644
+--- a/drivers/misc/mediatek/usb20/musb_gadget.c
++++ b/drivers/misc/mediatek/usb20/musb_gadget.c
+@@ -3013,6 +3013,8 @@ void musb_g_reset(struct musb *musb)
+ 	musb->intrtxe = 0x1;
+ 	musb_writew(mbase, MUSB_INTRTXE, musb->intrtxe);
+ 
++	/* a suspend or resume latched while masked predates this reset */
++	musb_writeb(mbase, MUSB_INTRUSB, MUSB_INTR_SUSPEND | MUSB_INTR_RESUME);
+ 	musb_writeb(mbase, MUSB_INTRUSBE,
+ 					MUSB_INTR_SUSPEND
+ 					| MUSB_INTR_RESUME
+-- 
+2.56.0
+

@@ -1,0 +1,32 @@
+From fdee51284a73854a6a3fe54f7ceeaeb86bf5eafb Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 20:45:23 +0200
+Subject: [PATCH] scp: a sender that may sleep waits for the mailbox
+
+scp_ipi_send() waits for its core's IPI mutex where the caller is
+preemptible, instead of answering SCP_IPI_BUSY with an error line, a
+message lost to CCCI, which does not retry. A caller that cannot sleep
+still tries once.
+---
+ drivers/misc/mediatek/scp/cm4/v01/scp_ipi.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/scp/cm4/v01/scp_ipi.c b/drivers/misc/mediatek/scp/cm4/v01/scp_ipi.c
+index 51af7275d..ed37d6734 100644
+--- a/drivers/misc/mediatek/scp/cm4/v01/scp_ipi.c
++++ b/drivers/misc/mediatek/scp/cm4/v01/scp_ipi.c
+@@ -209,7 +209,10 @@ enum scp_ipi_status scp_ipi_send(enum ipi_id id, void *buf,
+ 		return SCP_IPI_ERROR;
+ 	}
+ #endif
+-	if (mutex_trylock(&scp_ipi_mutex[scp_id]) == 0) {
++	/* a sender that may sleep waits for the mailbox; one that may not is told it is busy */
++	if (preemptible()) {
++		mutex_lock(&scp_ipi_mutex[scp_id]);
++	} else if (mutex_trylock(&scp_ipi_mutex[scp_id]) == 0) {
+ 		/*avoid scp ipi send log print too much*/
+ 		if ((scp_ipi_id_record_count % PRINT_THRESHOLD == 0) ||
+ 			(scp_ipi_id_record_count % PRINT_THRESHOLD == 1)) {
+-- 
+2.56.0
+

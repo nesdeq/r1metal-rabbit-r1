@@ -1,0 +1,71 @@
+From 1c57d613a8c742e8b521cf56e6f6b54d8a14769a Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 10:23:40 +0200
+Subject: [PATCH] gauge: values not read are not used
+
+mt6357-gauge.c uses only values it has read:
+- get_charger_zcv answers 0, no charger voltage, where the property read
+  fails, and puts its power_supply reference.
+- boot_zcv_get reads gm->bs_data only after its gm == NULL test.
+- adc_cali_ioctl returns -ENODEV without a battery and -EFAULT where
+  copy_from_user fails, instead of calibrating on its defaults.
+---
+ drivers/power/supply/mt6357-gauge.c | 17 ++++++++++++-----
+ 1 file changed, 12 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/power/supply/mt6357-gauge.c b/drivers/power/supply/mt6357-gauge.c
+index ac9eb0622..52c5e3ee6 100644
+--- a/drivers/power/supply/mt6357-gauge.c
++++ b/drivers/power/supply/mt6357-gauge.c
+@@ -1928,7 +1928,7 @@ static int zcv_get(struct mtk_gauge *gauge_dev,
+ static int get_charger_zcv(struct mtk_gauge *gauge_dev)
+ {
+ 	struct power_supply *chg_psy;
+-	union power_supply_propval val;
++	union power_supply_propval val = { .intval = 0 };
+ 	int ret = 0;
+ 
+ 	chg_psy = power_supply_get_by_name("mtk-master-charger");
+@@ -1940,6 +1940,7 @@ static int get_charger_zcv(struct mtk_gauge *gauge_dev)
+ 
+ 	ret = power_supply_get_property(chg_psy,
+ 		POWER_SUPPLY_PROP_VOLTAGE_BOOT, &val);
++	power_supply_put(chg_psy);
+ 
+ 	bm_err("[%s]_hw_ocv_chgin=%d, ret=%d\n", __func__, val.intval, ret);
+ 
+@@ -1980,11 +1981,11 @@ static int boot_zcv_get(struct mtk_gauge *gauge_dev,
+ 	else
+ 		_hw_ocv_chgin = 0;
+ 
+-	now_temp = gm->bs_data.bat_batt_temp;
+-
+-	if (gm == NULL)
++	if (gm == NULL) {
++		now_temp = 0;
+ 		now_thr = 300;
+-	else {
++	} else {
++		now_temp = gm->bs_data.bat_batt_temp;
+ 		if (now_temp > gm->ext_hwocv_swocv_lt_temp)
+ 			now_thr = gm->ext_hwocv_swocv;
+ 		else
+@@ -2957,9 +2958,15 @@ static long adc_cali_ioctl(
+ 
+ 	bm_notice("%s enter\n", __func__);
+ 	gm = get_mtk_battery();
++	if (gm == NULL)
++		return -ENODEV;
+ 	mutex_lock(&gm->gauge->fg_mutex);
+ 	user_data_addr = (int *)arg;
+ 	ret = copy_from_user(adc_in_data, user_data_addr, sizeof(adc_in_data));
++	if (ret) {
++		mutex_unlock(&gm->gauge->fg_mutex);
++		return -EFAULT;
++	}
+ 	if (adc_in_data[1] < 0) {
+ 		bm_err("%s unknown data: %d\n", __func__, adc_in_data[1]);
+ 		mutex_unlock(&gm->gauge->fg_mutex);
+-- 
+2.56.0
+

@@ -1,0 +1,30 @@
+From fc3b843718491bf30df7465a93ff35c57ed689a0 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 10:13:49 +0200
+Subject: [PATCH] charger: the PMIC's high voltage detection is switched by its
+ own bit
+
+disable_hw_ovp passes RG_VCDT_HV_EN's mask and shift in the order
+pmic_set_register_value1 takes them. Swapped, they write RG_CS_VTH and
+RG_CS_EN in CHR_CON0 and leave the high voltage detection alone.
+---
+ drivers/power/supply/mtk_charger_intf.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/power/supply/mtk_charger_intf.c b/drivers/power/supply/mtk_charger_intf.c
+index 95efefca2..7f8dc8fe5 100644
+--- a/drivers/power/supply/mtk_charger_intf.c
++++ b/drivers/power/supply/mtk_charger_intf.c
+@@ -468,8 +468,8 @@ int disable_hw_ovp(struct mtk_charger *info, int en)
+ 
+ 	pmic_set_register_value1(regmap,
+ 		PMIC_RG_VCDT_HV_EN_ADDR,
+-		PMIC_RG_VCDT_HV_EN_SHIFT,
+ 		PMIC_RG_VCDT_HV_EN_MASK,
++		PMIC_RG_VCDT_HV_EN_SHIFT,
+ 		en);
+ 
+ 	return 0;
+-- 
+2.56.0
+

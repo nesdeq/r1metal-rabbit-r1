@@ -1,0 +1,32 @@
+From 116e462f4c83abb024d7cd560f799ec7bf67434e Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 10:43:02 +0200
+Subject: [PATCH] wlan: nothing indicated is no failure of the interrupt thread
+
+wlanIST logs WLAN_STATUS_NOT_INDICATING as nothing indicated, not as
+"Fail: nicProcessIST!": another caller of nicProcessIST has served the
+interrupt before the thread runs.
+---
+ connectivity/wlan/core/gen4m/common/wlan_lib.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/connectivity/wlan/core/gen4m/common/wlan_lib.c b/connectivity/wlan/core/gen4m/common/wlan_lib.c
+index f78edb4..6fa9315 100644
+--- a/connectivity/wlan/core/gen4m/common/wlan_lib.c
++++ b/connectivity/wlan/core/gen4m/common/wlan_lib.c
+@@ -1564,7 +1564,11 @@ void wlanIST(IN struct ADAPTER *prAdapter, bool fgEnInt)
+ 
+ 	if (prAdapter->fgIsFwOwn == FALSE) {
+ 		u4Status = nicProcessIST(prAdapter);
+-		if (u4Status != WLAN_STATUS_SUCCESS) {
++		/* Another nicProcessIST() caller served the interrupt first. */
++		if (u4Status == WLAN_STATUS_NOT_INDICATING) {
++			DBGLOG_LIMITED(REQ, INFO,
++				       "nicProcessIST: nothing indicated, served before\n");
++		} else if (u4Status != WLAN_STATUS_SUCCESS) {
+ 			DBGLOG_LIMITED(REQ, INFO,
+ 				       "Fail: nicProcessIST! status [%x]\n",
+ 				       u4Status);
+-- 
+2.56.0
+

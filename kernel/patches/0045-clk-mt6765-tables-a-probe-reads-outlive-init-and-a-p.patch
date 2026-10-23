@@ -1,0 +1,140 @@
+From 42a8154bcdb701f98a93043ae43464583334cc7b Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 16:10:26 +0200
+Subject: [PATCH] clk: mt6765: tables a probe reads outlive init, and a power
+ gate never returns holding its lock
+
+- The gate tables the audio, cam, img, mipi0a, mm, vcodec and scpsys
+  probes read stay after init, as the probes are not __init.
+- clk_mt6765_img_probe() checks its clock data, as its siblings do.
+- pg_unprepare() releases the MTCMOS lock when the bus protect fails.
+---
+ drivers/clk/mediatek/clk-mt6765-audio.c  | 2 +-
+ drivers/clk/mediatek/clk-mt6765-cam.c    | 2 +-
+ drivers/clk/mediatek/clk-mt6765-img.c    | 4 +++-
+ drivers/clk/mediatek/clk-mt6765-mipi0a.c | 2 +-
+ drivers/clk/mediatek/clk-mt6765-mm.c     | 2 +-
+ drivers/clk/mediatek/clk-mt6765-pg.c     | 5 +++--
+ drivers/clk/mediatek/clk-mt6765-vcodec.c | 2 +-
+ 7 files changed, 11 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/clk/mediatek/clk-mt6765-audio.c b/drivers/clk/mediatek/clk-mt6765-audio.c
+index 18b6965a6..6b87820b6 100644
+--- a/drivers/clk/mediatek/clk-mt6765-audio.c
++++ b/drivers/clk/mediatek/clk-mt6765-audio.c
+@@ -46,7 +46,7 @@ static const struct mtk_gate_regs audio1_cg_regs = {
+ 		.flags = CLK_IGNORE_UNUSED, \
+ 	}
+ 
+-static const struct mtk_gate audio_clks[] __initconst = {
++static const struct mtk_gate audio_clks[] = {
+ 	/* AUDIO0 */
+ 	GATE_AUDIO0(CLK_AUDIO_AFE, "aud_afe", "audio_ck",
+ 		2),
+diff --git a/drivers/clk/mediatek/clk-mt6765-cam.c b/drivers/clk/mediatek/clk-mt6765-cam.c
+index 6ed9668ca..5aacb9bdb 100644
+--- a/drivers/clk/mediatek/clk-mt6765-cam.c
++++ b/drivers/clk/mediatek/clk-mt6765-cam.c
+@@ -37,7 +37,7 @@ static const struct mtk_gate_regs cam_cg_regs = {
+ 		.pwr_stat = &pwr_stat,			\
+ 	}
+ 
+-static const struct mtk_gate cam_clks[] __initconst = {
++static const struct mtk_gate cam_clks[] = {
+ 	GATE_CAM(CLK_CAM_LARB3, "cam_larb3", "mm_ck", 0),/*use dummy*/
+ 	GATE_CAM(CLK_CAM_DFP_VAD, "cam_dfp_vad", "mm_ck", 1),
+ 	GATE_CAM(CLK_CAM, "cam", "mm_ck", 6),
+diff --git a/drivers/clk/mediatek/clk-mt6765-img.c b/drivers/clk/mediatek/clk-mt6765-img.c
+index 32f8612ef..34b436512 100644
+--- a/drivers/clk/mediatek/clk-mt6765-img.c
++++ b/drivers/clk/mediatek/clk-mt6765-img.c
+@@ -37,7 +37,7 @@ static const struct mtk_gate_regs img_cg_regs = {
+ 		.pwr_stat = &pwr_stat,			\
+ 	}
+ 
+-static const struct mtk_gate img_clks[] __initconst = {
++static const struct mtk_gate img_clks[] = {
+ 	GATE_IMG(CLK_IMG_LARB2, "img_larb2", "mm_ck", 0),/*use dummy*/
+ 	GATE_IMG(CLK_IMG_DIP, "img_dip", "mm_ck", 2),
+ 	GATE_IMG(CLK_IMG_FDVT, "img_fdvt", "mm_ck", 3),
+@@ -52,6 +52,8 @@ static int clk_mt6765_img_probe(struct platform_device *pdev)
+ 	struct device_node *node = pdev->dev.of_node;
+ 
+ 	clk_data = mtk_alloc_clk_data(CLK_IMG_NR_CLK);
++	if (!clk_data)
++		return -ENOMEM;
+ 
+ 	mtk_clk_register_gates(node, img_clks, ARRAY_SIZE(img_clks), clk_data);
+ 
+diff --git a/drivers/clk/mediatek/clk-mt6765-mipi0a.c b/drivers/clk/mediatek/clk-mt6765-mipi0a.c
+index a7d72db1c..4e8f5c61d 100644
+--- a/drivers/clk/mediatek/clk-mt6765-mipi0a.c
++++ b/drivers/clk/mediatek/clk-mt6765-mipi0a.c
+@@ -29,7 +29,7 @@ static const struct mtk_gate_regs mipi0a_cg_regs = {
+ 		.ops = &mtk_clk_gate_ops_no_setclr_inv,	\
+ 	}
+ 
+-static const struct mtk_gate mipi0a_clks[] __initconst = {
++static const struct mtk_gate mipi0a_clks[] = {
+ 	GATE_MIPI0A(CLK_MIPI0A_CSR_CSI_EN_0A,
+ 		"mipi0a_csr_0a", "f_fseninf_ck", 1),
+ };
+diff --git a/drivers/clk/mediatek/clk-mt6765-mm.c b/drivers/clk/mediatek/clk-mt6765-mm.c
+index 5e0b4b6a0..ffc155515 100644
+--- a/drivers/clk/mediatek/clk-mt6765-mm.c
++++ b/drivers/clk/mediatek/clk-mt6765-mm.c
+@@ -37,7 +37,7 @@ static const struct mtk_gate_regs mm_cg_regs = {
+ 		.pwr_stat = &pwr_stat,			\
+ 	}
+ 
+-static const struct mtk_gate mm_clks[] __initconst = {
++static const struct mtk_gate mm_clks[] = {
+ 	/* MM */
+ 	GATE_MM(CLK_MM_MDP_RDMA0, "mm_mdp_rdma0", "mm_ck", 0),
+ 	GATE_MM(CLK_MM_MDP_CCORR0, "mm_mdp_ccorr0", "mm_ck", 1),
+diff --git a/drivers/clk/mediatek/clk-mt6765-pg.c b/drivers/clk/mediatek/clk-mt6765-pg.c
+index 7de2f6282..138626a7a 100644
+--- a/drivers/clk/mediatek/clk-mt6765-pg.c
++++ b/drivers/clk/mediatek/clk-mt6765-pg.c
+@@ -2786,7 +2786,7 @@ static void pg_unprepare(struct clk_hw *hw)
+ 	if (!skip_pg) {
+ 		ret = disable_subsys(pg->pd_id, MTCMOS_BUS_PROT);
+ 		if (ret)
+-			return;
++			goto unlock;
+ 	}
+ 
+ 	do {
+@@ -2832,6 +2832,7 @@ static void pg_unprepare(struct clk_hw *hw)
+ #endif				/* MT_CCF_DEBUG */
+ 		i++;
+ 	} while (i < CLK_NUM);
++unlock:
+ 	mtk_mtcmos_unlock(flags);
+ }
+ 
+@@ -2942,7 +2943,7 @@ struct mtk_power_gate {
+ 	}
+ 
+ /* FIXME: all values needed to be verified */
+-struct mtk_power_gate scp_clks[] __initdata = {
++struct mtk_power_gate scp_clks[] = {
+ 	PGATE2(SCP_SYS_MD1, pg_md1, NULL, NULL, NULL, SYS_MD1),
+ 	PGATE2(SCP_SYS_CONN, pg_conn, NULL, NULL, NULL, SYS_CONN),
+ 	PGATE2(SCP_SYS_DPY, pg_dpy, NULL, NULL, NULL, SYS_DPY),
+diff --git a/drivers/clk/mediatek/clk-mt6765-vcodec.c b/drivers/clk/mediatek/clk-mt6765-vcodec.c
+index e08c09a16..22faae8fe 100644
+--- a/drivers/clk/mediatek/clk-mt6765-vcodec.c
++++ b/drivers/clk/mediatek/clk-mt6765-vcodec.c
+@@ -37,7 +37,7 @@ static const struct mtk_gate_regs venc_cg_regs = {
+ 		.pwr_stat = &pwr_stat,			\
+ 	}
+ 
+-static const struct mtk_gate venc_clks[] __initconst = {
++static const struct mtk_gate venc_clks[] = {
+ 	GATE_VENC(CLK_VENC_SET0_LARB, "venc_set0_larb", "mm_ck", 0),
+ 	GATE_VENC(CLK_VENC_SET1_VENC, "venc_set1_venc", "mm_ck", 4),
+ 	GATE_VENC(CLK_VENC_SET2_JPGENC, "jpgenc", "mm_ck", 8),
+-- 
+2.56.0
+

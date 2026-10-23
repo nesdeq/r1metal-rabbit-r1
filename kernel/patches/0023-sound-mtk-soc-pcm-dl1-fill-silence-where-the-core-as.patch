@@ -1,0 +1,37 @@
+From 23081806282c107d2e7b147a1c74affdeccf49c5 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 11:40:01 +0200
+Subject: [PATCH] sound: mtk-soc-pcm-dl1: fill silence where the core asks for
+ it
+
+mtk_pcm_silence() writes the silence the ALSA core asks for, with
+memset_io() as the ring is device memory. The core calls it in place of
+its own memset, so the empty stub leaves samples of earlier laps for the
+DMA to fetch past a stream's end.
+---
+ sound/soc/mediatek/common_int/mtk-soc-pcm-dl1.c | 9 +++++----
+ 1 file changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/sound/soc/mediatek/common_int/mtk-soc-pcm-dl1.c b/sound/soc/mediatek/common_int/mtk-soc-pcm-dl1.c
+index a0938e2f3..0007eb5c1 100644
+--- a/sound/soc/mediatek/common_int/mtk-soc-pcm-dl1.c
++++ b/sound/soc/mediatek/common_int/mtk-soc-pcm-dl1.c
+@@ -553,10 +553,11 @@ static int mtk_pcm_silence(struct snd_pcm_substream *substream,
+ 			   unsigned long pos,
+ 			   unsigned long bytes)
+ {
+-#if defined(DL1_DEBUG_LOG)
+-	pr_debug("%s\n", __func__);
+-#endif
+-	return 0; /* do nothing */
++	/* The ring is device memory: clear it with memset_io(), as hw_params does. */
++	if (pos + bytes > substream->runtime->dma_bytes)
++		return -EINVAL;
++	memset_io((void *)(substream->runtime->dma_area + pos), 0, bytes);
++	return 0;
+ }
+ 
+ static void *dummy_page[2];
+-- 
+2.56.0
+

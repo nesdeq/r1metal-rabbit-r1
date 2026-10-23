@@ -1,0 +1,35 @@
+From 2a483cc09e6ec64dee181491d06db17b3eb2c85d Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 10:56:03 +0200
+Subject: [PATCH] mt6370: bled: the flash device's name lives as long as the
+ backlight
+
+mt6370_pmu_bled_probe copies the flash device's name with devm_kstrdup,
+which the device's release frees, and fails with -ENOMEM where the copy
+fails. Upstream's kstrndup copy is never freed or checked.
+---
+ drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_bled.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_bled.c b/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_bled.c
+index d004b83f0..86d097ab8 100644
+--- a/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_bled.c
++++ b/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_bled.c
+@@ -568,8 +568,12 @@ static int mt6370_pmu_bled_probe(struct platform_device *pdev)
+ 
+ 	bled_data->base.init_props = &mt6370_bledfl_props;
+ 	bled_data->base.hal = &mt6370_bledfl_hal;
+-	bled_data->base.name = kstrndup(pdata->bled_name,
+-					strlen(pdata->bled_name), GFP_KERNEL);
++	bled_data->base.name = devm_kstrdup(&pdev->dev, pdata->bled_name,
++					    GFP_KERNEL);
++	if (!bled_data->base.name) {
++		ret = -ENOMEM;
++		goto out_mt_flash_register;
++	}
+ 	bled_data->base.chip_name = "mt6370_pmu_bled";
+ 	bled_data->mt_flash_dev =
+ 		platform_device_register_resndata(bled_data->dev,
+-- 
+2.56.0
+

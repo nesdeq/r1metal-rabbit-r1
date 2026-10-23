@@ -1,0 +1,38 @@
+From 89013d01d62124402e56b24963c4d7eb634bbfbc Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 16:09:09 +0200
+Subject: [PATCH] imgsensor: a supply the board does not declare is no failure
+
+A sensor supply the device tree does not declare (-ENODEV) prints
+nothing; any other failure prints with its code. The lookup covers every
+supply of every sensor slot, most of which the board leaves out.
+---
+ .../src/mt6765/camera_hw/regulator/regulator.c        | 11 +++++++----
+ 1 file changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/misc/mediatek/imgsensor/src/mt6765/camera_hw/regulator/regulator.c b/drivers/misc/mediatek/imgsensor/src/mt6765/camera_hw/regulator/regulator.c
+index 084d2158e..90c41fd55 100644
+--- a/drivers/misc/mediatek/imgsensor/src/mt6765/camera_hw/regulator/regulator.c
++++ b/drivers/misc/mediatek/imgsensor/src/mt6765/camera_hw/regulator/regulator.c
+@@ -192,11 +192,14 @@ static enum IMGSENSOR_RETURN regulator_init(void *pinstance)
+ 			preg->pregulator[j][i] =
+ 			    regulator_get_optional(
+ 				pdevice, str_regulator_name);
+-			if (IS_ERR(preg->pregulator[j][i]))
++			if (IS_ERR(preg->pregulator[j][i])) {
++				ret = PTR_ERR(preg->pregulator[j][i]);
+ 				preg->pregulator[j][i] = NULL;
+-			if (preg->pregulator[j][i] == NULL)
+-				pr_err("regulator[%d][%d]  %s fail!\n",
+-					j, i, str_regulator_name);
++				/* -ENODEV: the board declares no such supply */
++				if (ret != -ENODEV)
++					pr_err("regulator[%d][%d]  %s fail: %d\n",
++						j, i, str_regulator_name, ret);
++			}
+ 
+ 			atomic_set(&preg->enable_cnt[j][i], 0);
+ 		}
+-- 
+2.56.0
+

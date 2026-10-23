@@ -1,0 +1,37 @@
+From 0db2d472f6cf0c3f4cc3d3867f0a38ed13440df3 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 15:45:09 +0200
+Subject: [PATCH] musb: under QMU a request whose buffer is not mapped is
+ refused
+
+Under QMU, musb_gadget_queue refuses with -ENOMEM a request of nonzero
+length whose buffer is not mapped: the queue unit never takes it, so it
+never completes and holds back every request queued behind it.
+---
+ drivers/misc/mediatek/usb20/musb_gadget.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/drivers/misc/mediatek/usb20/musb_gadget.c b/drivers/misc/mediatek/usb20/musb_gadget.c
+index 908980b5b..574db4ba0 100644
+--- a/drivers/misc/mediatek/usb20/musb_gadget.c
++++ b/drivers/misc/mediatek/usb20/musb_gadget.c
+@@ -1643,6 +1643,16 @@ static int musb_gadget_queue
+ 
+ 	map_dma_buffer(request, musb, musb_ep);
+ 
++#ifdef CONFIG_MTK_MUSB_QMU_SUPPORT
++	/* the queue unit moves only a mapped buffer */
++	if (request->request.length &&
++			request->request.dma == DMA_ADDR_INVALID) {
++		dev_err(musb->controller, "%s: %u bytes not mapped for DMA\n",
++			ep->name, request->request.length);
++		return -ENOMEM;
++	}
++#endif
++
+ 	spin_lock_irqsave(&musb->lock, lockflags);
+ 
+ 	/* don't queue if the ep is down */
+-- 
+2.56.0
+

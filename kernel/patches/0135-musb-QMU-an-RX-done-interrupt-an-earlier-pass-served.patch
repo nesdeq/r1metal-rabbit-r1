@@ -1,0 +1,91 @@
+From f5531d282f8a46d37166625c1f76d5e498a8f6bc Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 23:51:53 +0200
+Subject: [PATCH] musb QMU: an RX done interrupt an earlier pass served is told
+ at the driver's info class
+
+A done interrupt whose RX descriptor the pass for an earlier one gave
+back finds none before the queue's current one; qmu_done_rx and
+h_qmu_done_rx tell it in one QMU_INFO line, as the TX side tells the
+same state, instead of as an error with a register dump.
+---
+ drivers/misc/mediatek/usb20/mtk_qmu.c | 54 +++------------------------
+ 1 file changed, 6 insertions(+), 48 deletions(-)
+
+diff --git a/drivers/misc/mediatek/usb20/mtk_qmu.c b/drivers/misc/mediatek/usb20/mtk_qmu.c
+index 7ec83f0e2..aa698c8cf 100644
+--- a/drivers/misc/mediatek/usb20/mtk_qmu.c
++++ b/drivers/misc/mediatek/usb20/mtk_qmu.c
+@@ -959,33 +959,10 @@ void qmu_done_rx(struct musb *musb, u8 ep_num)
+ 	QMU_INFO("[RXD]%s EP%d, Last=%p, Current=%p, End=%p\n",
+ 		 __func__, ep_num, gpd, gpd_current, Rx_gpd_end[ep_num]);
+ 
+-	/* gpd_current should at least
+-	 * point to the next GPD to
+-	 * the previous last one
+-	 */
++	/* a done interrupt an earlier pass served finds no descriptor before the queue's current one */
+ 	if (gpd == gpd_current) {
+-
+-		QMU_ERR(
+-			"[RXD][ERROR] gpd(%p) == gpd_current(%p)\n"
+-			"[RXD][ERROR]EP%d RQCSR=%x, RQSAR=%x, RQCPR=%x, RQLDPR=%x\n"
+-			"[RXD][ERROR]QCR0=%x, QCR2=%x, QCR3=%x, QGCSR=%x\n"
+-			"[RXD][ERROR]HWO=%d, Next_GPD=%p ,DataBufLen=%d, DataBuf=%p, RecvLen=%d, Endpoint=%d\n",
+-			gpd, gpd_current,
+-			ep_num,
+-			MGC_ReadQMU32(base, MGC_O_QMU_RQCSR(ep_num)),
+-			MGC_ReadQMU32(base, MGC_O_QMU_RQSAR(ep_num)),
+-			MGC_ReadQMU32(base, MGC_O_QMU_RQCPR(ep_num)),
+-			MGC_ReadQMU32(base, MGC_O_QMU_RQLDPR(ep_num)),
+-			MGC_ReadQMU32(base, MGC_O_QMU_QCR0),
+-			MGC_ReadQMU32(base, MGC_O_QMU_QCR2),
+-			MGC_ReadQMU32(base, MGC_O_QMU_QCR3),
+-			MGC_ReadQUCS32(base, MGC_O_QUCS_USBGCSR),
+-				(u32) TGPD_GET_FLAG(gpd),
+-				TGPD_GET_NEXT_RX(gpd),
+-				(u32) TGPD_GET_DataBUF_LEN(gpd),
+-				TGPD_GET_DATA_RX(gpd),
+-				(u32) TGPD_GET_BUF_LEN(gpd),
+-				(u32) TGPD_GET_EPaddr(gpd));
++		QMU_INFO("[RXD] EP%d: no descriptor before the current one, HWO=%d, RecvLen=%d\n",
++			ep_num, (u32) TGPD_GET_FLAG(gpd), (u32) TGPD_GET_BUF_LEN(gpd));
+ 		return;
+ 	}
+ 
+@@ -1303,29 +1280,10 @@ void h_qmu_done_rx(struct musb *musb, u8 ep_num)
+ 				gpd, gpd_current,
+ 				Rx_gpd_end[ep_num]);
+ 
+-	/* gpd_current should at least
+-	 * point to the next GPD to
+-	 * the previous last one
+-	 */
++	/* a done interrupt an earlier pass served finds no descriptor before the queue's current one */
+ 	if (gpd == gpd_current) {
+-		QMU_ERR("[RXD][ERROR] gpd(%p) == gpd_current(%p)\n"
+-				"[RXD][ERROR]EP%d RQCSR=%x, RQSAR=%x, RQCPR=%x, RQLDPR=%x\n"
+-				"[RXD][ERROR]QCR0=%x, QCR2=%x, QCR3=%x, QGCSR=%x\n"
+-				"[RX]HWO=%d, Next_GPD=%p ,BufLen=%d, Buf=%p, RLen=%d, EP=%d\n",
+-				gpd, gpd_current, ep_num,
+-				MGC_ReadQMU32(base, MGC_O_QMU_RQCSR(ep_num)),
+-				MGC_ReadQMU32(base, MGC_O_QMU_RQSAR(ep_num)),
+-				MGC_ReadQMU32(base, MGC_O_QMU_RQCPR(ep_num)),
+-				MGC_ReadQMU32(base, MGC_O_QMU_RQLDPR(ep_num)),
+-				MGC_ReadQMU32(base, MGC_O_QMU_QCR0),
+-				MGC_ReadQMU32(base, MGC_O_QMU_QCR2),
+-				MGC_ReadQMU32(base, MGC_O_QMU_QCR3),
+-				MGC_ReadQUCS32(base, MGC_O_QUCS_USBGCSR),
+-				(u32)TGPD_GET_FLAG(gpd), TGPD_GET_NEXT_RX(gpd),
+-				(u32)TGPD_GET_DataBUF_LEN(gpd),
+-				TGPD_GET_DATA_RX(gpd),
+-				(u32)TGPD_GET_BUF_LEN(gpd),
+-				(u32)TGPD_GET_EPaddr(gpd));
++		QMU_INFO("[RXD] EP%d: no descriptor before the current one, HWO=%d, RecvLen=%d\n",
++			ep_num, (u32)TGPD_GET_FLAG(gpd), (u32)TGPD_GET_BUF_LEN(gpd));
+ 		return;
+ 	}
+ 
+-- 
+2.56.0
+

@@ -1,0 +1,77 @@
+From 13e371ff212251106390ba2b22f53bc1b421cbd4 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 17:15:51 +0200
+Subject: [PATCH] ccci: the ccmni of the index without a channel asks for no
+ port
+
+A ccmni whose rx channel is CCMNI_INVALID_CH, as CCCI's channel table
+gives index 8, asks CCCI for no port at init, close, its queued packet
+work and SIOPUSHPENDING. CCCI has no port ccmni8, and upstream logs at
+every boot that it finds none and fails to init its net port.
+---
+ drivers/misc/mediatek/ccmni/ccmni.c | 13 ++++++++++---
+ drivers/misc/mediatek/ccmni/ccmni.h |  3 +++
+ 2 files changed, 13 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/misc/mediatek/ccmni/ccmni.c b/drivers/misc/mediatek/ccmni/ccmni.c
+index de8ed924c..5c8528c16 100644
+--- a/drivers/misc/mediatek/ccmni/ccmni.c
++++ b/drivers/misc/mediatek/ccmni/ccmni.c
+@@ -484,7 +484,9 @@ static int ccmni_close(struct net_device *dev)
+ 	if (unlikely(ccmni_ctl->ccci_ops->md_ability & MODEM_CAP_NAPI))
+ 		napi_disable(ccmni->napi);
+ 
+-	ret = ccmni_ctl->ccci_ops->ccci_handle_port_list(DEV_CLOSE, dev->name);
++	if (ccmni->ch.rx != CCMNI_INVALID_CH)
++		ret = ccmni_ctl->ccci_ops->ccci_handle_port_list(DEV_CLOSE,
++				dev->name);
+ 	CCMNI_INF_MSG(ccmni->md_id, "%s_Close:cnt=(%d, %d)\n",
+ 		dev->name, atomic_read(&ccmni->usage),
+ 		atomic_read(&ccmni_tmp->usage));
+@@ -964,7 +966,9 @@ static int ccmni_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
+ 		CCMNI_INF_MSG(ccmni->md_id, "%s SIOPUSHPENDING called\n", ccmni->dev->name);
+ 		cancel_delayed_work(&ccmni->pkt_queue_work);
+ 		flush_delayed_work(&ccmni->pkt_queue_work);
+-		if (ctlb->ccci_ops->ccci_handle_port_list(DEV_OPEN, ccmni->dev->name))
++		if (ccmni->ch.rx != CCMNI_INVALID_CH &&
++			ctlb->ccci_ops->ccci_handle_port_list(DEV_OPEN,
++				ccmni->dev->name))
+ 			CCMNI_INF_MSG(ccmni->md_id,
+ 				"%s is failed to handle port list\n",
+ 				ccmni->dev->name);
+@@ -1040,6 +1044,8 @@ static void get_queued_pkts(struct work_struct *work)
+ 		CCMNI_INF_MSG(ccmni->md_id, "%s : invalid ctlb\n", __func__);
+ 		return;
+ 	}
++	if (ccmni->ch.rx == CCMNI_INVALID_CH)
++		return;
+ 	if (ctlb->ccci_ops->ccci_handle_port_list(DEV_OPEN, ccmni->dev->name))
+ 		CCMNI_INF_MSG(ccmni->md_id,
+ 			"%s is failed to handle port list\n",
+@@ -1257,7 +1263,8 @@ static int ccmni_init(int md_id, struct ccmni_ccci_ops *ccci_info)
+ 		ret = register_netdev(dev);
+ 		if (ret)
+ 			goto alloc_netdev_fail;
+-		ctlb->ccci_ops->ccci_net_init(dev->name);
++		if (ccmni->ch.rx != CCMNI_INVALID_CH)
++			ctlb->ccci_ops->ccci_net_init(dev->name);
+ 	}
+ 
+ 
+diff --git a/drivers/misc/mediatek/ccmni/ccmni.h b/drivers/misc/mediatek/ccmni/ccmni.h
+index d0c05b411..5a003a9cb 100644
+--- a/drivers/misc/mediatek/ccmni/ccmni.h
++++ b/drivers/misc/mediatek/ccmni/ccmni.h
+@@ -76,6 +76,9 @@ struct ccmni_ch {
+ 	int		   multiq;
+ };
+ 
++/* rx and tx of an index CCCI's channel table leaves empty, its CCCI_INVALID_CH_ID */
++#define CCMNI_INVALID_CH	((int)0xffffffff)
++
+ enum {
+ 	CCMNI_FLT_ADD    = 1,
+ 	CCMNI_FLT_DEL    = 2,
+-- 
+2.56.0
+

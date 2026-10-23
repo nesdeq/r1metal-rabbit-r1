@@ -1,0 +1,51 @@
+From 97e6245e901899c5a3c2a8937fd65b3cf319e8a1 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Thu, 8 Oct 2026 18:29:50 +0200
+Subject: [PATCH] power: mtk_battery: run the kernel gauge algorithm in every
+ boot mode
+
+battery_init() starts the kernel gauge algorithm in every boot mode, as
+a stock recovery boot does. Outside recovery upstream leaves the level
+to fuelgauged, and with none running the capacity stays at -1.
+---
+ drivers/power/supply/mtk_battery.c | 17 +++++------------
+ 1 file changed, 5 insertions(+), 12 deletions(-)
+
+diff --git a/drivers/power/supply/mtk_battery.c b/drivers/power/supply/mtk_battery.c
+index 0e734cf11..03a339564 100755
+--- a/drivers/power/supply/mtk_battery.c
++++ b/drivers/power/supply/mtk_battery.c
+@@ -3106,8 +3106,6 @@ void fg_check_lk_swocv(struct device *dev,
+ 
+ int battery_init(struct platform_device *pdev)
+ {
+-	int ret = 0;
+-	bool b_recovery_mode = 0;
+ 	struct mtk_battery *gm;
+ 	struct mtk_gauge *gauge;
+ 
+@@ -3159,16 +3157,11 @@ int battery_init(struct platform_device *pdev)
+ 	gm->bs_data.bat_batt_temp = force_get_tbat(gm, true);
+ 	mtk_power_misc_init(gm);
+ 
+-	ret = mtk_battery_daemon_init(pdev);
+-	b_recovery_mode = is_recovery_mode();
+-
+-	if (ret == 0 && b_recovery_mode == 0)
+-		bm_err("[%s]: daemon mode DONE\n", __func__);
+-	else {
+-		gm->algo.active = true;
+-		battery_algo_init(gm);
+-		bm_err("[%s]: kernel mode DONE\n", __func__);
+-	}
++	mtk_battery_daemon_init(pdev);
++	/* No fuelgauged runs, so the kernel algorithm computes the level. */
++	gm->algo.active = true;
++	battery_algo_init(gm);
++	bm_err("[%s]: kernel mode DONE\n", __func__);
+ 
+ 	return 0;
+ }
+-- 
+2.56.0
+

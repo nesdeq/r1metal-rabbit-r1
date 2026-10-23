@@ -1,0 +1,75 @@
+From 38ade73adad55af54bb9afdf6a5c4bf8f65fd5d4 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 18:21:50 +0200
+Subject: [PATCH] usb: gadget: u_serial: a transfer prints only at debug level
+
+pr_vmpt_debug runs only while its dynamic debug callsite is on and
+prints at KERN_DEBUG, ten transfers a second at most. Its rate limit
+prints no "callbacks suppressed" of its own, as the skip line counts
+what it drops.
+---
+ drivers/usb/gadget/function/u_serial.c | 19 +++++++++++++++----
+ 1 file changed, 15 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/usb/gadget/function/u_serial.c b/drivers/usb/gadget/function/u_serial.c
+index 9a81f4f0e..c99dc37f9 100644
+--- a/drivers/usb/gadget/function/u_serial.c
++++ b/drivers/usb/gadget/function/u_serial.c
+@@ -15,6 +15,7 @@
+ /* #define VERBOSE_DEBUG */
+ 
+ #include <linux/kernel.h>
++#include <linux/dynamic_debug.h>
+ #include <linux/sched.h>
+ #include <linux/interrupt.h>
+ #include <linux/device.h>
+@@ -30,6 +31,7 @@
+ 
+ #include "u_serial.h"
+ #define USERIAL_LOG(fmt, args...) pr_notice("USB_ACM " fmt, ## args)
++#define USERIAL_DBG(fmt, args...) printk(KERN_DEBUG "USB_ACM " fmt, ## args)
+ 
+ 
+ /*
+@@ -138,17 +140,26 @@ static void pr_vmpt_debug(struct gs_port *port, int len,
+ 			struct usb_request *req, bool dir)
+ {
+ 	static unsigned int	skip;
+-	static DEFINE_RATELIMIT_STATE(ratelimit, 1 * HZ, 10);
++	/* the skip line reports what the limit holds back, so the limit prints none */
++	static struct ratelimit_state ratelimit = {
++		.lock = __RAW_SPIN_LOCK_UNLOCKED(ratelimit.lock),
++		.interval = 1 * HZ,
++		.burst = 10,
++		.flags = RATELIMIT_MSG_ON_RELEASE,
++	};
++
++	if (!dynamic_debug_enabled("USB_ACM transfers\n"))
++		return;
+ 
+ 	if (__ratelimit(&ratelimit)) {
+ 		if (dir == USB_DIR_OUT)
+-			USERIAL_LOG("%s:ttyGS%d:w=%d,0x%x0x%x0x%x\n",
++			USERIAL_DBG("%s:ttyGS%d:w=%d,0x%x0x%x0x%x\n",
+ 					__func__, port->port_num, len,
+ 					*((u8 *)req->buf),
+ 					*((u8 *)req->buf+1),
+ 					*((u8 *)req->buf+2));
+ 		else
+-			USERIAL_LOG("%s:ttyGS%d:a=%d,r=%d(%x%x%x)\n",
++			USERIAL_DBG("%s:ttyGS%d:a=%d,r=%d(%x%x%x)\n",
+ 					__func__,
+ 					port->port_num,
+ 					req->actual,
+@@ -158,7 +169,7 @@ static void pr_vmpt_debug(struct gs_port *port, int len,
+ 					*((u8 *)req->buf+2));
+ 
+ 		if (skip > 0) {
+-			USERIAL_LOG("%s skipped %d bytes\n",
++			USERIAL_DBG("%s skipped %d bytes\n",
+ 					__func__, skip);
+ 			skip = 0;
+ 		}
+-- 
+2.56.0
+

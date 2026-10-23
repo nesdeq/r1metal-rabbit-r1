@@ -1,0 +1,29 @@
+From 6cb0fe01071e0dcec495edc14d4f9cab6e502c17 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 10:39:57 +0200
+Subject: [PATCH] wmt: a key WMT_SOC.cfg does not mention is no parse failure
+
+wmt_conf_parse logs a string or array field that WMT_SOC.cfg does not
+set as having no value, at debug, instead of "failed to parse" at error.
+A value that does not parse is reported where it is parsed.
+---
+ connectivity/common/common_main/core/wmt_conf.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/connectivity/common/common_main/core/wmt_conf.c b/connectivity/common/common_main/core/wmt_conf.c
+index 1329a80..02b14e8 100644
+--- a/connectivity/common/common_main/core/wmt_conf.c
++++ b/connectivity/common/common_main/core/wmt_conf.c
+@@ -570,7 +570,8 @@ static INT32 wmt_conf_parse(P_DEV_WMT pWmtDev, const PINT8 pInBuf, UINT32 size)
+ 			WMT_DBG_FUNC("#%d(%s)=>%s\n", i, field->name, pa);
+ 			osal_free(pa);
+ 		} else
+-			WMT_ERR_FUNC("failed to parse '%s'.\n", field->name);
++			/* a field the file does not set; parse errors are logged above */
++			WMT_DBG_FUNC("#%d(%s) has no value\n", i, field->name);
+ 	}
+ 	osal_free(pBuf);
+ 	return 0;
+-- 
+2.56.0
+

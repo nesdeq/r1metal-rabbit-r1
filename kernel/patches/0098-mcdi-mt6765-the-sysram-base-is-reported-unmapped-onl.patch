@@ -1,0 +1,28 @@
+From ef7dea36fdb5f00ccc62e7e014c012826e0ed38c Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 18:46:08 +0200
+Subject: [PATCH] mcdi mt6765: the sysram base is reported unmapped only when
+ it is
+
+mcdi_of_init prints that the node cannot be mapped when of_iomap
+returns NULL; upstream's inverted test prints it at every boot.
+---
+ drivers/misc/mediatek/base/power/mcdi/mt6765/mtk_mcdi_plat.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/base/power/mcdi/mt6765/mtk_mcdi_plat.c b/drivers/misc/mediatek/base/power/mcdi/mt6765/mtk_mcdi_plat.c
+index 04b37c1cb..a78841d89 100644
+--- a/drivers/misc/mediatek/base/power/mcdi/mt6765/mtk_mcdi_plat.c
++++ b/drivers/misc/mediatek/base/power/mcdi/mt6765/mtk_mcdi_plat.c
+@@ -116,7 +116,7 @@ void mcdi_of_init(void **base)
+ 
+ 	*base = of_iomap(node, 0);
+ 
+-	if (*base)
++	if (!*base)
+ 		pr_info("node '%s' can not iomap!\n", mcdi_node_name);
+ 
+ 	pr_info("mcdi_sysram_base = %p\n", *base);
+-- 
+2.56.0
+

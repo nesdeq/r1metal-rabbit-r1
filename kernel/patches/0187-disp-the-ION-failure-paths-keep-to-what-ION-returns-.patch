@@ -1,0 +1,154 @@
+From 60363dd510edc86cd311ea0ec2bd19d7a319bae0 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 11:31:35 +0200
+Subject: [PATCH] disp: the ION failure paths keep to what ION returns; the
+ framebuffer capture goes
+
+- allocat_decouple_buffer and sec_buf_ion_alloc test ION's results with
+  IS_ERR: ION returns error pointers, not NULL.
+- After a failed ion_alloc they destroy the client without handing
+  ion_free the error pointer.
+- allocat_decouple_buffer destroys the client where kzalloc fails.
+- primary_display_capture_framebuffer, which nothing calls and which
+  ioremaps an M4U address as physical, goes with get_current_time_us.
+---
+ .../video/mt6765/videox/primary_display.c     | 62 +++----------------
+ .../video/mt6765/videox/primary_display.h     |  1 -
+ 2 files changed, 7 insertions(+), 56 deletions(-)
+
+diff --git a/drivers/misc/mediatek/video/mt6765/videox/primary_display.c b/drivers/misc/mediatek/video/mt6765/videox/primary_display.c
+index 6497ed665..187982121 100644
+--- a/drivers/misc/mediatek/video/mt6765/videox/primary_display.c
++++ b/drivers/misc/mediatek/video/mt6765/videox/primary_display.c
+@@ -1320,14 +1320,6 @@ int _should_config_ovl_input(void)
+ 		return 1;
+ }
+ 
+-static long get_current_time_us(void)
+-{
+-	struct timeval t;
+-
+-	do_gettimeofday(&t);
+-	return (t.tv_sec & 0xFFF) * 1000000 + t.tv_usec;
+-}
+-
+ static enum hrtimer_restart _DISP_CmdModeTimer_handler(struct hrtimer *timer)
+ {
+ 	DISPMSG("fake timer, wake up\n");
+@@ -1930,7 +1922,7 @@ static int sec_buf_ion_alloc(int buf_size)
+ 	memset((void *)&mm_data, 0, sizeof(struct ion_mm_data));
+ 	ion_client = ion_client_create(g_ion_device, "display_dc_secmem");
+ 
+-	if (!ion_client) {
++	if (IS_ERR(ion_client)) {
+ 		DISPERR("create ion client failed!\n");
+ 		return -1;
+ 	}
+@@ -1941,7 +1933,6 @@ static int sec_buf_ion_alloc(int buf_size)
+ 	if (IS_ERR_OR_NULL(sec_ion_handle)) {
+ 		DISPERR("Fatal Error, ion_alloc for size %d failed\n",
+ 			buf_size);
+-		ion_free(ion_client, sec_ion_handle);
+ 		ion_client_destroy(ion_client);
+ 		return -1;
+ 	}
+@@ -2616,6 +2607,10 @@ static struct disp_internal_buffer_info *allocat_decouple_buffer(int size)
+ 	struct ion_handle *handle = NULL;
+ 
+ 	client = ion_client_create(g_ion_device, "disp_decouple");
++	if (IS_ERR(client)) {
++		DISPERR("create ion client failed!\n");
++		return NULL;
++	}
+ 
+ 	buf_info = kzalloc(sizeof(struct disp_internal_buffer_info),
+ 		GFP_KERNEL);
+@@ -2625,14 +2620,13 @@ static struct disp_internal_buffer_info *allocat_decouple_buffer(int size)
+ 		if (IS_ERR(handle)) {
+ 			DISPERR("Fatal Error, ion_alloc for size %d failed\n",
+ 				size);
+-			ion_free(client, handle);
+ 			ion_client_destroy(client);
+ 			kfree(buf_info);
+ 			return NULL;
+ 		}
+ 
+ 		buffer_va = ion_map_kernel(client, handle);
+-		if (buffer_va == NULL) {
++		if (IS_ERR(buffer_va)) {
+ 			DISPERR("ion_map_kernrl failed\n");
+ 			ion_free(client, handle);
+ 			ion_client_destroy(client);
+@@ -2668,6 +2662,7 @@ static struct disp_internal_buffer_info *allocat_decouple_buffer(int size)
+ 		buf_info->va = buffer_va;
+ 	} else {
+ 		DISPERR("Fatal error, kzalloc internal buffer info failed!!\n");
++		ion_client_destroy(client);
+ 		kfree(buf_info);
+ 		return NULL;
+ 	}
+@@ -8353,49 +8348,6 @@ struct LCM_DRIVER *DISP_GetLcmDrv(void)
+ 	return NULL;
+ }
+ 
+-int primary_display_capture_framebuffer(unsigned long pbuf)
+-{
+-	unsigned int fb_layer_id = primary_display_get_option("FB_LAYER");
+-	unsigned int w_xres = primary_display_get_width();
+-	unsigned int h_yres = primary_display_get_height();
+-	/* bpp is either 32 or 16, can not be other value */
+-	unsigned int pixel_bpp = primary_display_get_bpp() / 8;
+-	unsigned int w_fb = ALIGN_TO(w_xres, MTK_FB_ALIGNMENT);
+-	/* frame buffer size */
+-	unsigned int fbsize = w_fb * h_yres * pixel_bpp;
+-	struct disp_ddp_path_config *path_config =
+-		dpmgr_path_get_last_config(pgc->dpmgr_handle);
+-	unsigned long fbaddress = path_config->ovl_config[fb_layer_id].addr;
+-	void *fbv = 0;
+-	unsigned int i;
+-	unsigned long ttt;
+-
+-	DISPMSG(
+-		"w_res=%d, h_yres=%d, pixel_bpp=%d, w_fb=%d, fbsize=%d, fbaddress=0x%lx\n",
+-		w_xres, h_yres, pixel_bpp, w_fb, fbsize, fbaddress);
+-	fbv = ioremap(fbaddress, fbsize);
+-	DISPMSG(
+-		"w_xres = %d, h_yres = %d, w_fb = %d, pixel_bpp = %d, fbsize = %d, fbaddress = 0x%08lx\n",
+-		w_xres, h_yres, w_fb, pixel_bpp, fbsize, fbaddress);
+-	if (!fbv) {
+-		DISPMSG(
+-			"[FB Driver], Unable to allocate memory for frame buffer: address=0x%lx, size=0x%08x\n",
+-			fbaddress, fbsize);
+-		return -1;
+-	}
+-
+-	ttt = get_current_time_us();
+-	for (i = 0; i < h_yres; i++) {
+-		memcpy((void *)(pbuf + i * w_xres * pixel_bpp),
+-		       (void *)(fbv + i * w_fb * pixel_bpp),
+-		       w_xres * pixel_bpp);
+-	}
+-	DISPMSG("capture framebuffer cost %ld us\n",
+-		get_current_time_us() - ttt);
+-	iounmap((void *)fbv);
+-	return -1;
+-}
+-
+ static UINT32 disp_fb_bpp = 32;
+ static UINT32 disp_fb_pages = 3;
+ 
+diff --git a/drivers/misc/mediatek/video/mt6765/videox/primary_display.h b/drivers/misc/mediatek/video/mt6765/videox/primary_display.h
+index 070c5dc4e..453f0902a 100644
+--- a/drivers/misc/mediatek/video/mt6765/videox/primary_display.h
++++ b/drivers/misc/mediatek/video/mt6765/videox/primary_display.h
+@@ -408,7 +408,6 @@ int primary_display_switch_mode_blocked(int sess_mode, unsigned int session,
+ int primary_display_diagnose(void);
+ 
+ int primary_display_get_info(struct disp_session_info *info);
+-int primary_display_capture_framebuffer(unsigned long pbuf);
+ int primary_display_is_video_mode(void);
+ int primary_is_sec(void);
+ int do_primary_display_switch_mode(int sess_mode, unsigned int session,
+-- 
+2.56.0
+

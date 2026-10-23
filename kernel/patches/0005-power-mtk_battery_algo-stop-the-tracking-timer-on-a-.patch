@@ -1,0 +1,34 @@
+From afed3fb9f37470d58add248232e3f8fb5e82c347 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Thu, 8 Oct 2026 18:36:58 +0200
+Subject: [PATCH] power: mtk_battery_algo: stop the tracking timer on a time of
+ zero
+
+A time of zero or less cancels the tracking alarm, as
+FG_DAEMON_CMD_SET_FG_TIME does. Upstream arms it for the present time,
+and with low tracking off its handler calls set_fg_time(gm, 0) again, a
+loop without end.
+---
+ drivers/power/supply/mtk_battery_algo.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/drivers/power/supply/mtk_battery_algo.c b/drivers/power/supply/mtk_battery_algo.c
+index 7f4fd6162..e6a1b6b80 100644
+--- a/drivers/power/supply/mtk_battery_algo.c
++++ b/drivers/power/supply/mtk_battery_algo.c
+@@ -19,6 +19,12 @@ void set_fg_time(struct mtk_battery *gm, int _time)
+ 	struct timespec time, time_now, end_time;
+ 	ktime_t ktime;
+ 
++	/* A time of zero or less cancels the timer, as FG_DAEMON_CMD_SET_FG_TIME does. */
++	if (_time <= 0) {
++		alarm_cancel(&gm->tracking_timer);
++		return;
++	}
++
+ 	get_monotonic_boottime(&time_now);
+ 	time.tv_sec = _time;
+ 	time.tv_nsec = 0;
+-- 
+2.56.0
+

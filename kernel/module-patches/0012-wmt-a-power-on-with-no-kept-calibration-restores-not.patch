@@ -1,0 +1,56 @@
+From f335043386c4fec605350c1294b1491655bb793e Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 10:39:40 +0200
+Subject: [PATCH] wmt: a power-on with no kept calibration restores nothing and
+ says so once
+
+With no calibration kept, as at the first power-on after boot, the
+restore is skipped with one info line and the chip calibrates in full.
+Trying it logs three errors.
+---
+ connectivity/common/common_main/core/wmt_ic_soc.c | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/connectivity/common/common_main/core/wmt_ic_soc.c b/connectivity/common/common_main/core/wmt_ic_soc.c
+index c7c4dd2..47ea4f3 100644
+--- a/connectivity/common/common_main/core/wmt_ic_soc.c
++++ b/connectivity/common/common_main/core/wmt_ic_soc.c
+@@ -120,6 +120,13 @@ static PUINT8 gWiFiCalResult;
+ /* Set: a power-on restores the kept calibration, as after an assert. */
+ static bool restore_calibration;
+ module_param(restore_calibration, bool, 0644);
++
++/* Whether both the Bluetooth and the Wi-Fi calibration results are kept. */
++static bool mtk_wcn_soc_has_kept_calibration(void)
++{
++	return gBTCalResult != NULL && gBTCalResultSize != 0 &&
++	       gWiFiCalResult != NULL && gWiFiCalSize != 0 && gWiFiCalAddrOffset != 0;
++}
+ #endif
+ 
+ #if 0
+@@ -3697,6 +3704,10 @@ VOID mtk_wcn_soc_restore_wifi_cal_result(VOID)
+ 			wmt_ic_ops_soc.icId, mtk_wcn_stp_assert_flow_get());
+ 		return;
+ 	}
++	if (!mtk_wcn_soc_has_kept_calibration()) {
++		WMT_INFO_FUNC("No kept calibration to restore\n");
++		return;
++	}
+ 	/* Disable Wi-Fi MPU to touch Wi-Fi calibration data */
+ 	if (mtk_wcn_wlan_emi_mpu_set_protection)
+ 		(*mtk_wcn_wlan_emi_mpu_set_protection)(false);
+@@ -3986,6 +3997,10 @@ static INT32 mtk_wcn_soc_do_calibration(void)
+ 			wmt_ic_ops_soc.icId, mtk_wcn_stp_assert_flow_get());
+ 		goto do_calibration;
+ 	}
++	if (!mtk_wcn_soc_has_kept_calibration()) {
++		WMT_INFO_FUNC("No kept calibration, calibrating in full\n");
++		goto do_calibration;
++	}
+ 
+ 	iRet = mtk_wcn_soc_calibration_restore();
+ 	if (iRet == 0) {
+-- 
+2.56.0
+

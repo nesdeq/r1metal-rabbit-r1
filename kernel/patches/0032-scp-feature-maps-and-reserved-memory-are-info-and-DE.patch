@@ -1,0 +1,68 @@
+From 68957f020744c0cd0a657840ae48e8bb88a37f9d Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 16:09:08 +0200
+Subject: [PATCH] scp: feature maps and reserved memory are info, and DEBUG is
+ not forced
+
+- The feature map and reserved memory lines are info.
+- The Makefile forces no -DDEBUG on seven SCP objects, so their pr_debug
+  lines are left to dynamic debug and the address dumps are not built.
+- A tree without the core_1 property reads as core_1 not enabled.
+---
+ drivers/misc/mediatek/scp/cm4/Makefile         | 10 ----------
+ drivers/misc/mediatek/scp/cm4/v01/scp_helper.c |  8 ++++----
+ 2 files changed, 4 insertions(+), 14 deletions(-)
+
+diff --git a/drivers/misc/mediatek/scp/cm4/Makefile b/drivers/misc/mediatek/scp/cm4/Makefile
+index f171d9fd7..0fcf0ce43 100644
+--- a/drivers/misc/mediatek/scp/cm4/Makefile
++++ b/drivers/misc/mediatek/scp/cm4/Makefile
+@@ -24,16 +24,6 @@ ccflags-$(CONFIG_MTK_EMI_LEGACY) += -I$(srctree)/drivers/misc/mediatek/emi/$(CON
+ ccflags-y += -I$(srctree)/drivers/devfreq/
+ ccflags-y += -I$(srctree)/drivers/misc/mediatek/include/mt-plat/
+ 
+-#ifeq ($(CONFIG_MTK_ENG_BUILD),y)
+-CFLAGS_scp_logger.o += -DDEBUG
+-CFLAGS_scp_helper.o += -DDEBUG
+-CFLAGS_scp_excep.o += -DDEBUG
+-CFLAGS_scp_ipi.o += -DDEBUG
+-CFLAGS_scp_irq.o += -DDEBUG
+-CFLAGS_scp_dvfs.o += -DDEBUG
+-CFLAGS_scp_scpctl.o += -DDEBUG
+-#endif
+-
+ ccflags-$(CONFIG_MTK_PMIC_CHIP_MT6335)+= -I$(srctree)/drivers/misc/mediatek/pmic/include/mt6335
+ ccflags-$(CONFIG_MTK_PMIC_CHIP_MT6353)+= -I$(srctree)/drivers/misc/mediatek/pmic/include/mt6353
+ ccflags-$(CONFIG_MTK_PMIC_CHIP_MT6355)+= -I$(srctree)/drivers/misc/mediatek/pmic/include/mt6355
+diff --git a/drivers/misc/mediatek/scp/cm4/v01/scp_helper.c b/drivers/misc/mediatek/scp/cm4/v01/scp_helper.c
+index d9f8abb7f..8d43754dd 100644
+--- a/drivers/misc/mediatek/scp/cm4/v01/scp_helper.c
++++ b/drivers/misc/mediatek/scp/cm4/v01/scp_helper.c
+@@ -1162,7 +1162,7 @@ static int scp_reserve_memory_ioremap(struct platform_device *pdev)
+ 		}
+ 
+ 		scp_reserve_mblock[m_idx].size = m_size;
+-		pr_err("[SCP] reserved: <%d  %d>\n", m_idx, m_size);
++		pr_info("[SCP] reserved: <%d  %d>\n", m_idx, m_size);
+ 	}
+ 
+ 	/* set virtual and physical address for the reserved memory */
+@@ -1839,12 +1839,12 @@ static int scp_device_probe(struct platform_device *pdev)
+ 		}
+ 
+ 		feature_table[f_idx].freq = f_mcps;
+-		pr_err("[SCP] feature maps: <%d  %d>\n", f_idx, f_mcps);
++		pr_info("[SCP] feature maps: <%d  %d>\n", f_idx, f_mcps);
+ 	}
+ 
+ 	/*scp core 1*/
+-	of_property_read_string(pdev->dev.of_node, "core_1", &core_status);
+-	if (strcmp(core_status, "enable") != 0)
++	if (of_property_read_string(pdev->dev.of_node, "core_1", &core_status) ||
++	    strcmp(core_status, "enable") != 0)
+ 		pr_err("[SCP] core_1 not enable\n");
+ 	else {
+ 		pr_debug("[SCP] core_1 enable\n");
+-- 
+2.56.0
+

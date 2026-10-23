@@ -1,0 +1,329 @@
+From f3da6a2dd8e633c935707bb7095c123c38e31651 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 13:43:11 +0200
+Subject: [PATCH] wmt: the WMT and STP debug lines print while printk.debug is
+ set
+
+The level-gated debug macros of WMT, STP and their layers (platform,
+detect, combo stub, BTM, PSM, HIF-SDIO, STP-SDIO, STP-UART),
+OSAL_WAIT_LOG and the thermal table dump print while printk_debugging()
+is true, each at its own level.
+---
+ connectivity/common/common_detect/mtk_wcn_stub_alps.c    | 3 ++-
+ connectivity/common/common_detect/wmt_detect.h           | 5 +++--
+ connectivity/common/common_main/core/btm_core.c          | 5 +++--
+ connectivity/common/common_main/core/include/stp_core.h  | 9 +++++----
+ connectivity/common/common_main/core/psm_core.c          | 7 ++++---
+ connectivity/common/common_main/include/wmt_exp.h        | 7 ++++---
+ connectivity/common/common_main/include/wmt_plat.h       | 5 +++--
+ connectivity/common/common_main/linux/include/hif_sdio.h | 5 +++--
+ connectivity/common/common_main/linux/include/osal.h     | 4 ++--
+ connectivity/common/common_main/linux/include/stp_dbg.h  | 5 +++--
+ connectivity/common/common_main/linux/stp_sdio.c         | 7 ++++---
+ connectivity/common/common_main/linux/stp_uart.c         | 3 ++-
+ connectivity/common/common_main/linux/wmt_dev.c          | 2 +-
+ 13 files changed, 39 insertions(+), 28 deletions(-)
+
+diff --git a/connectivity/common/common_detect/mtk_wcn_stub_alps.c b/connectivity/common/common_detect/mtk_wcn_stub_alps.c
+index cf281b4..58b6334 100644
+--- a/connectivity/common/common_detect/mtk_wcn_stub_alps.c
++++ b/connectivity/common/common_detect/mtk_wcn_stub_alps.c
+@@ -49,9 +49,10 @@ do { \
+ 	if (gCmbStubLogLevel >= CMB_STUB_WARN_LOG) \
+ 		pr_warn(fmt, ##arg); \
+ } while (0)
++/* a debug line prints while printk.debug is set too */
+ #define CMB_STUB_LOG_PR_DBG(fmt, arg...) \
+ do { \
+-	if (gCmbStubLogLevel >= CMB_STUB_DBG_LOG) \
++	if (gCmbStubLogLevel >= CMB_STUB_DBG_LOG || printk_debugging()) \
+ 		pr_info(fmt, ##arg); \
+ } while (0)
+ 
+diff --git a/connectivity/common/common_detect/wmt_detect.h b/connectivity/common/common_detect/wmt_detect.h
+index 3c4150d..837c77e 100644
+--- a/connectivity/common/common_detect/wmt_detect.h
++++ b/connectivity/common/common_detect/wmt_detect.h
+@@ -52,14 +52,15 @@
+ 
+ extern int gWmtDetectDbgLvl;
+ 
++/* the loud and debug lines print while printk.debug is set too */
+ #define WMT_DETECT_PR_LOUD(fmt, arg...) \
+ do { \
+-	if (gWmtDetectDbgLvl >= WMT_DETECT_LOG_LOUD) \
++	if (gWmtDetectDbgLvl >= WMT_DETECT_LOG_LOUD || printk_debugging()) \
+ 		pr_info(DFT_TAG"[L]%s:"  fmt, __func__, ##arg); \
+ } while (0)
+ #define WMT_DETECT_PR_DBG(fmt, arg...) \
+ do { \
+-	if (gWmtDetectDbgLvl >= WMT_DETECT_LOG_DBG) \
++	if (gWmtDetectDbgLvl >= WMT_DETECT_LOG_DBG || printk_debugging()) \
+ 		pr_info(DFT_TAG"[D]%s:"  fmt, __func__, ##arg); \
+ } while (0)
+ #define WMT_DETECT_PR_INFO(fmt, arg...) \
+diff --git a/connectivity/common/common_main/core/btm_core.c b/connectivity/common/common_main/core/btm_core.c
+index a77460b..aec8b53 100644
+--- a/connectivity/common/common_main/core/btm_core.c
++++ b/connectivity/common/common_main/core/btm_core.c
+@@ -35,14 +35,15 @@
+ 
+ INT32 gBtmDbgLevel = STP_BTM_LOG_INFO;
+ 
++/* the loud and debug lines print at their level or while printk.debug is set */
+ #define STP_BTM_PR_LOUD(fmt, arg...) \
+ do { \
+-	if (gBtmDbgLevel >= STP_BTM_LOG_LOUD) \
++	if (gBtmDbgLevel >= STP_BTM_LOG_LOUD || printk_debugging()) \
+ 		pr_info(PFX_BTM "%s: "  fmt, __func__, ##arg); \
+ } while (0)
+ #define STP_BTM_PR_DBG(fmt, arg...) \
+ do { \
+-	if (gBtmDbgLevel >= STP_BTM_LOG_DBG) \
++	if (gBtmDbgLevel >= STP_BTM_LOG_DBG || printk_debugging()) \
+ 		pr_info(PFX_BTM "%s: "  fmt, __func__, ##arg); \
+ } while (0)
+ #define STP_BTM_PR_INFO(fmt, arg...) \
+diff --git a/connectivity/common/common_main/core/include/stp_core.h b/connectivity/common/common_main/core/include/stp_core.h
+index d3fb744..c8db4db 100644
+--- a/connectivity/common/common_main/core/include/stp_core.h
++++ b/connectivity/common/common_main/core/include/stp_core.h
+@@ -55,8 +55,9 @@
+ 
+ extern INT32 gStpDbgLvl;
+ 
++/* the debug, trace and packet head lines print at their level or while printk.debug is set */
+ #define STP_DBG_FUNC(fmt, arg...)    do {\
+-	if (gStpDbgLvl >= STP_LOG_DBG)\
++	if (gStpDbgLvl >= STP_LOG_DBG || printk_debugging())\
+ 		printk(KERN_DEBUG PFX "%s: " fmt, __func__, ##arg);\
+ } while (0)
+ 
+@@ -82,17 +83,17 @@ extern INT32 gStpDbgLvl;
+ } while (0)
+ 
+ #define STP_TRC_FUNC(f)              do {\
+-	if (gStpDbgLvl >= STP_LOG_DBG)\
++	if (gStpDbgLvl >= STP_LOG_DBG || printk_debugging())\
+ 		printk(KERN_DEBUG PFX "<%s> <%d>\n", __func__, __LINE__);\
+ } while (0)
+ 
+ #define STP_DUMP_PACKET_HEAD(a, b, c)     do {\
+-	if (gStpDbgLvl >= STP_LOG_PKHEAD)\
++	if (gStpDbgLvl >= STP_LOG_PKHEAD || printk_debugging())\
+ 		stp_dump_data(a, b, c);\
+ } while (0)
+ 
+ #define STP_TRACE_FUNC(fmt, arg...)       do {\
+-	if (gStpDbgLvl >= STP_LOG_DBG)\
++	if (gStpDbgLvl >= STP_LOG_DBG || printk_debugging())\
+ 		printk(KERN_DEBUG PFX "%s: " fmt, __func__, ##arg);\
+ } while (0)
+ 
+diff --git a/connectivity/common/common_main/core/psm_core.c b/connectivity/common/common_main/core/psm_core.c
+index f4f7700..f4aa2d8 100644
+--- a/connectivity/common/common_main/core/psm_core.c
++++ b/connectivity/common/common_main/core/psm_core.c
+@@ -34,14 +34,15 @@ static UINT32 g_opid_record_num;
+ static UINT32 stp_traffic_start;
+ static UINT32 stp_traffic_current;
+ 
++/* the loud and debug lines print at their level or while printk.debug is set */
+ #define STP_PSM_PR_LOUD(fmt, arg...) \
+ do { \
+-	if (gPsmDbgLevel >= STP_PSM_LOG_LOUD) \
++	if (gPsmDbgLevel >= STP_PSM_LOG_LOUD || printk_debugging()) \
+ 		pr_info(PFX_PSM "%s: "  fmt, __func__, ##arg); \
+ } while (0)
+ #define STP_PSM_PR_DBG(fmt, arg...) \
+ do { \
+-	if (gPsmDbgLevel >= STP_PSM_LOG_DBG) \
++	if (gPsmDbgLevel >= STP_PSM_LOG_DBG || printk_debugging()) \
+ 		pr_info(PFX_PSM "%s: "  fmt, __func__, ##arg); \
+ } while (0)
+ #define STP_PSM_PR_INFO(fmt, arg...) \
+@@ -602,7 +603,7 @@ handler_done:
+ 
+ static inline INT32 _stp_psm_get_time(VOID)
+ {
+-	if (gPsmDbgLevel >= STP_PSM_LOG_LOUD)
++	if (gPsmDbgLevel >= STP_PSM_LOG_LOUD || printk_debugging())
+ 		osal_printtimeofday("<psm time>>>>");
+ 
+ 	return 0;
+diff --git a/connectivity/common/common_main/include/wmt_exp.h b/connectivity/common/common_main/include/wmt_exp.h
+index 251f2ed..c5b3606 100644
+--- a/connectivity/common/common_main/include/wmt_exp.h
++++ b/connectivity/common/common_main/include/wmt_exp.h
+@@ -40,9 +40,10 @@
+ #define DFT_TAG         "[WMT-DFT]"
+ #endif
+ 
++/* the loud, debug and trace lines print at their level or while printk.debug is set */
+ #define WMT_LOUD_FUNC(fmt, arg...) \
+ do { \
+-	if (gWmtDbgLvl >= WMT_LOG_LOUD) \
++	if (gWmtDbgLvl >= WMT_LOG_LOUD || printk_debugging()) \
+ 		printk(KERN_DEBUG DFT_TAG "[L]%s:"  fmt, __func__, ##arg); \
+ } while (0)
+ #define WMT_INFO_FUNC(fmt, arg...)  \
+@@ -62,12 +63,12 @@ do { \
+ } while (0)
+ #define WMT_DBG_FUNC(fmt, arg...) \
+ do { \
+-	if (gWmtDbgLvl >= WMT_LOG_DBG) \
++	if (gWmtDbgLvl >= WMT_LOG_DBG || printk_debugging()) \
+ 		printk(KERN_DEBUG DFT_TAG "[D]%s:"  fmt, __func__, ##arg); \
+ } while (0)
+ #define WMT_TRC_FUNC(f) \
+ do { \
+-	if (gWmtDbgLvl >= WMT_LOG_DBG) \
++	if (gWmtDbgLvl >= WMT_LOG_DBG || printk_debugging()) \
+ 		printk(KERN_DEBUG DFT_TAG "<%s> <%d>\n", __func__, __LINE__); \
+ } while (0)
+ 
+diff --git a/connectivity/common/common_main/include/wmt_plat.h b/connectivity/common/common_main/include/wmt_plat.h
+index 6f59568..c5bb28d 100644
+--- a/connectivity/common/common_main/include/wmt_plat.h
++++ b/connectivity/common/common_main/include/wmt_plat.h
+@@ -49,9 +49,10 @@
+ 
+ extern INT32 wmtPlatLogLvl;
+ 
++/* the loud and debug lines print at their level or while printk.debug is set */
+ #define WMT_PLAT_PR_LOUD(fmt, arg...) \
+ do { \
+-	if (wmtPlatLogLvl >= WMT_PLAT_LOG_LOUD) \
++	if (wmtPlatLogLvl >= WMT_PLAT_LOG_LOUD || printk_debugging()) \
+ 		pr_info(DFT_TAG "[L]%s:"  fmt, __func__, ##arg); \
+ } while (0)
+ #define WMT_PLAT_PR_INFO(fmt, arg...) \
+@@ -71,7 +72,7 @@ do { \
+ } while (0)
+ #define WMT_PLAT_PR_DBG(fmt, arg...) \
+ do { \
+-	if (wmtPlatLogLvl >= WMT_PLAT_LOG_DBG) \
++	if (wmtPlatLogLvl >= WMT_PLAT_LOG_DBG || printk_debugging()) \
+ 		pr_info(DFT_TAG "[D]%s:"  fmt, __func__, ##arg); \
+ } while (0)
+ 
+diff --git a/connectivity/common/common_main/linux/include/hif_sdio.h b/connectivity/common/common_main/linux/include/hif_sdio.h
+index 474803c..d0a3d02 100644
+--- a/connectivity/common/common_main/linux/include/hif_sdio.h
++++ b/connectivity/common/common_main/linux/include/hif_sdio.h
+@@ -247,12 +247,13 @@ typedef enum {
+ extern INT32 gHifSdioDbgLvl;
+ 
+ 
++/* the loud and debug lines print while printk.debug is set too */
+ #define HIF_SDIO_LOUD_FUNC(fmt, arg...)	\
+-do { if (gHifSdioDbgLvl >= HIF_SDIO_LOG_LOUD)	\
++do { if (gHifSdioDbgLvl >= HIF_SDIO_LOG_LOUD || printk_debugging())	\
+ 	printk(KERN_DEBUG DFT_TAG"[L]%s:"  fmt, __func__, ##arg);	\
+ } while (0)
+ #define HIF_SDIO_DBG_FUNC(fmt, arg...)	\
+-do { if (gHifSdioDbgLvl >= HIF_SDIO_LOG_DBG)	\
++do { if (gHifSdioDbgLvl >= HIF_SDIO_LOG_DBG || printk_debugging())	\
+ 	printk(KERN_DEBUG DFT_TAG"[D]%s:"  fmt, __func__, ##arg);	\
+ } while (0)
+ #define HIF_SDIO_INFO_FUNC(fmt, arg...)	\
+diff --git a/connectivity/common/common_main/linux/include/osal.h b/connectivity/common/common_main/linux/include/osal.h
+index c2d0412..600c4fa 100644
+--- a/connectivity/common/common_main/linux/include/osal.h
++++ b/connectivity/common/common_main/linux/include/osal.h
+@@ -123,10 +123,10 @@ do { \
+ /* The jiffies msleep(ms) waits, the bound of a poll that replaces it. */
+ #define OSAL_MSLEEP_JIFFIES(ms) (msecs_to_jiffies(ms) + 1)
+ 
+-/* Logs a poll's time, named by what, while wait_log is set. */
++/* Logs a poll's time, named by what, while wait_log or printk.debug is set. */
+ #define OSAL_WAIT_LOG(what, start) \
+ do { \
+-	if (osal_wait_log) \
++	if (osal_wait_log || printk_debugging()) \
+ 		pr_info("[WMT-WAIT]%s: %s took %lld us\n", __func__, what, ktime_to_us(ktime_sub(ktime_get(), start))); \
+ } while (0)
+ 
+diff --git a/connectivity/common/common_main/linux/include/stp_dbg.h b/connectivity/common/common_main/linux/include/stp_dbg.h
+index dc4ef23..7de6ce9 100644
+--- a/connectivity/common/common_main/linux/include/stp_dbg.h
++++ b/connectivity/common/common_main/linux/include/stp_dbg.h
+@@ -55,14 +55,15 @@
+ 
+ extern INT32 gStpDbgDbgLevel;
+ 
++/* the loud and debug lines print at their level or while printk.debug is set */
+ #define STP_DBG_PR_LOUD(fmt, arg...) \
+ do { \
+-	if (gStpDbgDbgLevel >= STP_DBG_LOG_LOUD) \
++	if (gStpDbgDbgLevel >= STP_DBG_LOG_LOUD || printk_debugging()) \
+ 		pr_info(PFX_STP_DBG "%s: "  fmt, __func__, ##arg); \
+ } while (0)
+ #define STP_DBG_PR_DBG(fmt, arg...) \
+ do { \
+-	if (gStpDbgDbgLevel >= STP_DBG_LOG_DBG) \
++	if (gStpDbgDbgLevel >= STP_DBG_LOG_DBG || printk_debugging()) \
+ 		pr_info(PFX_STP_DBG "%s: "  fmt, __func__, ##arg); \
+ } while (0)
+ #define STP_DBG_PR_INFO(fmt, arg...) \
+diff --git a/connectivity/common/common_main/linux/stp_sdio.c b/connectivity/common/common_main/linux/stp_sdio.c
+index d97e4c0..d504f6d 100644
+--- a/connectivity/common/common_main/linux/stp_sdio.c
++++ b/connectivity/common/common_main/linux/stp_sdio.c
+@@ -274,21 +274,22 @@ INT32 gStpSdioDbgLvl = STPSDIO_LOG_INFO;
+ *                                 M A C R O S
+ ********************************************************************************
+ */
++/* the loud, debug and hint lines print while printk.debug is set too */
+ #define STPSDIO_PR_LOUD(fmt, arg...) \
+ do { \
+-	if (gStpSdioDbgLvl >= STPSDIO_LOG_LOUD) \
++	if (gStpSdioDbgLvl >= STPSDIO_LOG_LOUD || printk_debugging()) \
+ 		pr_info(DFT_TAG "[L]%s:"  fmt, __func__, ##arg); \
+ } while (0)
+ 
+ #define STPSDIO_PR_DBG(fmt, arg...) \
+ do { \
+-	if (gStpSdioDbgLvl >= STPSDIO_LOG_DBG) \
++	if (gStpSdioDbgLvl >= STPSDIO_LOG_DBG || printk_debugging()) \
+ 		pr_info(DFT_TAG "[D]%s:"  fmt, __func__, ##arg); \
+ } while (0)
+ 
+ #define STPSDIO_PR_HINT(fmt, arg...) \
+ do { \
+-	if (gStpSdioDbgLvl >= STPSDIO_LOG_HINT) \
++	if (gStpSdioDbgLvl >= STPSDIO_LOG_HINT || printk_debugging()) \
+ 		pr_info(DFT_TAG "[I]%s:"	fmt, __func__, ##arg); \
+ } while (0)
+ 
+diff --git a/connectivity/common/common_main/linux/stp_uart.c b/connectivity/common/common_main/linux/stp_uart.c
+index 5333dbf..6051c74 100644
+--- a/connectivity/common/common_main/linux/stp_uart.c
++++ b/connectivity/common/common_main/linux/stp_uart.c
+@@ -59,8 +59,9 @@
+ 
+ static INT32 gDbgLevel = UART_LOG_INFO;
+ 
++/* a debug line prints while printk.debug is set too */
+ #define UART_PR_DBG(fmt, arg...)	\
+-do { if (gDbgLevel >= UART_LOG_DBG)	\
++do { if (gDbgLevel >= UART_LOG_DBG || printk_debugging())	\
+ 		pr_info(PFX "%s: "  fmt, __func__, ##arg);	\
+ } while (0)
+ #define UART_PR_INFO(fmt, arg...)	\
+diff --git a/connectivity/common/common_main/linux/wmt_dev.c b/connectivity/common/common_main/linux/wmt_dev.c
+index 1724d58..c436765 100644
+--- a/connectivity/common/common_main/linux/wmt_dev.c
++++ b/connectivity/common/common_main/linux/wmt_dev.c
+@@ -750,7 +750,7 @@ LONG wmt_dev_tm_temp_query(VOID)
+ 	/*  */
+ 	/* Dump information */
+ 	/*  */
+-	if ((gWmtDbgLvl >= WMT_LOG_DBG) || (return_temp > MAX_TEMP)) {
++	if ((gWmtDbgLvl >= WMT_LOG_DBG) || printk_debugging() || (return_temp > MAX_TEMP)) {
+ 		osal_lock_unsleepable_lock(&g_temp_query_spinlock);
+ 		WMT_INFO_FUNC("[Thermal] s_idx_temp_table = %d, idx_temp_table = %d\n",
+ 			s_idx_temp_table, idx_temp_table);
+-- 
+2.56.0
+

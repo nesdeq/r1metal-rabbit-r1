@@ -1,0 +1,36 @@
+From 2bf33969465c006e2d14d0f27f2e0dd6eb3f60af Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 20:48:24 +0200
+Subject: [PATCH] wmt: the screen's blank and unblank are info lines
+
+The WMT framebuffer notifier logs every unblank and powerdown at info
+instead of warning, as conninfra logs its own.
+---
+ connectivity/common/common_main/linux/wmt_dev.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/connectivity/common/common_main/linux/wmt_dev.c b/connectivity/common/common_main/linux/wmt_dev.c
+index 27deeaf..1724d58 100644
+--- a/connectivity/common/common_main/linux/wmt_dev.c
++++ b/connectivity/common/common_main/linux/wmt_dev.c
+@@ -274,7 +274,7 @@ static INT32 wmt_fb_notifier_callback(struct notifier_block *self, ULONG event,
+ 		atomic_set(&g_es_lr_flag_for_quick_sleep, 0);
+ 		atomic_set(&g_es_lr_flag_for_lpbk_onoff, 1);
+ 		atomic_set(&g_es_lr_flag_for_blank, 1);
+-		WMT_WARN_FUNC("@@@@@@@@@@wmt enter UNBLANK @@@@@@@@@@@@@@\n");
++		WMT_INFO_FUNC("@@@@@@@@@@wmt enter UNBLANK @@@@@@@@@@@@@@\n");
+ 		if (hif_info == 0) {
+ 			atomic_set(&g_late_pwr_on_for_blank, 1);
+ 			break;
+@@ -285,7 +285,7 @@ static INT32 wmt_fb_notifier_callback(struct notifier_block *self, ULONG event,
+ 		atomic_set(&g_es_lr_flag_for_quick_sleep, 1);
+ 		atomic_set(&g_es_lr_flag_for_lpbk_onoff, 0);
+ 		atomic_set(&g_es_lr_flag_for_blank, 0);
+-		WMT_WARN_FUNC("@@@@@@@@@@wmt enter early POWERDOWN @@@@@@@@@@@@@@\n");
++		WMT_INFO_FUNC("@@@@@@@@@@wmt enter early POWERDOWN @@@@@@@@@@@@@@\n");
+ 		schedule_work(&gPwrOnOffWork);
+ 		break;
+ 	default:
+-- 
+2.56.0
+

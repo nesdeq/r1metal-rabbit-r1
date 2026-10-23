@@ -1,0 +1,96 @@
+From 5fd9eae2f30469e26b04ff90184adef01d623f47 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 20:03:28 +0200
+Subject: [PATCH] och1970: the driver logs with levels and reads its id into a
+ byte
+
+The driver's lines get a level and a line end, without which each runs
+into the next record: probe, init, suspend, resume and the chip id are
+info, a missing reset GPIO and a failed registration errors. The
+one-byte id is read into a u8, not an int with three bytes unset.
+---
+ drivers/input/touchscreen/och1970.c | 22 +++++++++++-----------
+ 1 file changed, 11 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/input/touchscreen/och1970.c b/drivers/input/touchscreen/och1970.c
+index 4659b472c..f2c4ca037 100644
+--- a/drivers/input/touchscreen/och1970.c
++++ b/drivers/input/touchscreen/och1970.c
+@@ -419,7 +419,7 @@ static void och1970_dump_work(struct work_struct *data)
+ 
+ void och1970_resume(void)
+ {
+-	printk(" och1970_resume ");
++	pr_info("och1970_resume\n");
+ 	if (och1970)
+ 		queue_delayed_work(system_power_efficient_wq,
+ 				   &och1970->dump_work, 0);
+@@ -429,7 +429,7 @@ EXPORT_SYMBOL(och1970_resume);
+ 
+ void och1970_suspend(void)
+ {
+-	printk(" och1970_suspend ");
++	pr_info("och1970_suspend\n");
+ 	resume_flag = false;
+ }
+ EXPORT_SYMBOL(och1970_suspend);
+@@ -444,11 +444,11 @@ static int och1970_probe(struct i2c_client *client, const struct i2c_device_id *
+ {
+ 
+ 	struct input_dev *input;
+-	int value;
++	u8 value;
+ 	int ret;
+ 
+-	printk("och1970_probe !!!");
+-	
++	pr_info("och1970_probe\n");
++
+ 	och1970 = kzalloc(sizeof(*och1970), GFP_KERNEL);
+ 	if (!och1970)
+ 		return -ENOMEM;
+@@ -460,7 +460,7 @@ static int och1970_probe(struct i2c_client *client, const struct i2c_device_id *
+ 	
+ 	och1970->reset_gpio = of_get_named_gpio_flags(och1970->dev->of_node, "reset-gpio", 0, &och1970->reset_gpio_flags);
+ 	if (och1970->reset_gpio < 0){
+-		printk("DTS Unable to get reset_gpio");
++		dev_err(och1970->dev, "DTS Unable to get reset_gpio\n");
+ 		kfree(och1970);
+ 		och1970 = NULL;
+ 		return -1;
+@@ -481,7 +481,7 @@ static int och1970_probe(struct i2c_client *client, const struct i2c_device_id *
+ 		och1970 = NULL;
+ 		return ret;
+ 	}
+-	printk("och1970 read id = 0x%x",value);
++	dev_info(och1970->dev, "och1970 read id = 0x%x\n", value);
+ 
+ 	input = devm_input_allocate_device(och1970->dev);
+ 	if (!input) {
+@@ -517,7 +517,7 @@ static int och1970_probe(struct i2c_client *client, const struct i2c_device_id *
+ 
+ 	//register_syscore_ops(&och1970_ops);
+ 
+-	printk("och1970 probe end");
++	pr_info("och1970 probe end\n");
+ 	return 0;
+ 
+ }
+@@ -542,11 +542,11 @@ static int __init och1970_init(void)
+ {
+ 	int ret;
+ 	
+-	printk("och1970_init !!!!");
+-	
++	pr_info("och1970_init\n");
++
+ 	ret = i2c_add_driver(&och1970_driver);
+ 	if (ret != 0) {
+-		printk("can't find och1970 compatible");
++		pr_err("can't find och1970 compatible\n");
+ 		return -1;
+ 	}
+ 	return 0;
+-- 
+2.56.0
+

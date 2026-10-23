@@ -1,0 +1,30 @@
+From 9efe6a9fc709617b917c091ae17e91c9da33bd90 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 20:03:27 +0200
+Subject: [PATCH] ion: a cache sync by physical address names the mapping it
+ unmaps
+
+In its 32-bit M4U branch, ion_sys_cache_sync unmaps a _USE_PA cache
+sync's kernel mapping by param->iova, the address it mapped, in place
+of param->va, a user pointer cast to 32 bits that clang warns of. The
+unmap reads that address only for a trace.
+---
+ drivers/staging/android/mtk_ion/mtk/ion_drv.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/staging/android/mtk_ion/mtk/ion_drv.c b/drivers/staging/android/mtk_ion/mtk/ion_drv.c
+index b41e3e098..8fbb23a2c 100644
+--- a/drivers/staging/android/mtk_ion/mtk/ion_drv.c
++++ b/drivers/staging/android/mtk_ion/mtk/ion_drv.c
+@@ -567,7 +567,7 @@ static long ion_sys_cache_sync(struct ion_client *client,
+ 		m4u_mva_unmap_kernel((unsigned long)param->va,
+ 				     sync_size, sync_va);
+ #else
+-		m4u_mva_unmap_kernel((unsigned int)param->va,
++		m4u_mva_unmap_kernel((unsigned int)param->iova,
+ 				     (unsigned int)sync_size, sync_va);
+ #endif
+ 	} else if (ion_need_unmap_flag) {
+-- 
+2.56.0
+

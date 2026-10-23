@@ -1,0 +1,65 @@
+From a6d762897e2ec5615c7c1536dc2bceaacd13306b Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 10:37:57 +0200
+Subject: [PATCH] log_store: an SRAM header that is not there is not read
+
+- log_store_late_init sets the boot phase only after it finds
+  sram_dram_buff, which set_boot_phase dereferences.
+- log_store_early_init fails with BUFF_ERROR where ioremap_wc fails or
+  the chosen node gives no header address, which upstream maps as 0.
+- A header whose signature fails is unmapped.
+---
+ drivers/misc/mediatek/log_store/log_store.c | 15 ++++++++++++++-
+ 1 file changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/log_store/log_store.c b/drivers/misc/mediatek/log_store/log_store.c
+index 460d49f0e..4bce08bf6 100644
+--- a/drivers/misc/mediatek/log_store/log_store.c
++++ b/drivers/misc/mediatek/log_store/log_store.c
+@@ -439,12 +439,12 @@ static const struct file_operations pl_lk_file_ops = {
+ 
+ static int __init log_store_late_init(void)
+ {
+-	set_boot_phase(BOOT_PHASE_KERNEL);
+ 	if (sram_dram_buff == NULL) {
+ 		pr_notice("log_store: sram header DRAM buff is null.\n");
+ 		dram_log_store_status = BUFF_ALLOC_ERROR;
+ 		return -1;
+ 	}
++	set_boot_phase(BOOT_PHASE_KERNEL);
+ 
+ 	if (!sram_dram_buff->buf_addr || !sram_dram_buff->buf_size) {
+ 		pr_notice("log_store: DRAM buff is null.\n");
+@@ -573,8 +573,19 @@ static int __init log_store_early_init(void)
+ 	else
+ 		pr_info("log_store: get fail\n");
+ 
++	/* a chosen node without log_store leaves the address 0 */
++	if (!sram_ls.addr) {
++		pr_notice("log_store: no sram header address.\n");
++		sram_log_store_status = BUFF_ERROR;
++		return -1;
++	}
+ 	sram_header = ioremap_wc(sram_ls.addr,
+ 		CONFIG_MTK_DRAM_LOG_STORE_SIZE);
++	if (!sram_header) {
++		pr_notice("log_store: sram header ioremap failed.\n");
++		sram_log_store_status = BUFF_ERROR;
++		return -1;
++	}
+ 	dram_curlog_header = &(sram_header->dram_curlog_header);
+ #else
+ 	pr_notice("log_store: not Found CONFIG_MTK_DRAM_LOG_STORE!\n");
+@@ -586,7 +597,9 @@ static int __init log_store_early_init(void)
+ 		pr_notice("log_store: sram header sig 0x%x.\n",
+ 			sram_header->sig);
+ 		sram_log_store_status = BUFF_ERROR;
++		iounmap(sram_header);
+ 		sram_header = NULL;
++		dram_curlog_header = NULL;
+ 		return -1;
+ 	}
+ 
+-- 
+2.56.0
+

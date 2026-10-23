@@ -1,0 +1,44 @@
+From 4472b861a6d0dbeec4949ffa6972bddb970cf197 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 19:20:51 +0200
+Subject: [PATCH] mtk_pd_hal: a single charger configuration looks for no
+ secondary charger
+
+pd_hal_init_hardware leaves chg2_dev NULL under SINGLE_CHARGER, the R1's
+configuration, and looks up "secondary_chg" only for a configuration of
+two chargers, where a missing one is still an error.
+---
+ drivers/power/supply/mtk_pd_hal.c | 17 +++++++++++------
+ 1 file changed, 11 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/power/supply/mtk_pd_hal.c b/drivers/power/supply/mtk_pd_hal.c
+index 30db4c948..3fe09d9fc 100644
+--- a/drivers/power/supply/mtk_pd_hal.c
++++ b/drivers/power/supply/mtk_pd_hal.c
+@@ -100,12 +100,17 @@ int pd_hal_init_hardware(struct chg_alg_device *alg)
+ 		return -ENODEV;
+ 	}
+ 
+-	hal->chg2_dev = get_charger_by_name("secondary_chg");
+-	if (hal->chg2_dev)
+-		pr_notice("%s: Found secondary charger\n", __func__);
+-	else
+-		pr_notice("%s: Error : can't find secondary charger\n",
+-			__func__);
++	/* only a configuration of two chargers has a secondary one */
++	if (alg->config == SINGLE_CHARGER)
++		hal->chg2_dev = NULL;
++	else {
++		hal->chg2_dev = get_charger_by_name("secondary_chg");
++		if (hal->chg2_dev)
++			pr_notice("%s: Found secondary charger\n", __func__);
++		else
++			pr_notice("%s: Error : can't find secondary charger\n",
++				__func__);
++	}
+ 
+ 	hal->adapter = get_adapter_by_name("pd_adapter");
+ 	if (hal->adapter)
+-- 
+2.56.0
+

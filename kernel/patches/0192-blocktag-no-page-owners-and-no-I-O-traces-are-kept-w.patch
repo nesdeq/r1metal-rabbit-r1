@@ -1,0 +1,91 @@
+From 44d49702d39e8492f244762b6de86010cbc1e592 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 13:25:05 +0200
+Subject: [PATCH] blocktag: no page owners and no I/O traces are kept while
+ logging is off
+
+While printk.silent is set block tag keeps no page logger, dump buffer
+or I/O trace: setting it frees the first two and empties every trace
+ring, as "echo 2 > /proc/blocktag/blockio" does, and clearing it
+allocates them again.
+---
+ .../misc/mediatek/blocktag/blocktag-core.c    | 32 ++++++++++++++++++-
+ drivers/mmc/core/mtk_mmc_block.c              |  7 ++++
+ 2 files changed, 38 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/blocktag/blocktag-core.c b/drivers/misc/mediatek/blocktag/blocktag-core.c
+index 65c1a4eba..9cda514fb 100644
+--- a/drivers/misc/mediatek/blocktag/blocktag-core.c
++++ b/drivers/misc/mediatek/blocktag/blocktag-core.c
+@@ -27,6 +27,7 @@
+ #include <linux/module.h>
+ #include <linux/vmstat.h>
+ #include <linux/types.h>
++#include <linux/notifier.h>
+ #include <trace/events/block.h>
+ #include <trace/events/ufs.h>
+ #include <trace/events/writeback.h>
+@@ -1961,12 +1962,41 @@ static void btag_trace_writeback_dirty_page(void *data,
+ 	mtk_btag_pidlog_set_pid(page, PIDLOG_MODE_MM_MARK_DIRTY, true);
+ }
+ 
++/* printk.silent set: as "echo 2 > blockio"; cleared: the page logger and dump buffer again */
++static int mtk_btag_follow_printk(struct notifier_block *nb,
++	unsigned long event, void *unused)
++{
++	struct mtk_blocktag *btag, *n;
++
++	if (printk_silenced()) {
++		if (mtk_btag_enable) {
++			mtk_btag_destroy_pidlogger();
++			mtk_btag_destroy_aee_buffer();
++			mtk_btag_enable = false;
++		}
++		mutex_lock(&mtk_btag_list_lock);
++		list_for_each_entry_safe(btag, n, &mtk_btag_list, list)
++			mtk_btag_clear_trace(&btag->rt);
++		mutex_unlock(&mtk_btag_list_lock);
++	} else if (!mtk_btag_enable) {
++		mtk_btag_enable = mtk_btag_allocate_pidlogger();
++		if (mtk_btag_enable)
++			mtk_btag_allocate_aee_buffer();
++	}
++	return NOTIFY_OK;
++}
++
++static struct notifier_block mtk_btag_printk_nb = {
++	.notifier_call = mtk_btag_follow_printk,
++};
++
+ static int __init mtk_btag_init(void)
+ {
+-	mtk_btag_enable = true; // default is true
++	mtk_btag_enable = !printk_silenced();
+ 	mtk_btag_init_procfs();
+ 	mtk_btag_init_memory();
+ 	mtk_btag_init_pidlogger();
++	printk_logging_notifier_register(&mtk_btag_printk_nb);
+ 
+ 	register_trace_block_rq_insert(
+ 		btag_trace_block_rq_insert, NULL);
+diff --git a/drivers/mmc/core/mtk_mmc_block.c b/drivers/mmc/core/mtk_mmc_block.c
+index f76a6c650..3ce96d930 100644
+--- a/drivers/mmc/core/mtk_mmc_block.c
++++ b/drivers/mmc/core/mtk_mmc_block.c
+@@ -342,6 +342,13 @@ static void mt_bio_print_trace(struct mt_bio_context *ctx)
+ 		pid_ctx = mt_bio_get_ctx(CTX_MMCQD0);
+ 
+ 	spin_lock_irqsave(&rt->lock, flags);
++	/* printk.silent: keep no trace, drop its pids; the emptying takes this lock */
++	if (printk_silenced()) {
++		if (pid_ctx)
++			memset(&pid_ctx->pidlog, 0, sizeof(pid_ctx->pidlog));
++		goto out;
++	}
++
+ 	tr = mtk_btag_curr_trace(rt);
+ 
+ 	if (!tr)
+-- 
+2.56.0
+

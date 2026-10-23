@@ -1,0 +1,37 @@
+From 08aad0d389a142358c7119d6a147dd36fde45549 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 22:25:23 +0200
+Subject: [PATCH] musb: under QMU a request longer than a descriptor counts is
+ refused
+
+Under CONFIG_MTK_MUSB_QMU_SUPPORT, musb_gadget_queue refuses a request
+longer than 65535 bytes with -EOPNOTSUPP. A descriptor counts its bytes
+in 16 bits, and upstream's cut length raises a TX length error that the
+error recovery queues again without end.
+---
+ drivers/misc/mediatek/usb20/musb_gadget.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/drivers/misc/mediatek/usb20/musb_gadget.c b/drivers/misc/mediatek/usb20/musb_gadget.c
+index 44aee4e32..87134010b 100644
+--- a/drivers/misc/mediatek/usb20/musb_gadget.c
++++ b/drivers/misc/mediatek/usb20/musb_gadget.c
+@@ -1647,6 +1647,15 @@ static int musb_gadget_queue
+ 	if (request->ep != musb_ep)
+ 		return -EINVAL;
+ 
++#ifdef CONFIG_MTK_MUSB_QMU_SUPPORT
++	/* the queue unit counts a request's bytes in the 16 bits of one descriptor */
++	if (req->length > U16_MAX) {
++		dev_err(musb->controller, "%s: %u bytes are more than a queue descriptor counts\n",
++			ep->name, req->length);
++		return -EOPNOTSUPP;
++	}
++#endif
++
+ 	DBG(2, "<== to %s request=%p\n", ep->name, req);
+ 
+ 	/* request is mine now... */
+-- 
+2.56.0
+

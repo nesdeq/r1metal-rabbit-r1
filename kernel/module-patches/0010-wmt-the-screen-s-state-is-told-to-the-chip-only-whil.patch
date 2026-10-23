@@ -1,0 +1,48 @@
+From 484bb03b9216bdc8d6582d719a9562df5285be02 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 10:38:38 +0200
+Subject: [PATCH] wmt: the screen's state is told to the chip only while it has
+ power
+
+No screen state goes to the chip while the WMT function is off, neither
+from wmt_dev_blank_handler nor from a queued opfunc_blank_status_ctrl;
+opfunc_pwr_on sends it at power-on. Sent to a core without power, it
+fails with three errors and two warnings.
+---
+ connectivity/common/common_main/core/wmt_core.c | 4 ++++
+ connectivity/common/common_main/linux/wmt_dev.c | 4 ++++
+ 2 files changed, 8 insertions(+)
+
+diff --git a/connectivity/common/common_main/core/wmt_core.c b/connectivity/common/common_main/core/wmt_core.c
+index 5f70562..a19078a 100644
+--- a/connectivity/common/common_main/core/wmt_core.c
++++ b/connectivity/common/common_main/core/wmt_core.c
+@@ -3727,6 +3727,10 @@ INT32 wmt_blank_status_ctrl(UINT32 on_off_flag)
+ 
+ static INT32 opfunc_blank_status_ctrl(P_WMT_OP pWmtOp)
+ {
++	/* Powered off since the request; opfunc_pwr_on() sends the state. */
++	if (gMtkWmtCtx.eDrvStatus[WMTDRV_TYPE_WMT] != DRV_STS_FUNC_ON)
++		return 0;
++
+ 	return wmt_blank_status_ctrl(pWmtOp->au4OpData[0]);
+ }
+ 
+diff --git a/connectivity/common/common_main/linux/wmt_dev.c b/connectivity/common/common_main/linux/wmt_dev.c
+index 914e80c..27deeaf 100644
+--- a/connectivity/common/common_main/linux/wmt_dev.c
++++ b/connectivity/common/common_main/linux/wmt_dev.c
+@@ -375,6 +375,10 @@ VOID wmt_dev_blank_handler(VOID)
+ {
+ 	WMT_DBG_FUNC("wmt_dev_blank_handler start to run\n");
+ 
++	/* Off, the core gets the state from opfunc_pwr_on() at power-on. */
++	if (wmt_lib_get_drv_status(WMTDRV_TYPE_WMT) != DRV_STS_FUNC_ON)
++		return;
++
+ 	if (wmt_lib_get_blank_status() != wmt_dev_get_blank_state())
+ 		if (wmt_lib_blank_status_ctrl(wmt_dev_get_blank_state()))
+ 			WMT_WARN_FUNC("mtk_lib_blank_status_ctrl failed\n");
+-- 
+2.56.0
+

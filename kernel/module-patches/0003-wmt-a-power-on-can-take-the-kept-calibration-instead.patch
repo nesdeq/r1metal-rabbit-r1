@@ -1,0 +1,63 @@
+From f3fc66cbaf801fbfc73fa104fcdd4caad51559f9 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Sat, 10 Oct 2026 15:55:06 +0200
+Subject: [PATCH] wmt: a power-on can take the kept calibration instead of
+ calibrating
+
+With the module parameter restore_calibration set, a power-on restores
+the kept calibration, as a reset after an assert does, instead of
+calibrating, which takes 1.05 s of a 1.30 s cold start. Without kept
+results the chip calibrates in full.
+---
+ connectivity/common/common_main/core/wmt_ic_soc.c          | 7 +++++--
+ .../common/common_main/platform/mtk_wcn_consys_hw.c        | 2 ++
+ 2 files changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/connectivity/common/common_main/core/wmt_ic_soc.c b/connectivity/common/common_main/core/wmt_ic_soc.c
+index e197281..c7c4dd2 100644
+--- a/connectivity/common/common_main/core/wmt_ic_soc.c
++++ b/connectivity/common/common_main/core/wmt_ic_soc.c
+@@ -117,6 +117,9 @@ static UINT16 gBTCalResultSize;
+ static UINT32 gWiFiCalAddrOffset;
+ static UINT32 gWiFiCalSize;
+ static PUINT8 gWiFiCalResult;
++/* Set: a power-on restores the kept calibration, as after an assert. */
++static bool restore_calibration;
++module_param(restore_calibration, bool, 0644);
+ #endif
+ 
+ #if 0
+@@ -3688,7 +3691,7 @@ VOID mtk_wcn_soc_restore_wifi_cal_result(VOID)
+ 	}
+ 
+ 	if (mtk_consys_is_calibration_backup_restore_support() == 0 ||
+-	    mtk_wcn_stp_assert_flow_get() == 0) {
++	    (mtk_wcn_stp_assert_flow_get() == 0 && !restore_calibration)) {
+ 		WMT_INFO_FUNC(
+ 			"Skip restore, chip id=%x mtk_wcn_stp_assert_flow_get()=%d\n",
+ 			wmt_ic_ops_soc.icId, mtk_wcn_stp_assert_flow_get());
+@@ -3977,7 +3980,7 @@ static INT32 mtk_wcn_soc_do_calibration(void)
+ 	 * Restore old data.
+ 	 */
+ 	if (mtk_consys_is_calibration_backup_restore_support() == 0 ||
+-	    mtk_wcn_stp_assert_flow_get() == 0) {
++	    (mtk_wcn_stp_assert_flow_get() == 0 && !restore_calibration)) {
+ 		WMT_INFO_FUNC(
+ 			"Skip restore, chip id=%x mtk_wcn_stp_assert_flow_get()=%d\n",
+ 			wmt_ic_ops_soc.icId, mtk_wcn_stp_assert_flow_get());
+diff --git a/connectivity/common/common_main/platform/mtk_wcn_consys_hw.c b/connectivity/common/common_main/platform/mtk_wcn_consys_hw.c
+index 5af5397..4774e55 100644
+--- a/connectivity/common/common_main/platform/mtk_wcn_consys_hw.c
++++ b/connectivity/common/common_main/platform/mtk_wcn_consys_hw.c
+@@ -964,6 +964,8 @@ INT32 mtk_wcn_consys_hw_pwr_on(UINT32 co_clock_type)
+ 		WMT_PLAT_PR_ERR("EMI base address is invalid, CONNSYS can not be powered on!");
+ 		return -WMT_ERRCODE_EMI_NOT_READY;
+ 	}
++	/* Writes the kept Wi-Fi calibration to the EMI if a restore is due. */
++	mtk_wcn_soc_restore_wifi_cal_result();
+ 	iRet = mtk_wcn_consys_hw_reg_ctrl(1, co_clock_type);
+ 	if (iRet) {
+ 		WMT_PLAT_PR_ERR("CONSYS-HW-PWR-ON, failed!(%d)\n", iRet);
+-- 
+2.56.0
+

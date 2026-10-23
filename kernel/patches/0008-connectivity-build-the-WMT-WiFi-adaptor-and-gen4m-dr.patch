@@ -1,0 +1,43 @@
+From 7d6f9e47b06e760fe2d4307df3d645c664fd3399 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Sat, 10 Oct 2026 14:53:39 +0200
+Subject: [PATCH] connectivity: build the WMT, WiFi adaptor and gen4m drivers
+ into the kernel
+
+CONFIG_WLAN_DRV_BUILD_IN is set, so this Makefile builds the WMT, WiFi
+adaptor and gen4m drivers of vendor/mediatek/kernel_modules into the
+kernel, with the gen4m options of rabbitOS's module build and the user
+variant, which drops asserts and WMT debug commands.
+---
+ drivers/misc/mediatek/connectivity/Makefile | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/misc/mediatek/connectivity/Makefile b/drivers/misc/mediatek/connectivity/Makefile
+index 3e61d7d75..59f62fe26 100644
+--- a/drivers/misc/mediatek/connectivity/Makefile
++++ b/drivers/misc/mediatek/connectivity/Makefile
+@@ -49,8 +49,8 @@ endif
+     ifeq ($(CONFIG_MTK_COMBO), y)
+         ccflags-y += -D CFG_CONNADP_BUILD_IN
+     endif
+-    # Do build-in for Makefile checking
+-    # export CONFIG_WLAN_DRV_BUILD_IN=y
++    # Build the WMT, WiFi adaptor and gen4m drivers into the kernel.
++    export CONFIG_WLAN_DRV_BUILD_IN=y
+ 
+     ifeq ($(CONFIG_WLAN_DRV_BUILD_IN),y)
+         PATH_TO_WMT_DRV      = vendor/mediatek/kernel_modules/connectivity/common
+@@ -89,6 +89,10 @@ endif
+         export MTK_COMBO_CHIP=CONNAC
+         export WLAN_CHIP_ID=6765
+         export MTK_ANDROID_WMT=y
++        # rabbitOS's module build options; the user variant drops asserts and WMT debug commands.
++        export MTK_ANDROID_EMI=y
++        export MTK_WLAN_SERVICE=yes
++        export TARGET_BUILD_VARIANT=user
+ 
+         # Do build-in for xxx.c checking
+         subdir-ccflags-y += -D MTK_WCN_REMOVE_KERNEL_MODULE
+-- 
+2.56.0
+

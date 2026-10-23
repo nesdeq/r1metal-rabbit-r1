@@ -1,0 +1,66 @@
+From 2261adc8ed9f128b158f09c7773b082a717eca44 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Tue, 20 Oct 2026 09:42:23 +0200
+Subject: [PATCH] conn_md: an added user is information, and so is a message
+ for the modem of a boot that loads none
+
+- "uid ... is added to user list successfully" prints at info.
+- A message dropped for an unregistered destination prints at info, as
+  the modem not loaded, where get_modem_is_enabled(MD_SYS1) is false.
+- The warning for an unregistered source says so, not "is ready".
+---
+ drivers/misc/mediatek/conn_md/conn_md.c | 17 ++++++++++++-----
+ 1 file changed, 12 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/misc/mediatek/conn_md/conn_md.c b/drivers/misc/mediatek/conn_md/conn_md.c
+index 15c5c89fb..c019ad597 100644
+--- a/drivers/misc/mediatek/conn_md/conn_md.c
++++ b/drivers/misc/mediatek/conn_md/conn_md.c
+@@ -6,6 +6,7 @@
+ #include "conn_md.h"
+ #include "conn_md_dbg.h"
+ #include <linux/sched/clock.h>
++#include <mt-plat/mtk_ccci_common.h>
+ 
+ /*global data structure defination*/
+ struct conn_md_struct g_conn_md;
+@@ -135,7 +136,7 @@ int conn_md_add_user(uint32 u_id, struct conn_md_bridge_ops *p_ops)
+ 
+ 	p_user->state = USER_ENABLED;
+ 
+-	CONN_MD_WARN_FUNC("uid (0x%08x) is added to user list successfully\n",
++	CONN_MD_INFO_FUNC("uid (0x%08x) is added to user list successfully\n",
+ 			p_user->u_id);
+ 	/*unlock user_list lock */
+ 	mutex_unlock(&p_user_list->lock);
+@@ -427,7 +428,7 @@ static int conn_md_thread(void *p_data)
+ 			if (p_user == NULL) {
+ 				mutex_unlock(&p_user_list->lock);
+ 				CONN_MD_WARN_FUNC
+-				    ("user (0x%08x) is ready, drop ilm msg\n",
++				    ("source user (0x%08x) is not registered, drop ilm msg\n",
+ 				     p_cur_ilm->src_mod_id);
+ #if (ACT_QUEUE_DBG == 1)
+ 				/*free message structure */
+@@ -459,9 +460,15 @@ static int conn_md_thread(void *p_data)
+ 			if (p_user == NULL) {
+ 				mutex_unlock(&p_user_list->lock);
+ 
+-				CONN_MD_WARN_FUNC
+-				    ("user (0x%08x) not ready, drop ilm msg\n",
+-				     p_cur_ilm->dest_mod_id);
++				/* a destination is absent without fault only where the boot loads no modem */
++				if (get_modem_is_enabled(MD_SYS1))
++					CONN_MD_WARN_FUNC
++					    ("user (0x%08x) not ready, drop ilm msg\n",
++					     p_cur_ilm->dest_mod_id);
++				else
++					CONN_MD_INFO_FUNC
++					    ("user (0x%08x) is not registered, the modem is not loaded on this boot, drop ilm msg\n",
++					     p_cur_ilm->dest_mod_id);
+ #if (ACT_QUEUE_DBG == 1)
+ 				/*free message structure */
+ 				list_del(pos);
+-- 
+2.56.0
+

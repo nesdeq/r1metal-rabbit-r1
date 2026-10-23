@@ -1,0 +1,33 @@
+From df12179ee66d87a6a62e9cba5580eaac2da62f92 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 22:58:47 +0200
+Subject: [PATCH] alarmtimer: an alarm due within 2 s ends the suspend as a
+ wakeup
+
+alarmtimer_suspend reports an alarm due within 2 s as a hard wakeup and
+returns 0, so the PM core aborts the suspend as a wakeup instead of
+reporting the alarmtimer as a device that failed to suspend.
+---
+ kernel/time/alarmtimer.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/kernel/time/alarmtimer.c b/kernel/time/alarmtimer.c
+index 2e932f59d..a145e7f1e 100644
+--- a/kernel/time/alarmtimer.c
++++ b/kernel/time/alarmtimer.c
+@@ -288,9 +288,10 @@ static int alarmtimer_suspend(struct device *dev)
+ 	if (min == 0)
+ 		return 0;
+ 
++	/* an alarm this near is a wakeup that ends the suspend, not a failure to suspend */
+ 	if (ktime_to_ns(min) < 2 * NSEC_PER_SEC) {
+-		__pm_wakeup_event(ws, 2 * MSEC_PER_SEC);
+-		return -EBUSY;
++		pm_wakeup_ws_event(ws, 2 * MSEC_PER_SEC, true);
++		return 0;
+ 	}
+ 
+ 	trace_alarmtimer_suspend(expires, type);
+-- 
+2.56.0
+

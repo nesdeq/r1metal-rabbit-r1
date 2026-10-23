@@ -1,0 +1,65 @@
+From 25ad6984f0916b630257c8671d2fccd9c11fb6db Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 16:33:18 +0200
+Subject: [PATCH] mmdvfs: vcore is asked for only where its voltage is checked
+
+The vcore regulator is requested and used only under CHECK_VOLTAGE,
+which the MT6765 build does not define. The mmdvfs_pmqos node names no
+vcore-supply, so the request gets only a dummy regulator and a warning.
+---
+ drivers/misc/mediatek/mmdvfs/mmdvfs_pmqos.c | 12 +++++++++---
+ 1 file changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/misc/mediatek/mmdvfs/mmdvfs_pmqos.c b/drivers/misc/mediatek/mmdvfs/mmdvfs_pmqos.c
+index 63379ca9a..bfa39b21e 100644
+--- a/drivers/misc/mediatek/mmdvfs/mmdvfs_pmqos.c
++++ b/drivers/misc/mediatek/mmdvfs/mmdvfs_pmqos.c
+@@ -61,8 +61,10 @@
+ 
+ #include "swpm_me.h"
+ 
++#ifdef CHECK_VOLTAGE
+ #include <linux/regulator/consumer.h>
+ static struct regulator *vcore_reg_id;
++#endif
+ 
+ 
+ #undef pr_fmt
+@@ -271,8 +273,8 @@ static void mm_apply_vcore(s32 vopp)
+ {
+ 	mtk_pm_qos_update_request(&vcore_request, vopp);
+ 
+-	if (vcore_reg_id) {
+ #ifdef CHECK_VOLTAGE
++	if (vcore_reg_id) {
+ 		u32 v_real, v_target, max_opp;
+ 
+ 		max_opp = mtk_dvfsrc_vcore_opp_count();
+@@ -284,8 +286,8 @@ static void mm_apply_vcore(s32 vopp)
+ 					v_real, v_target);
+ 
+ 		}
+-#endif
+ 	}
++#endif
+ }
+ 
+ static s32 mm_set_mux_clk(s32 src_mux_id, const char *name,
+@@ -1984,9 +1986,13 @@ static int mmdvfs_probe(struct platform_device *pdev)
+ 	init_waitqueue_head(&hrt_wait);
+ #endif
+ 
++#ifdef CHECK_VOLTAGE
+ 	vcore_reg_id = regulator_get(&pdev->dev, "vcore");
+-	if (!vcore_reg_id)
++	if (IS_ERR(vcore_reg_id)) {
+ 		pr_info("regulator_get vcore_reg_id failed\n");
++		vcore_reg_id = NULL;
++	}
++#endif
+ 	return 0;
+ 
+ }
+-- 
+2.56.0
+

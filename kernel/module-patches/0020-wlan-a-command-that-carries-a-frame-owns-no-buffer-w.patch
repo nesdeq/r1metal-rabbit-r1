@@ -1,0 +1,32 @@
+From da688900219b57cb384a5bf6a87781b9437e4b2a Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 10:44:53 +0200
+Subject: [PATCH] wlan: a command that carries a frame owns no buffer, which is
+ no leak
+
+cmdBufFreeCmdInfo warns of a missing info buffer only for a command that
+is no security, management or data frame: those keep their frame in its
+packet or MSDU.
+---
+ connectivity/wlan/core/gen4m/nic/cmd_buf.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/connectivity/wlan/core/gen4m/nic/cmd_buf.c b/connectivity/wlan/core/gen4m/nic/cmd_buf.c
+index efbf59f..cf16821 100644
+--- a/connectivity/wlan/core/gen4m/nic/cmd_buf.c
++++ b/connectivity/wlan/core/gen4m/nic/cmd_buf.c
+@@ -313,7 +313,10 @@ void cmdBufFreeCmdInfo(IN struct ADAPTER *prAdapter,
+ 		if (prCmdInfo->pucInfoBuffer) {
+ 			cnmMemFree(prAdapter, prCmdInfo->pucInfoBuffer);
+ 			prCmdInfo->pucInfoBuffer = NULL;
+-		} else {
++		} else if (prCmdInfo->eCmdType != COMMAND_TYPE_SECURITY_FRAME &&
++			   prCmdInfo->eCmdType != COMMAND_TYPE_MANAGEMENT_FRAME &&
++			   prCmdInfo->eCmdType != COMMAND_TYPE_DATA_FRAME) {
++			/* Frame commands carry their frame in the MSDU or packet. */
+ 			DBGLOG(MEM, WARN, "CMD[0x%x] not freed Buffer NULL!\n",
+ 				prCmdInfo->ucCID);
+ 		}
+-- 
+2.56.0
+

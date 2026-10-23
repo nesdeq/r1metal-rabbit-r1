@@ -1,0 +1,76 @@
+From 964ffd07962258ab8e6acc96384317f75e125392 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 10:31:46 +0200
+Subject: [PATCH] battery: the kernel algorithm centres the temperature
+ thresholds
+
+The kernel algorithm centres both pairs of battery temperature
+thresholds on the temperature, at its start and at every crossing.
+Upstream only fuelgauged sets them, so they stay 0, and at 0 C or above
+every gauge event but EVT_INT_NAFG_CHECK rebuilds the C table.
+---
+ drivers/power/supply/mtk_battery_algo.c | 27 +++++++++++++++++++++++++
+ 1 file changed, 27 insertions(+)
+
+diff --git a/drivers/power/supply/mtk_battery_algo.c b/drivers/power/supply/mtk_battery_algo.c
+index e6a1b6b80..80a4b2bfd 100644
+--- a/drivers/power/supply/mtk_battery_algo.c
++++ b/drivers/power/supply/mtk_battery_algo.c
+@@ -1172,6 +1172,26 @@ void fgr_update_fg_bat_tmp_threshold_c(struct mtk_battery *gm)
+ 	gm->algo.fg_bat_tmp_c_gap = 1;
+ }
+ 
++/* centres bat_tmp_ht and bat_tmp_lt, which fg_int_event tests, on the temperature */
++static void fgr_set_bat_tmp_threshold(struct mtk_battery *gm)
++{
++	int tmp = force_get_tbat(gm, true);
++
++	gm->bat_tmp_int_gap = gm->fg_cust_data.diff_bat_temp_setting;
++	gm->bat_tmp_ht = tmp + gm->bat_tmp_int_gap;
++	gm->bat_tmp_lt = tmp - gm->bat_tmp_int_gap;
++}
++
++/* centres bat_tmp_c_ht and bat_tmp_c_lt, whose crossing rebuilds the C table */
++static void fgr_set_bat_tmp_c_threshold(struct mtk_battery *gm)
++{
++	int tmp = force_get_tbat(gm, true);
++
++	gm->bat_tmp_c_int_gap = gm->algo.fg_bat_tmp_c_gap;
++	gm->bat_tmp_c_ht = tmp + gm->bat_tmp_c_int_gap;
++	gm->bat_tmp_c_lt = tmp - gm->bat_tmp_c_int_gap;
++}
++
+ void fgr_update_c_dod(struct mtk_battery *gm)
+ {
+ 	struct mtk_battery_algo *algo;
+@@ -1432,6 +1452,7 @@ void fgr_temp_c_int_handler(struct mtk_battery *gm)
+ 
+ 	fgr_set_soc_by_vc_mode(gm);
+ 	algo->fg_bat_tmp_c_gap = 1;
++	fgr_set_bat_tmp_c_threshold(gm);
+ }
+ 
+ void fgr_update_fg_bat_int1_threshold(struct mtk_battery *gm)
+@@ -1696,6 +1717,10 @@ void do_fg_algo(struct mtk_battery *gm, unsigned int intr_num)
+ 		fgr_temp_c_int_handler(gm);
+ 		fgr_int_end_flow(gm, FG_INTR_BAT_TMP_LT);
+ 		break;
++	case FG_INTR_BAT_TMP_HT:
++	case FG_INTR_BAT_TMP_LT:
++		fgr_set_bat_tmp_threshold(gm);
++		break;
+ 	case FG_INTR_BAT_INT1_HT:
+ 		fgr_bat_int1_handler(gm);
+ 		fgr_bat_int2_handler(gm, 0);
+@@ -1771,6 +1796,8 @@ void fgr_set_int1(struct mtk_battery *gm)
+ 	algo->fg_bat_tmp_c_gap = 1;
+ 	bm_debug("[%s]fg_bat_tmp_c_gap %d\n",
+ 		__func__, algo->fg_bat_tmp_c_gap);
++	fgr_set_bat_tmp_threshold(gm);
++	fgr_set_bat_tmp_c_threshold(gm);
+ 
+ 	algo->fg_vbat2_lt = pdata->vbat2_det_voltage1;
+ 	gauge_set_property(GAUGE_PROP_VBAT_LT_INTR_THRESHOLD,
+-- 
+2.56.0
+

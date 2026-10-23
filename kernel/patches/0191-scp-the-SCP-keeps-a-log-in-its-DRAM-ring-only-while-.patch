@@ -1,0 +1,159 @@
+From f0e4cecdff1c2368491539fee951848a5810fabe Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 13:24:17 +0200
+Subject: [PATCH] scp: the SCP keeps a log in its DRAM ring only while logging
+ is on
+
+- While printk.silent is set the SCP's log is off, its DRAM ring and
+  last logs are empty, and a crash copies nothing from it.
+- The disable IPI waits for the SCP, so nothing it wrote before lands in
+  the emptied ring.
+- The ring header's enable flag follows the acknowledged request;
+  upstream compares the IPI words 0x101 and 0x001 with 1 and 0.
+---
+ .../misc/mediatek/scp/cm4/v01/scp_logger.c    | 69 +++++++++++++++++--
+ 1 file changed, 63 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/misc/mediatek/scp/cm4/v01/scp_logger.c b/drivers/misc/mediatek/scp/cm4/v01/scp_logger.c
+index 7f5363984..08090431f 100644
+--- a/drivers/misc/mediatek/scp/cm4/v01/scp_logger.c
++++ b/drivers/misc/mediatek/scp/cm4/v01/scp_logger.c
+@@ -15,6 +15,7 @@
+ #include <linux/spinlock.h>
+ #include <linux/delay.h>
+ #include <linux/io.h>
++#include <linux/notifier.h>
+ 
+ #include "scp_ipi.h"
+ #include "scp_helper.h"
+@@ -123,6 +124,11 @@ static size_t scp_A_get_last_log(size_t b_len)
+ 		return 0;
+ 	}
+ 	mutex_lock(&scp_logger_mutex);
++	/* while logging is off nothing is copied from the SCP */
++	if (printk_silenced()) {
++		mutex_unlock(&scp_logger_mutex);
++		return 0;
++	}
+ 	/*SCP keep awake */
+ 	scp_awake_flag = 0;
+ 	if (scp_awake_lock(SCP_A_ID) == -1) {
+@@ -290,17 +296,19 @@ static unsigned int scp_A_log_enable_set(unsigned int enable)
+ {
+ 	int ret;
+ 	unsigned int retrytimes;
++	unsigned int ctrl;
+ 
+ 	if (scp_A_logger_inited) {
+ 		/*
+ 		 *send ipi to invoke scp logger
+ 		 */
+ 		ret = 0;
+-		enable = (enable) ? SCP_LOGGER_ON : SCP_LOGGER_OFF;
++		ctrl = (enable) ? SCP_LOGGER_ON : SCP_LOGGER_OFF;
+ 		retrytimes = SCP_IPI_RETRY_TIMES;
+ 		do {
++			/* a disable waits for the SCP to take it, before the ring is emptied */
+ 			ret = scp_ipi_send(IPI_LOGGER_ENABLE,
+-				&enable, sizeof(enable), 0, SCP_A_ID);
++				&ctrl, sizeof(ctrl), !enable, SCP_A_ID);
+ 			if (ret == SCP_IPI_DONE)
+ 				break;
+ 			retrytimes--;
+@@ -309,10 +317,8 @@ static unsigned int scp_A_log_enable_set(unsigned int enable)
+ 		/*
+ 		 *disable/enable logger flag
+ 		 */
+-		if ((ret == SCP_IPI_DONE) && (enable == 1))
+-			SCP_A_log_ctl->enable = 1;
+-		else if ((ret == SCP_IPI_DONE) && (enable == 0))
+-			SCP_A_log_ctl->enable = 0;
++		if (ret == SCP_IPI_DONE)
++			SCP_A_log_ctl->enable = enable ? 1 : 0;
+ 
+ 		if (ret != SCP_IPI_DONE) {
+ 			pr_err("[SCP] %s: fail ret=%d\n", __func__, ret);
+@@ -549,6 +555,18 @@ static void scp_A_logger_init_handler(int id, void *data, unsigned int len)
+ #endif
+ }
+ 
++/* The caller holds scp_A_log_mutex and scp_logger_mutex. */
++static void scp_A_log_empty(void)
++{
++	SCP_A_buf_info->r_pos = SCP_A_buf_info->w_pos;
++	memset_io((void __iomem *)((char *)SCP_A_log_ctl +
++		SCP_A_log_ctl->buff_ofs), 0, DRAM_BUF_LEN);
++	if (scp_A_last_log)
++		memset(scp_A_last_log, 0, LAST_LOG_BUF_SIZE + 1);
++	vfree(scp_last_logger);
++	scp_last_logger = NULL;
++}
++
+ /*
+  * callback function for work struct
+  * notify apps to start their tasks or generate an exception according to flag
+@@ -595,8 +613,42 @@ static void scp_logger_notify_ws(struct work_struct *ws)
+ 		SCP_A_log_ctl->enable = 1;
+ 		pr_err("[SCP]logger initial fail, ipi ret=%d\n", ret);
+ 	}
++
++	/* printk.silent: switch the SCP's log off and empty what it wrote since its init */
++	if (ret == SCP_IPI_DONE) {
++		mutex_lock(&scp_A_log_mutex);
++		if (printk_silenced()) {
++			scp_A_log_enable_set(0);
++			mutex_lock(&scp_logger_mutex);
++			scp_A_log_empty();
++			mutex_unlock(&scp_logger_mutex);
++		}
++		mutex_unlock(&scp_A_log_mutex);
++	}
++}
++
++/* Switches the SCP's log by printk.silent and, when off, empties the ring and last logs */
++static int scp_A_logger_follow_printk(struct notifier_block *nb,
++	unsigned long event, void *unused)
++{
++	bool silent = printk_silenced();
++
++	mutex_lock(&scp_A_log_mutex);
++	if (is_scp_ready(SCP_A_ID))
++		scp_A_log_enable_set(!silent);
++	if (silent) {
++		mutex_lock(&scp_logger_mutex);
++		scp_A_log_empty();
++		mutex_unlock(&scp_logger_mutex);
++	}
++	mutex_unlock(&scp_A_log_mutex);
++	return NOTIFY_OK;
+ }
+ 
++static struct notifier_block scp_A_logger_printk_nb = {
++	.notifier_call = scp_A_logger_follow_printk,
++};
++
+ 
+ /******************************************************************************
+  * init scp logger dram ctrl structure
+@@ -663,6 +715,7 @@ int scp_logger_init(phys_addr_t start, phys_addr_t limit)
+ 			"log wakeup");
+ 
+ 	scp_A_logger_inited = 1;
++	printk_logging_notifier_register(&scp_A_logger_printk_nb);
+ 	return last_ofs;
+ 
+ error:
+@@ -716,6 +769,10 @@ void scp_crash_log_move_to_buf(enum scp_core_id scp_id)
+ 
+ 	/* SCP keep awake */
+ 	mutex_lock(&scp_logger_mutex);
++	if (printk_silenced()) {
++		mutex_unlock(&scp_logger_mutex);
++		return;
++	}
+ 	if (scp_awake_lock(scp_id) == -1) {
+ 		pr_debug("[SCP] %s: awake scp fail\n", __func__);
+ 		mutex_unlock(&scp_logger_mutex);
+-- 
+2.56.0
+

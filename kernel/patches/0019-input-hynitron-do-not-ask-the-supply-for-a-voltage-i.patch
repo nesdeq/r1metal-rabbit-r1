@@ -1,0 +1,34 @@
+From e7739dd438231801f02b6e159982e31c6b64cad5 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 10:55:23 +0200
+Subject: [PATCH] input: hynitron: do not ask the supply for a voltage it
+ cannot give
+
+hyn_probe() requests no voltage for the touch supply. vldo28 allows 2.8
+to 3.0 V and refuses the 3.3 V request with two errors at every boot;
+it also feeds the camera's autofocus, so the request is dropped, not
+corrected.
+---
+ drivers/input/touchscreen/CST8xx/hynitron_core.c | 5 +----
+ 1 file changed, 1 insertion(+), 4 deletions(-)
+
+diff --git a/drivers/input/touchscreen/CST8xx/hynitron_core.c b/drivers/input/touchscreen/CST8xx/hynitron_core.c
+index 8a1fce675..16babfada 100644
+--- a/drivers/input/touchscreen/CST8xx/hynitron_core.c
++++ b/drivers/input/touchscreen/CST8xx/hynitron_core.c
+@@ -1883,11 +1883,8 @@ static int hyn_probe(struct i2c_client *client, const struct i2c_device_id *id)
+ 	//ts_data->device_id = id->driver_data; //if null,may cause dump
+ 
+ 	HYN_INFO(" hyn Device Tree get regulator :vtouch ! \n");
++	/* No voltage request: vldo28 allows 2.8 to 3.0 V and also feeds the camera's autofocus. */
+ 	tpd->reg = regulator_get(tpd->tpd_dev, "vtouch");
+-	ret = regulator_set_voltage(tpd->reg, 3300000, 3300000);	/*set 2.8v*/
+-	if (ret!=0) {
+-		HYN_ERROR("regulator_set_voltage(%d) failed!\n", ret);
+-	}
+ 
+     ret = regulator_enable(tpd->reg);
+ 	if (ret != 0)
+-- 
+2.56.0
+

@@ -1,0 +1,37 @@
+From c6ec1510f54a9265456d48febd887cd8af6ad26d Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 15:19:31 +0200
+Subject: [PATCH] disp: display_recorder: dprec_logger_get_dump_addr takes no
+ arguments
+
+Both definitions take (void), as the prototype does; clang 23 rejects
+the empty lists against it.
+---
+ drivers/misc/mediatek/video/mt6765/dispsys/display_recorder.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/misc/mediatek/video/mt6765/dispsys/display_recorder.c b/drivers/misc/mediatek/video/mt6765/dispsys/display_recorder.c
+index 30390648a..5b414cd3a 100644
+--- a/drivers/misc/mediatek/video/mt6765/dispsys/display_recorder.c
++++ b/drivers/misc/mediatek/video/mt6765/dispsys/display_recorder.c
+@@ -1116,7 +1116,7 @@ void dprec_logger_dump_reset(void)
+ 		sizeof(dprec_string_buffer_analysize));
+ }
+ 
+-char *dprec_logger_get_dump_addr()
++char *dprec_logger_get_dump_addr(void)
+ {
+ 	return dprec_string_buffer_analysize;
+ }
+@@ -1551,7 +1551,7 @@ void dprec_logger_dump_reset(void)
+ {
+ }
+ 
+-char *dprec_logger_get_dump_addr()
++char *dprec_logger_get_dump_addr(void)
+ {
+ 	return NULL;
+ }
+-- 
+2.56.0
+

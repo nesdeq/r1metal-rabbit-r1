@@ -1,0 +1,144 @@
+From 5a4bdcbf93719a9a23e363376bd950695c0907c6 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 10:47:52 +0200
+Subject: [PATCH] wlan: the periodic status dumps are trace output
+
+The lines the performance and link quality monitors print every second
+in a network, and the per-command trace, print at TRACE, which the
+default log level leaves out, instead of INFO. They are 17 % of the
+kernel log.
+---
+ .../wlan/core/gen4m/chips/common/cmm_asic_connac.c        | 4 ++--
+ connectivity/wlan/core/gen4m/common/wlan_lib.c            | 4 ++--
+ connectivity/wlan/core/gen4m/mgmt/cnm_timer.c             | 2 +-
+ connectivity/wlan/core/gen4m/nic/nic.c                    | 2 +-
+ connectivity/wlan/core/gen4m/nic/nic_rx.c                 | 2 +-
+ connectivity/wlan/core/gen4m/os/linux/gl_kal.c            | 8 ++++----
+ 6 files changed, 11 insertions(+), 11 deletions(-)
+
+diff --git a/connectivity/wlan/core/gen4m/chips/common/cmm_asic_connac.c b/connectivity/wlan/core/gen4m/chips/common/cmm_asic_connac.c
+index 76b4320..ccae02d 100644
+--- a/connectivity/wlan/core/gen4m/chips/common/cmm_asic_connac.c
++++ b/connectivity/wlan/core/gen4m/chips/common/cmm_asic_connac.c
+@@ -1545,7 +1545,7 @@ static void asicFillInitCmdTxdInfo(
+ 	if (pucSeqNum)
+ 		*pucSeqNum = prInitHifTxHeader->rInitWifiCmd.ucSeqNum;
+ 
+-	DBGLOG_LIMITED(INIT, INFO, "TX CMD: ID[0x%02X] SEQ[%u] LEN[%u]\n",
++	DBGLOG_LIMITED(INIT, TRACE, "TX CMD: ID[0x%02X] SEQ[%u] LEN[%u]\n",
+ 			prInitHifTxHeader->rInitWifiCmd.ucCID,
+ 			prInitHifTxHeader->rInitWifiCmd.ucSeqNum,
+ 			prInitHifTxHeader->u2TxByteCount);
+@@ -1581,7 +1581,7 @@ static void asicFillCmdTxdInfo(
+ 	if (pucSeqNum)
+ 		*pucSeqNum = prWifiCmd->ucSeqNum;
+ 
+-	DBGLOG_LIMITED(INIT, INFO,
++	DBGLOG_LIMITED(INIT, TRACE,
+ 			"TX CMD: ID[0x%02X] SEQ[%u] SET[%u] LEN[%u]\n",
+ 			prWifiCmd->ucCID, prWifiCmd->ucSeqNum,
+ 			prWifiCmd->ucSetQuery, prWifiCmd->u2Length);
+diff --git a/connectivity/wlan/core/gen4m/common/wlan_lib.c b/connectivity/wlan/core/gen4m/common/wlan_lib.c
+index 6fa9315..5ded57c 100644
+--- a/connectivity/wlan/core/gen4m/common/wlan_lib.c
++++ b/connectivity/wlan/core/gen4m/common/wlan_lib.c
+@@ -2187,7 +2187,7 @@ void wlanTxCmdDoneCb(IN struct ADAPTER *prAdapter,
+ 	KAL_SPIN_LOCK_DECLARATION();
+ 
+ 	if ((!prCmdInfo->fgSetQuery) || (prCmdInfo->fgNeedResp)) {
+-		DBGLOG(TX, INFO, "Add command: %p, %ps, cmd=0x%02X, seq=%u",
++		DBGLOG(TX, TRACE, "Add command: %p, %ps, cmd=0x%02X, seq=%u",
+ 			prCmdInfo, prCmdInfo->pfCmdDoneHandler,
+ 			prCmdInfo->ucCID, prCmdInfo->ucCmdSeqNum);
+ 
+@@ -12928,7 +12928,7 @@ uint32_t wlanLinkQualityMonitor(struct GLUE_INFO *prGlueInfo, bool bFgIsOid)
+ 	wlanCustomMonitorFunction(prAdapter, prLinkQualityInfo, ucBssIndex);
+ #endif
+ 
+-	DBGLOG(SW4, INFO,
++	DBGLOG(SW4, TRACE,
+ 	       "Link Quality: Tx(rate:%u, total:%lu, retry:%lu, fail:%lu, RTS fail:%lu, ACK fail:%lu), Rx(rate:%u, total:%lu, dup:%u, error:%lu), PER(%u), Congestion(idle slot:%lu, diff:%lu, AwakeDur:%u)\n",
+ 	       prLinkQualityInfo->u4CurTxRate, /* current tx link speed */
+ 	       prLinkQualityInfo->u8TxTotalCount, /* tx total packages */
+diff --git a/connectivity/wlan/core/gen4m/mgmt/cnm_timer.c b/connectivity/wlan/core/gen4m/mgmt/cnm_timer.c
+index 24a10f9..37e5e26 100644
+--- a/connectivity/wlan/core/gen4m/mgmt/cnm_timer.c
++++ b/connectivity/wlan/core/gen4m/mgmt/cnm_timer.c
+@@ -627,7 +627,7 @@ void cnmTimerDoTimeOutCheck(IN struct ADAPTER *prAdapter)
+ 						     pfMgmtTimeOutFunc,
+ 						     ulTimeoutDataPtr))
+ 				#endif
+-				log_dbg(CNM, INFO,
++				log_dbg(CNM, TRACE,
+ 					"timer timeout, timer %p func %ps\n",
+ 					prTimer, prTimer->pfMgmtTimeOutFunc);
+ 
+diff --git a/connectivity/wlan/core/gen4m/nic/nic.c b/connectivity/wlan/core/gen4m/nic/nic.c
+index 680f858..cba1d09 100644
+--- a/connectivity/wlan/core/gen4m/nic/nic.c
++++ b/connectivity/wlan/core/gen4m/nic/nic.c
+@@ -877,7 +877,7 @@ struct CMD_INFO *nicGetPendingCmdInfo(IN struct ADAPTER
+ 	KAL_RELEASE_SPIN_LOCK(prAdapter, SPIN_LOCK_CMD_PENDING);
+ 
+ 	if (prCmdInfo) {
+-		DBGLOG(TX, INFO, "Get command: %p, %ps, cmd=0x%02X, seq=%u",
++		DBGLOG(TX, TRACE, "Get command: %p, %ps, cmd=0x%02X, seq=%u",
+ 				prCmdInfo, prCmdInfo->pfCmdDoneHandler,
+ 				prCmdInfo->ucCID, prCmdInfo->ucCmdSeqNum);
+ 
+diff --git a/connectivity/wlan/core/gen4m/nic/nic_rx.c b/connectivity/wlan/core/gen4m/nic/nic_rx.c
+index 05ea6fb..bc66448 100644
+--- a/connectivity/wlan/core/gen4m/nic/nic_rx.c
++++ b/connectivity/wlan/core/gen4m/nic/nic_rx.c
+@@ -1937,7 +1937,7 @@ void nicRxProcessEventPacket(IN struct ADAPTER *prAdapter,
+ 
+ 	/* Event cannot be found in event handler table, use default action */
+ 	if (u4Idx >= u4Size) {
+-		DBGLOG(RX, INFO, "Not static config event: id=0x%02X, seq=%u",
++		DBGLOG(RX, TRACE, "Not static config event: id=0x%02X, seq=%u",
+ 				prEvent->ucEID, prEvent->ucSeqNum);
+ 		prCmdInfo = nicGetPendingCmdInfo(prAdapter,
+ 						 prEvent->ucSeqNum);
+diff --git a/connectivity/wlan/core/gen4m/os/linux/gl_kal.c b/connectivity/wlan/core/gen4m/os/linux/gl_kal.c
+index b5a47e2..24829f9 100644
+--- a/connectivity/wlan/core/gen4m/os/linux/gl_kal.c
++++ b/connectivity/wlan/core/gen4m/os/linux/gl_kal.c
+@@ -7925,7 +7925,7 @@ void kalSetPerfReport(IN struct ADAPTER *prAdapter)
+ 			prCmdPerfReport->ulCurRxBytes[1],
+ 			prCmdPerfReport->ulCurRxBytes[2],
+ 			prCmdPerfReport->ulCurRxBytes[3]);
+-		DBGLOG(SW4, INFO,
++		DBGLOG(SW4, TRACE,
+ 			"Rate[%d][%d][%d][%d] RCPI[%d][%d][%d][%d]\n",
+ 			prCmdPerfReport->u2CurRxRate[0],
+ 			prCmdPerfReport->u2CurRxRate[1],
+@@ -8304,7 +8304,7 @@ static uint32_t kalPerMonUpdate(IN struct ADAPTER *prAdapter)
+ 	" Mo:[%u:%lu:%lu:%lu]" \
+ 	" TxDp[ST:BS:FO:QM:DP]:%u:%u:%u:%u:%u\n"
+ 
+-	DBGLOG(SW4, INFO, TEMP_LOG_TEMPLATE,
++	DBGLOG(SW4, TRACE, TEMP_LOG_TEMPLATE,
+ 		period,	(unsigned long long) perf->ulThroughput,
+ 		(unsigned long long) (perf->ulThroughput >> 20),
+ 		(unsigned long long) ((perf->ulThroughput >> 10) & BITS(0, 9)),
+@@ -8334,7 +8334,7 @@ static uint32_t kalPerMonUpdate(IN struct ADAPTER *prAdapter)
+ 	"ndevdrp:%s drv[RM,IL,RI,RT,RM,RW,RA,RB,DT,NS,IB,HS,LS,DD,ME,BD,NI," \
+ 	"DR,TE,CE,DN,FE,DE,IE,TME]:%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu," \
+ 	"%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu\n"
+-	DBGLOG(SW4, INFO, TEMP_LOG_TEMPLATE,
++	DBGLOG(SW4, TRACE, TEMP_LOG_TEMPLATE,
+ 		head4,
+ 		RX_GET_CNT(&prAdapter->rRxCtrl, RX_MPDU_TOTAL_COUNT),
+ 		RX_GET_CNT(&prAdapter->rRxCtrl, RX_ICS_LOG_COUNT),
+@@ -9756,7 +9756,7 @@ static void kalDumpHifStats(IN struct ADAPTER *prAdapter)
+ 			" txreg[%u] rxreg[%u]",
+ 			prHifStats->u4TxDataRegCnt,
+ 			prHifStats->u4RxDataRegCnt);
+-	DBGLOG(HAL, INFO, "%s\n", buf);
++	DBGLOG(HAL, TRACE, "%s\n", buf);
+ 	kalMemFree(buf, VIR_MEM_TYPE, u4BufferSize);
+ }
+ 
+-- 
+2.56.0
+

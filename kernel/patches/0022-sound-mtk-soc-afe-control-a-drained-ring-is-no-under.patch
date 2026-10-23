@@ -1,0 +1,125 @@
+From 3c315e012b484a377a2bb89d78c1184b3df61c45 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 11:39:26 +0200
+Subject: [PATCH] sound: mtk-soc-afe-control: a drained ring is no underflow
+
+- A DL1 ring that runs dry while its stream drains is no underflow, and
+  u4DataRemained stops at 0: every drained stream ends that way.
+- Opening a DL1 stream clears the underflow records, so none of one
+  stream is reported at the next one's first write.
+---
+ .../mediatek/common_int/mtk-soc-afe-control.c | 36 +++++++++++++++++--
+ .../mediatek/common_int/mtk-soc-afe-control.h |  1 +
+ .../soc/mediatek/common_int/mtk-soc-pcm-dl1.c |  2 ++
+ 3 files changed, 36 insertions(+), 3 deletions(-)
+
+diff --git a/sound/soc/mediatek/common_int/mtk-soc-afe-control.c b/sound/soc/mediatek/common_int/mtk-soc-afe-control.c
+index 4647d3899..0ac4fce2b 100644
+--- a/sound/soc/mediatek/common_int/mtk-soc-afe-control.c
++++ b/sound/soc/mediatek/common_int/mtk-soc-afe-control.c
+@@ -2521,6 +2521,13 @@ void Auddrv_VUL2_Interrupt_Handler(void)
+ 	 */
+ }
+ 
++/* True while the stream has been told to drain: its ring runs dry on purpose. */
++static bool dl_draining(const struct snd_pcm_substream *substream)
++{
++	return substream != NULL && substream->runtime != NULL &&
++	       substream->runtime->status->state == SNDRV_PCM_STATE_DRAINING;
++}
++
+ void Auddrv_DSP_DL1_Interrupt_Handler(void *PrivateData)
+ {
+ 	/* irq1 ISR handler */
+@@ -2656,6 +2663,7 @@ void Auddrv_DL1_Interrupt_Handler(void)
+ 	struct afe_block_t *Afe_Block = &(
+ 		AFE_Mem_Control_context[Soc_Aud_Digital_Block_MEM_DL1]->rBlock);
+ 	unsigned long flags;
++	bool draining;
+ 
+ 	if (Mem_Block == NULL)
+ 		return;
+@@ -2709,9 +2717,13 @@ void Auddrv_DL1_Interrupt_Handler(void)
+ 	 * Afe_Block->u4DataRemained, Afe_consumed_bytes, HW_memory_index);
+ 	 */
+ 
+-	if (Afe_Block->u4DataRemained < Afe_consumed_bytes ||
+-	    Afe_Block->u4DataRemained <= 0 ||
+-	    Afe_Block->u4DataRemained > Afe_Block->u4BufferSize) {
++	draining = Mem_Block->substreamL != NULL &&
++		   dl_draining(Mem_Block->substreamL->substream);
++
++	if (Afe_Block->u4DataRemained > Afe_Block->u4BufferSize ||
++	    (!draining &&
++	     (Afe_Block->u4DataRemained < Afe_consumed_bytes ||
++	      Afe_Block->u4DataRemained <= 0))) {
+ 		if (AFE_dL_Abnormal_context.u4UnderflowCnt <
+ 		    DL_ABNORMAL_CONTROL_MAX) {
+ 			AFE_dL_Abnormal_context.pucPhysBufAddr
+@@ -2746,6 +2758,9 @@ void Auddrv_DL1_Interrupt_Handler(void)
+ 		 * Afe_Block->u4DataRemained, Afe_Block->u4WriteIdx);
+ 		 */
+ 		Afe_Block->u4DataRemained -= Afe_consumed_bytes;
++		/* A draining stream runs dry on purpose: none remains, none is lost. */
++		if (Afe_Block->u4DataRemained < 0)
++			Afe_Block->u4DataRemained = 0;
+ 		Afe_Block->u4DMAReadIdx += Afe_consumed_bytes;
+ 		Afe_Block->u4DMAReadIdx %= Afe_Block->u4BufferSize;
+ 	}
+@@ -3277,6 +3292,17 @@ void AudDrv_checkDLISRStatus(void)
+ 	}
+ }
+ 
++/* Drops the DL1 underflow records, so none is reported for the next stream. */
++void AudDrv_clearDLISRStatus(void)
++{
++	unsigned long flags;
++
++	spin_lock_irqsave(&afe_dl_abnormal_context_lock, flags);
++	memset((void *)&AFE_dL_Abnormal_context, 0,
++	       sizeof(struct afe_dl_abnormal_control_t));
++	spin_unlock_irqrestore(&afe_dl_abnormal_context_lock, flags);
++}
++
+ static void update_sram_block_valid(enum audio_sram_mode mode)
+ {
+ 	int i;
+@@ -4295,6 +4321,10 @@ get_dlmem_frame_index(struct snd_pcm_substream *substream,
+ 		case SNDRV_PCM_ACCESS_RW_NONINTERLEAVED:
+ 		default:
+ 			Afe_Block->u4DataRemained -= Afe_consumed_bytes;
++			/* A draining stream runs dry on purpose: none remains, none is lost. */
++			if (Afe_Block->u4DataRemained < 0 &&
++			    dl_draining(substream))
++				Afe_Block->u4DataRemained = 0;
+ 			break;
+ 		}
+ 
+diff --git a/sound/soc/mediatek/common_int/mtk-soc-afe-control.h b/sound/soc/mediatek/common_int/mtk-soc-afe-control.h
+index 5a50dddbd..fb10a17a1 100644
+--- a/sound/soc/mediatek/common_int/mtk-soc-afe-control.h
++++ b/sound/soc/mediatek/common_int/mtk-soc-afe-control.h
+@@ -238,6 +238,7 @@ bool GetOffloadEnableFlag(void);
+ unsigned int word_size_align(unsigned int in_size);
+ 
+ void AudDrv_checkDLISRStatus(void);
++void AudDrv_clearDLISRStatus(void);
+ 
+ /* sram mamager */
+ bool InitSramManager(struct device *pDev, unsigned int sramblocksize);
+diff --git a/sound/soc/mediatek/common_int/mtk-soc-pcm-dl1.c b/sound/soc/mediatek/common_int/mtk-soc-pcm-dl1.c
+index edcd6b6fc..a0938e2f3 100644
+--- a/sound/soc/mediatek/common_int/mtk-soc-pcm-dl1.c
++++ b/sound/soc/mediatek/common_int/mtk-soc-pcm-dl1.c
+@@ -217,6 +217,8 @@ static int mtk_pcm_dl1_open(struct snd_pcm_substream *substream)
+ 	int ret = 0;
+ 	struct snd_pcm_runtime *runtime = substream->runtime;
+ 
++	AudDrv_clearDLISRStatus();
++
+ 	mPlaybackDramState = false;
+ 
+ 	mtk_pcm_dl1_hardware.buffer_bytes_max = GetPLaybackSramFullSize();
+-- 
+2.56.0
+

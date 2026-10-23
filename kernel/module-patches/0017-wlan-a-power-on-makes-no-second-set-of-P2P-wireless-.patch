@@ -1,0 +1,30 @@
+From 1b66e2da02111c7446a13bdded8f223e487816d7 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 10:42:35 +0200
+Subject: [PATCH] wlan: a power-on makes no second set of P2P wireless devices
+
+glRegisterP2P creates the second P2P role's wireless device only where
+it is missing: the devices outlive a power-off, and a second creation
+finds no free slot and logs "fail to register wiphy to driver".
+---
+ connectivity/wlan/core/gen4m/os/linux/gl_p2p.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/connectivity/wlan/core/gen4m/os/linux/gl_p2p.c b/connectivity/wlan/core/gen4m/os/linux/gl_p2p.c
+index 30573d8..c7451c2 100644
+--- a/connectivity/wlan/core/gen4m/os/linux/gl_p2p.c
++++ b/connectivity/wlan/core/gen4m/os/linux/gl_p2p.c
+@@ -1317,7 +1317,9 @@ u_int8_t glRegisterP2P(struct GLUE_INFO *prGlueInfo, const char *prDevName,
+ 	    (ucApMode == RUNNING_P2P_AP_MODE) ||
+ 	    (ucApMode == RUNNING_DUAL_P2P_MODE)) {
+ 		ucRegisterNum = 2;
+-		glP2pCreateWirelessDevice(prGlueInfo);
++		/* Role devices survive power-off; create only a missing one. */
++		if (!gprP2pRoleWdev[ucRegisterNum - 1])
++			glP2pCreateWirelessDevice(prGlueInfo);
+ 	}
+ 
+ 	do {
+-- 
+2.56.0
+

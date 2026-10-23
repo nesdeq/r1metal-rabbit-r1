@@ -1,0 +1,29 @@
+From 424577307642a3d5bfc1eddf702b277af5dabc30 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 20:27:02 +0200
+Subject: [PATCH] mmc: block: a partition's end not write group aligned is told
+ as its end
+
+The "End ... not write group aligned" line of
+mmc_blk_check_disk_range_wp() prints the partition's end, where upstream
+prints its start.
+---
+ drivers/mmc/core/block.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/mmc/core/block.c b/drivers/mmc/core/block.c
+index e327a4afe..7e0c83776 100644
+--- a/drivers/mmc/core/block.c
++++ b/drivers/mmc/core/block.c
+@@ -839,7 +839,7 @@ static int mmc_blk_check_disk_range_wp(struct gendisk *disk,
+ 	quot = div_u64_rem(quot, card->wp_grp_size, &remain);
+ 	if (remain) {
+ 		pr_notice("[%s]End 0x%llx of disk %s not write group aligned\n", __func__,
+-			(unsigned long long)part_start, disk->disk_name);
++			(unsigned long long)end, disk->disk_name);
+ 		end += card->wp_grp_size - remain;
+ 	}
+ 	wp_grp_total = end - start;
+-- 
+2.56.0
+

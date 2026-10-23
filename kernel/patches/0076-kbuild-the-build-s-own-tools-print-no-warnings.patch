@@ -1,0 +1,78 @@
+From 70998c22e6c1dd6084073a5be32b636e98c3e1d8 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 20:18:01 +0200
+Subject: [PATCH] kbuild: the build's own tools print no warnings
+
+- The GCC toolchain probe, whose `which` fails where there is none,
+  runs only where LLVM_IAS is not 1, as in mainline.
+- An LTO export list runs llvm-nm --quiet, which drops only the notice
+  for a member without symbols.
+- The vDSO check uses grep -E, not the obsolescent egrep.
+- modpost's match() keeps strstr's result in a const pointer.
+---
+ Makefile               | 3 +++
+ lib/vdso/Makefile      | 2 +-
+ scripts/Makefile.build | 2 +-
+ scripts/mod/modpost.c  | 3 ++-
+ 4 files changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index b6245f493..8dcf2753f 100644
+--- a/Makefile
++++ b/Makefile
+@@ -503,10 +503,13 @@ endif
+ ifeq ($(cc-name),clang)
+ ifneq ($(CROSS_COMPILE),)
+ CLANG_FLAGS	+= --target=$(notdir $(CROSS_COMPILE:%-=%))
++# only an external assembler is looked up in a GCC toolchain
++ifneq ($(LLVM_IAS),1)
+ GCC_TOOLCHAIN_DIR := $(dir $(shell which $(CROSS_COMPILE)elfedit))
+ CLANG_FLAGS	+= --prefix=$(GCC_TOOLCHAIN_DIR)$(notdir $(CROSS_COMPILE))
+ GCC_TOOLCHAIN	:= $(realpath $(GCC_TOOLCHAIN_DIR)/..)
+ endif
++endif
+ ifneq ($(GCC_TOOLCHAIN),)
+ CLANG_FLAGS	+= --gcc-toolchain=$(GCC_TOOLCHAIN)
+ endif
+diff --git a/lib/vdso/Makefile b/lib/vdso/Makefile
+index c415a685d..e814061d6 100644
+--- a/lib/vdso/Makefile
++++ b/lib/vdso/Makefile
+@@ -17,6 +17,6 @@ $(error ARCH_REL_TYPE_ABS is not set)
+ endif
+ 
+ quiet_cmd_vdso_check = VDSOCHK $@
+-      cmd_vdso_check = if $(OBJDUMP) -R $@ | egrep -h "$(ARCH_REL_TYPE_ABS)"; \
++      cmd_vdso_check = if $(OBJDUMP) -R $@ | grep -E -h "$(ARCH_REL_TYPE_ABS)"; \
+ 		       then (echo >&2 "$@: dynamic relocations are not supported"; \
+ 			     rm -f $@; /bin/false); fi
+diff --git a/scripts/Makefile.build b/scripts/Makefile.build
+index e510a1f5d..6e72e9e86 100644
+--- a/scripts/Makefile.build
++++ b/scripts/Makefile.build
+@@ -550,7 +550,7 @@ cmd_export_list = 					\
+ 				$(filter_export_list) 	\
+ 				>>$(ksyms-lds);		\
+ 		else					\
+-			$(LLVM_NM) $$o |		\
++			$(LLVM_NM) --quiet $$o |	\
+ 				$(filter_export_list) 	\
+ 				>>$(ksyms-lds);		\
+ 		fi; 					\
+diff --git a/scripts/mod/modpost.c b/scripts/mod/modpost.c
+index 6129898ee..05245871b 100644
+--- a/scripts/mod/modpost.c
++++ b/scripts/mod/modpost.c
+@@ -799,7 +799,8 @@ static int match(const char *sym, const char * const pat[])
+ 
+ 		/* "*foo*" */
+ 		if (*p == '*' && *endp == '*') {
+-			char *here, *bare = strndup(p + 1, strlen(p) - 2);
++			const char *here;
++			char *bare = strndup(p + 1, strlen(p) - 2);
+ 
+ 			here = strstr(sym, bare);
+ 			free(bare);
+-- 
+2.56.0
+

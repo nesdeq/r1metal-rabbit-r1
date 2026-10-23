@@ -1,0 +1,30 @@
+From c5d50ff9a7bf0502a6370f938b0599b479ef96a6 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 12:53:52 +0200
+Subject: [PATCH] wlan: the SW control registers carry no power save test
+ commands
+
+TEST_PS is 0, so the SW control registers carry no power save test
+commands, with which a write can set up an AP BSS, send QoS Null frames
+with arbitrary addresses and rebuild the beacon of an unchecked BSS
+index.
+---
+ connectivity/wlan/core/gen4m/include/mgmt/swcr.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/connectivity/wlan/core/gen4m/include/mgmt/swcr.h b/connectivity/wlan/core/gen4m/include/mgmt/swcr.h
+index c1467c6..5089662 100644
+--- a/connectivity/wlan/core/gen4m/include/mgmt/swcr.h
++++ b/connectivity/wlan/core/gen4m/include/mgmt/swcr.h
+@@ -81,7 +81,7 @@
+  *                              C O N S T A N T S
+  *******************************************************************************
+  */
+-#define TEST_PS 1
++#define TEST_PS 0
+ 
+ #define SWCR_VAR(x) ((void *)&x)
+ #define SWCR_FUNC(x)  ((void *)x)
+-- 
+2.56.0
+

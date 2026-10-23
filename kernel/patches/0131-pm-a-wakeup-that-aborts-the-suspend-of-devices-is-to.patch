@@ -1,0 +1,106 @@
+From a81df35da17ee4bafdd2ea7b7dd488c73dbf9a3a Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 22:58:47 +0200
+Subject: [PATCH] pm: a wakeup that aborts the suspend of devices is told at
+ info
+
+pm_wakeup_pending() records in pm_wakeup_found that it reported a
+wakeup, and the summaries of the suspend, late suspend and noirq suspend
+of devices print "Early wake event detected" at info where it did, their
+error only otherwise.
+---
+ drivers/base/power/wakeup.c | 10 +++++++++-
+ include/linux/suspend.h     |  1 +
+ kernel/power/suspend.c      | 15 ++++++++++++---
+ 3 files changed, 22 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/base/power/wakeup.c b/drivers/base/power/wakeup.c
+index c7eee03ab..7d3e572c9 100644
+--- a/drivers/base/power/wakeup.c
++++ b/drivers/base/power/wakeup.c
+@@ -36,6 +36,9 @@ bool events_check_enabled __read_mostly;
+ /* First wakeup IRQ seen by the kernel in the last cycle. */
+ unsigned int pm_wakeup_irq __read_mostly;
+ 
++/* Whether pm_wakeup_pending() has found a wakeup in the last cycle. */
++bool pm_wakeup_found __read_mostly;
++
+ /* If greater than 0 and the system is suspending, terminate the suspend. */
+ static atomic_t pm_abort_suspend __read_mostly;
+ 
+@@ -906,7 +909,11 @@ bool pm_wakeup_pending(void)
+ 		pr_info("PM: %s\n", suspend_abort);
+ 	}
+ 
+-	return ret || atomic_read(&pm_abort_suspend) > 0;
++	ret = ret || atomic_read(&pm_abort_suspend) > 0;
++	if (ret)
++		pm_wakeup_found = true;
++
++	return ret;
+ }
+ 
+ void pm_system_wakeup(void)
+@@ -924,6 +931,7 @@ void pm_system_cancel_wakeup(void)
+ void pm_wakeup_clear(bool reset)
+ {
+ 	pm_wakeup_irq = 0;
++	pm_wakeup_found = false;
+ 	if (reset)
+ 		atomic_set(&pm_abort_suspend, 0);
+ }
+diff --git a/include/linux/suspend.h b/include/linux/suspend.h
+index 71c6110bd..27ec46c04 100644
+--- a/include/linux/suspend.h
++++ b/include/linux/suspend.h
+@@ -435,6 +435,7 @@ extern int unregister_pm_notifier(struct notifier_block *nb);
+ /* drivers/base/power/wakeup.c */
+ extern bool events_check_enabled;
+ extern unsigned int pm_wakeup_irq;
++extern bool pm_wakeup_found;
+ extern suspend_state_t pm_suspend_target_state;
+ 
+ extern bool pm_wakeup_pending(void);
+diff --git a/kernel/power/suspend.c b/kernel/power/suspend.c
+index 70a36bb8d..c9e76e292 100644
+--- a/kernel/power/suspend.c
++++ b/kernel/power/suspend.c
+@@ -412,7 +412,10 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
+ 	if (error) {
+ 		last_dev = suspend_stats.last_failed_dev + REC_FAILED_NUM - 1;
+ 		last_dev %= REC_FAILED_NUM;
+-		pr_err("late suspend of devices failed\n");
++		if (pm_wakeup_found)
++			pr_info("Early wake event detected in late suspend of devices\n");
++		else
++			pr_err("late suspend of devices failed\n");
+ 		log_suspend_abort_reason("late suspend of %s device failed",
+ 					 suspend_stats.failed_devs[last_dev]);
+ 		goto Platform_finish;
+@@ -430,7 +433,10 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
+ 	if (error) {
+ 		last_dev = suspend_stats.last_failed_dev + REC_FAILED_NUM - 1;
+ 		last_dev %= REC_FAILED_NUM;
+-		pr_err("noirq suspend of devices failed\n");
++		if (pm_wakeup_found)
++			pr_info("Early wake event detected in noirq suspend of devices\n");
++		else
++			pr_err("noirq suspend of devices failed\n");
+ 		log_suspend_abort_reason("noirq suspend of %s device failed",
+ 					 suspend_stats.failed_devs[last_dev]);
+ 		goto Platform_early_resume;
+@@ -513,7 +519,10 @@ int suspend_devices_and_enter(suspend_state_t state)
+ 	suspend_test_start();
+ 	error = dpm_suspend_start(PMSG_SUSPEND);
+ 	if (error) {
+-		pr_err("Some devices failed to suspend, or early wake event detected\n");
++		if (pm_wakeup_found)
++			pr_info("Early wake event detected in suspend of devices\n");
++		else
++			pr_err("Some devices failed to suspend\n");
+ 		log_suspend_abort_reason(
+ 				"Some devices failed to suspend, or early wake event detected");
+ 		goto Recover_platform;
+-- 
+2.56.0
+

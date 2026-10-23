@@ -1,0 +1,167 @@
+From 9b17f992f667d9529d41e7fe95e5616c1f9155c6 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 10:41:38 +0200
+Subject: [PATCH] connlog: the chip's log is cached only while somebody has its
+ node open
+
+Each log node counts its opens, and while no registered node of a type
+is open, the chip's log of that type is dropped at its EMI ring instead
+of cached. With no reader, the 128 KB Wi-Fi cache fills and every log
+interrupt warns "cache is full".
+---
+ connectivity/bt/mt66xx/wmt/fw_log_bt.c        |  2 ++
+ .../common/common_main/linux/fw_log_wmt.c     |  2 ++
+ .../debug_utility/connsys_debug_utility.c     | 29 +++++++++++++++++++
+ .../debug_utility/connsys_debug_utility.h     |  2 ++
+ connectivity/gps/gps_stp/fw_log_gps.c         |  2 ++
+ connectivity/wlan/adaptor/fw_log_wifi.c       |  2 ++
+ 6 files changed, 39 insertions(+)
+
+diff --git a/connectivity/bt/mt66xx/wmt/fw_log_bt.c b/connectivity/bt/mt66xx/wmt/fw_log_bt.c
+index 0573fad..93c28cb 100644
+--- a/connectivity/bt/mt66xx/wmt/fw_log_bt.c
++++ b/connectivity/bt/mt66xx/wmt/fw_log_bt.c
+@@ -238,12 +238,14 @@ static ssize_t fw_log_bt_read(struct file *filp, char __user *buf, size_t len, l
+ static int fw_log_bt_open(struct inode *inode, struct file *file)
+ {
+ 	BT_LOG_PRT_INFO("major %d minor %d (pid %d)\n", imajor(inode), iminor(inode), current->pid);
++	connsys_log_reader_open(CONNLOG_TYPE_BT);
+ 	return 0;
+ }
+ 
+ static int fw_log_bt_close(struct inode *inode, struct file *file)
+ {
+ 	BT_LOG_PRT_INFO("major %d minor %d (pid %d)\n", imajor(inode), iminor(inode), current->pid);
++	connsys_log_reader_close(CONNLOG_TYPE_BT);
+ 	return 0;
+ }
+ 
+diff --git a/connectivity/common/common_main/linux/fw_log_wmt.c b/connectivity/common/common_main/linux/fw_log_wmt.c
+index c8727e0..f9265a8 100644
+--- a/connectivity/common/common_main/linux/fw_log_wmt.c
++++ b/connectivity/common/common_main/linux/fw_log_wmt.c
+@@ -33,12 +33,14 @@ static wait_queue_head_t wq;
+ static int fw_log_wmt_open(struct inode *inode, struct file *file)
+ {
+ 	pr_info("%s\n", __func__);
++	connsys_log_reader_open(CONNLOG_TYPE_MCU);
+ 	return 0;
+ }
+ 
+ static int fw_log_wmt_close(struct inode *inode, struct file *file)
+ {
+ 	pr_info("%s\n", __func__);
++	connsys_log_reader_close(CONNLOG_TYPE_MCU);
+ 	return 0;
+ }
+ 
+diff --git a/connectivity/common/debug_utility/connsys_debug_utility.c b/connectivity/common/debug_utility/connsys_debug_utility.c
+index b0039f3..653d265 100644
+--- a/connectivity/common/debug_utility/connsys_debug_utility.c
++++ b/connectivity/common/debug_utility/connsys_debug_utility.c
+@@ -103,6 +103,9 @@ static char *type_to_title[CONNLOG_TYPE_END] = {
+ 
+ static size_t cache_size_table[CONNLOG_TYPE_END];
+ 
++/* Open count of each type's log node. */
++static atomic_t node_readers[CONNLOG_TYPE_END];
++
+ /*******************************************************************************
+ *                  F U N C T I O N   D E C L A R A T I O N S
+ ********************************************************************************
+@@ -268,6 +271,12 @@ static void connlog_ring_emi_to_cache(int conn_type)
+ 	ring_emi = &connlog_buffer_table[conn_type].ring_emi;
+ 	ring_cache = &connlog_buffer_table[conn_type].ring_cache;
+ 
++	/* No reader: drop the chip's log at its ring, not into the cache. */
++	if (event_callback_table[conn_type] && !atomic_read(&node_readers[conn_type])) {
++		EMI_WRITE32(ring_emi->read, EMI_READ32(ring_emi->write));
++		return;
++	}
++
+ 	if (RING_FULL(ring_cache)) {
+ 		if (__ratelimit(&_rs))
+ 			pr_warn("%s cache is full.\n", type_to_title[conn_type]);
+@@ -1160,6 +1169,26 @@ int connsys_log_register_event_cb(int conn_type, CONNLOG_EVENT_CB func)
+ }
+ EXPORT_SYMBOL(connsys_log_register_event_cb);
+ 
++/* Called from the open of a log node; its type's log is cached while open. */
++int connsys_log_reader_open(int conn_type)
++{
++	if (conn_type >= CONNLOG_TYPE_END || conn_type < 0)
++		return -1;
++	atomic_inc(&node_readers[conn_type]);
++	return 0;
++}
++EXPORT_SYMBOL(connsys_log_reader_open);
++
++/* Called from the release of a log node. */
++int connsys_log_reader_close(int conn_type)
++{
++	if (conn_type >= CONNLOG_TYPE_END || conn_type < 0)
++		return -1;
++	atomic_dec_if_positive(&node_readers[conn_type]);
++	return 0;
++}
++EXPORT_SYMBOL(connsys_log_reader_close);
++
+ /*****************************************************************************
+ * FUNCTION
+ *  connsys_log_read
+diff --git a/connectivity/common/debug_utility/connsys_debug_utility.h b/connectivity/common/debug_utility/connsys_debug_utility.h
+index ea6da81..130ae9b 100644
+--- a/connectivity/common/debug_utility/connsys_debug_utility.h
++++ b/connectivity/common/debug_utility/connsys_debug_utility.h
+@@ -79,6 +79,8 @@ int connsys_log_init(int conn_type);
+ int connsys_log_deinit(int conn_type);
+ unsigned int connsys_log_get_buf_size(int conn_type);
+ int connsys_log_register_event_cb(int conn_type, CONNLOG_EVENT_CB func);
++int connsys_log_reader_open(int conn_type);
++int connsys_log_reader_close(int conn_type);
+ ssize_t connsys_log_read_to_user(int conn_type, char __user *buf, size_t count);
+ ssize_t connsys_log_read(int conn_type, char *buf, size_t count);
+ 
+diff --git a/connectivity/gps/gps_stp/fw_log_gps.c b/connectivity/gps/gps_stp/fw_log_gps.c
+index 64049ed..a1cda03 100644
+--- a/connectivity/gps/gps_stp/fw_log_gps.c
++++ b/connectivity/gps/gps_stp/fw_log_gps.c
+@@ -101,6 +101,7 @@ long fw_log_gps_compat_ioctl(struct file *filp, unsigned int cmd, unsigned long
+ static int fw_log_open(struct inode *inode, struct file *file)
+ {
+ 	pr_info("%s: gps major %d minor %d (pid %d)\n", __func__, imajor(inode), iminor(inode), current->pid);
++	connsys_log_reader_open(CONNLOG_TYPE_GPS);
+ 	return 0;
+ }
+ 
+@@ -111,6 +112,7 @@ static int fw_log_open(struct inode *inode, struct file *file)
+ static int fw_log_close(struct inode *inode, struct file *file)
+ {
+ 	pr_info("%s: gps major %d minor %d (pid %d)\n", __func__, imajor(inode), iminor(inode), current->pid);
++	connsys_log_reader_close(CONNLOG_TYPE_GPS);
+ 	return 0;
+ }
+ 
+diff --git a/connectivity/wlan/adaptor/fw_log_wifi.c b/connectivity/wlan/adaptor/fw_log_wifi.c
+index a222635..7a461f6 100644
+--- a/connectivity/wlan/adaptor/fw_log_wifi.c
++++ b/connectivity/wlan/adaptor/fw_log_wifi.c
+@@ -142,6 +142,7 @@ EXPORT_SYMBOL(wifi_fwlog_onoff_status);
+ static int fw_log_wifi_open(struct inode *inode, struct file *file)
+ {
+ 	WIFI_INFO_FUNC("major %d minor %d (pid %d)\n", imajor(inode), iminor(inode), current->pid);
++	connsys_log_reader_open(CONNLOG_TYPE_WIFI);
+ 
+ 	return 0;
+ }
+@@ -149,6 +150,7 @@ static int fw_log_wifi_open(struct inode *inode, struct file *file)
+ static int fw_log_wifi_release(struct inode *inode, struct file *file)
+ {
+ 	WIFI_INFO_FUNC("major %d minor %d (pid %d)\n", imajor(inode), iminor(inode), current->pid);
++	connsys_log_reader_close(CONNLOG_TYPE_WIFI);
+ 
+ 	return 0;
+ }
+-- 
+2.56.0
+

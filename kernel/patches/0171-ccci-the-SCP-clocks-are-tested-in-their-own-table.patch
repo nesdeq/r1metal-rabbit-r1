@@ -1,0 +1,36 @@
+From 1619ada4c9d6f34c5a726b511d57d11561fe88c0 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 10:43:34 +0200
+Subject: [PATCH] ccci: the SCP clocks are tested in their own table
+
+scp_set_clk_on and scp_set_clk_off skip an SCP clock by its own
+scp_clk_table entry, not by ccif_clk_table's entry at the same index.
+---
+ drivers/misc/mediatek/eccci/hif/ccci_hif_ccif.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/misc/mediatek/eccci/hif/ccci_hif_ccif.c b/drivers/misc/mediatek/eccci/hif/ccci_hif_ccif.c
+index 22f0989da..de39a9b3d 100644
+--- a/drivers/misc/mediatek/eccci/hif/ccci_hif_ccif.c
++++ b/drivers/misc/mediatek/eccci/hif/ccci_hif_ccif.c
+@@ -1906,7 +1906,7 @@ static int scp_set_clk_on(void)
+ 	int idx, ret;
+ 
+ 	for (idx = 0; idx < ARRAY_SIZE(scp_clk_table); idx++) {
+-		if (ccif_clk_table[idx].clk_ref == NULL)
++		if (scp_clk_table[idx].clk_ref == NULL)
+ 			continue;
+ 		ret = clk_prepare_enable(scp_clk_table[idx].clk_ref);
+ 		if (ret) {
+@@ -1935,7 +1935,7 @@ void scp_set_clk_off(void)
+ 		CCCI_ERROR_LOG(MD_SYS1, TAG, "[%s] ccif2 ioremap fail!\n", __func__);
+ 
+ 	for (idx = 0; idx < ARRAY_SIZE(scp_clk_table); idx++) {
+-		if (ccif_clk_table[idx].clk_ref == NULL)
++		if (scp_clk_table[idx].clk_ref == NULL)
+ 			continue;
+ 		clk_disable_unprepare(scp_clk_table[idx].clk_ref);
+ 	}
+-- 
+2.56.0
+

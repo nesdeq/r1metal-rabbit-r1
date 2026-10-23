@@ -1,0 +1,110 @@
+From 61be0e09f8552631030c58d204a32dca15d4bc55 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Tue, 20 Oct 2026 12:52:42 +0200
+Subject: [PATCH] log_store: expdb is opened by the partition's name on the
+ boot device
+
+log_store opens expdb by its partition table name on a disk under the
+boot device ("bootdevice"), through the /dev node named after the
+partition, instead of /dev/block/by-name/expdb, a link only Android's
+ueventd makes. Without such a partition the open fails with -ENODEV.
+---
+ drivers/misc/mediatek/log_store/log_store.c | 43 ++++++++++++++++++---
+ 1 file changed, 38 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/misc/mediatek/log_store/log_store.c b/drivers/misc/mediatek/log_store/log_store.c
+index b609d877c..460d49f0e 100644
+--- a/drivers/misc/mediatek/log_store/log_store.c
++++ b/drivers/misc/mediatek/log_store/log_store.c
+@@ -8,6 +8,7 @@
+ #include <linux/vmalloc.h>
+ #include <linux/mm.h>
+ #include <linux/fs.h>
++#include <linux/genhd.h>
+ #include <linux/file.h>
+ #include <linux/string.h>
+ #include <linux/seq_file.h>
+@@ -35,11 +36,43 @@ struct proc_dir_entry *entry;
+ static u32 last_boot_phase;
+ 
+ 
+-#define EXPDB_PATH "/dev/block/by-name/expdb"
++#define EXPDB_NAME "expdb"
++/* the eMMC's host as msdc_of_parse renames it, whose partitions alone Android's by-name links name */
++#define BOOT_DEVICE "bootdevice"
+ 
+ #define LOG_BLOCK_SIZE (512)
+ #define EXPDB_LOG_SIZE (2*1024*1024)
+ 
++static bool on_boot_device(struct device *dev)
++{
++	while ((dev = dev->parent))
++		if (!strcmp(dev_name(dev), BOOT_DEVICE))
++			return true;
++	return false;
++}
++
++/* opens the boot device's partition the table calls expdb through the node named after its device */
++static int expdb_open(void)
++{
++	struct class_dev_iter iter;
++	struct device *dev;
++	char path[sizeof("/dev/") + BDEVNAME_SIZE] = "";
++
++	class_dev_iter_init(&iter, &block_class, NULL, &part_type);
++	while ((dev = class_dev_iter_next(&iter))) {
++		struct hd_struct *part = dev_to_part(dev);
++
++		if (part->info && !strcmp((char *)part->info->volname, EXPDB_NAME) &&
++		    on_boot_device(dev)) {
++			snprintf(path, sizeof(path), "/dev/%s", dev_name(dev));
++			break;
++		}
++	}
++	class_dev_iter_exit(&iter);
++
++	return path[0] ? ksys_open(path, O_RDWR, 0) : -ENODEV;
++}
++
+ #ifdef CONFIG_MTK_PMIC_COMMON
+ u32 set_pmic_boot_phase(u32 boot_phase)
+ {
+@@ -113,7 +146,7 @@ void set_boot_phase(u32 step)
+ 	fs = get_fs();
+ 	set_fs(get_ds());
+ 
+-	fd = ksys_open(EXPDB_PATH, O_RDWR, 0);
++	fd = expdb_open();
+ 	if (fd < 0) {
+ 		pr_notice("log_store can't open expdb file: %d.\n", fd);
+ 		set_fs(fs);
+@@ -172,7 +205,7 @@ void log_store_to_emmc(void)
+ 	fs = get_fs();
+ 	set_fs(get_ds());
+ 
+-	fd = ksys_open(EXPDB_PATH, O_RDWR, 0);
++	fd = expdb_open();
+ 	if (fd < 0) {
+ 		pr_notice("log_store can't open expdb file: %d.\n", fd);
+ 		set_fs(fs);
+@@ -237,7 +270,7 @@ int set_emmc_config(int type, int value)
+ 	fs = get_fs();
+ 	set_fs(get_ds());
+ 
+-	fd = ksys_open(EXPDB_PATH, O_RDWR, 0);
++	fd = expdb_open();
+ 	if (fd < 0) {
+ 		pr_notice("log_store can't open expdb file: %d.\n", fd);
+ 		set_fs(fs);
+@@ -281,7 +314,7 @@ int read_emmc_config(struct log_emmc_header *log_header)
+ 	fs = get_fs();
+ 	set_fs(get_ds());
+ 
+-	fd = ksys_open(EXPDB_PATH, O_RDWR, 0);
++	fd = expdb_open();
+ 	if (fd < 0) {
+ 		pr_notice("log_store can't open expdb file: %d.\n", fd);
+ 		set_fs(fs);
+-- 
+2.56.0
+

@@ -1,0 +1,47 @@
+From 0fc3dada288e823bb30a7c7ee4b51d0f4b5e0462 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 13:29:38 +0200
+Subject: [PATCH] power: mtk_battery: every line of the gauge prints while
+ printk.debug is set
+
+While printk.debug is set bat_get_debug_level() answers
+BMLOG_TRACE_LEVEL, so every bm_* line prints. fg_drv_update_hw_status
+picks its 10 s or 60 s period by log_level alone, so debug mode does not
+wake the device more often.
+---
+ drivers/power/supply/mtk_battery.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/power/supply/mtk_battery.c b/drivers/power/supply/mtk_battery.c
+index 16c285176..fb10dd2b6 100755
+--- a/drivers/power/supply/mtk_battery.c
++++ b/drivers/power/supply/mtk_battery.c
+@@ -129,12 +129,15 @@ struct mtk_battery *get_mtk_battery(void)
+ 	return gauge->gm;
+ }
+ 
++/* BMLOG_TRACE_LEVEL, every line, while printk.debug is set; else the level that is set */
+ int bat_get_debug_level(void)
+ {
+ 	struct mtk_gauge *gauge;
+ 	struct power_supply *psy;
+ 	static struct mtk_battery *gm;
+ 
++	if (printk_debugging())
++		return BMLOG_TRACE_LEVEL;
+ 	if (gm == NULL) {
+ 		psy = power_supply_get_by_name("mtk-gauge");
+ 		if (psy == NULL)
+@@ -2383,7 +2386,8 @@ void fg_drv_update_hw_status(struct mtk_battery *gm)
+ 	if (gm->algo.active == true)
+ 		battery_update(gm);
+ 
+-	if (bat_get_debug_level() >= BMLOG_DEBUG_LEVEL)
++	/* by log_level, not printk.debug: a debug boot wakes no more often */
++	if (gm->log_level >= BMLOG_DEBUG_LEVEL)
+ 		ktime = ktime_set(10, 0);
+ 	else
+ 		ktime = ktime_set(60, 0);
+-- 
+2.56.0
+

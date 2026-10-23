@@ -1,0 +1,61 @@
+From a8bf07062b8943495ab3c50b5d38b50f0f0591b9 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 10:20:34 +0200
+Subject: [PATCH] battery: a gauge reading that fails is told as failed
+
+gauge_get_property returns the getter's answer, negative for a failed
+read, and gauge_get_int_property answers 0 for one. BattVoltToTemp uses
+VBIF only from a read that succeeded; with upstream's constant 0 a
+failed VBIF read has it compute the temperature from an uninitialised
+value.
+---
+ drivers/power/supply/mtk_battery.c | 9 +++++----
+ 1 file changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/power/supply/mtk_battery.c b/drivers/power/supply/mtk_battery.c
+index a5b9da2fa..21efd2d47 100755
+--- a/drivers/power/supply/mtk_battery.c
++++ b/drivers/power/supply/mtk_battery.c
+@@ -537,7 +537,7 @@ int BattVoltToTemp(struct mtk_battery *gm, int dwVolt, int volt_cali)
+ 	ret = gauge_get_property(GAUGE_PROP_BIF_VOLTAGE,
+ 		&vbif28_raw);
+ 
+-	if (ret != -ENOTSUPP) {
++	if (ret >= 0) {
+ 		vbif28 = vbif28_raw + volt_cali;
+ 		delta_v = abs(vbif28 - dwVolt);
+ 		if (delta_v == 0)
+@@ -757,6 +757,7 @@ int gauge_get_property(enum gauge_property gp,
+ 	struct mtk_gauge *gauge;
+ 	struct power_supply *psy;
+ 	struct mtk_gauge_sysfs_field_info *attr;
++	int ret;
+ 
+ 	psy = power_supply_get_by_name("mtk-gauge");
+ 	if (psy == NULL)
+@@ -771,19 +772,19 @@ int gauge_get_property(enum gauge_property gp,
+ 	}
+ 	if (attr[gp].prop == gp) {
+ 		mutex_lock(&gauge->ops_lock);
+-		attr[gp].get(gauge, &attr[gp], val);
++		ret = attr[gp].get(gauge, &attr[gp], val);
+ 		mutex_unlock(&gauge->ops_lock);
+ 	} else {
+ 		bm_err("%s gp:%d idx error\n", __func__, gp);
+ 		return -ENOTSUPP;
+ 	}
+ 
+-	return 0;
++	return ret;
+ }
+ 
+ int gauge_get_int_property(enum gauge_property gp)
+ {
+-	int val;
++	int val = 0;
+ 
+ 	gauge_get_property(gp, &val);
+ 	return val;
+-- 
+2.56.0
+

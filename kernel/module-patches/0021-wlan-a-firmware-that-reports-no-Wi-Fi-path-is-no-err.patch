@@ -1,0 +1,30 @@
+From 26b44b7d6b43b32f0703d26a640a2ed2f2834170 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 10:45:48 +0200
+Subject: [PATCH] wlan: a firmware that reports no Wi-Fi path is no error
+
+nicCfgChipCapPhyCap accepts ucWifiPath 0, which the MT6765's CONNAC
+firmware reports at every start, without an error line; with 0 no band
+is limited to one chain.
+---
+ connectivity/wlan/core/gen4m/nic/nic_cmd_event.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/connectivity/wlan/core/gen4m/nic/nic_cmd_event.c b/connectivity/wlan/core/gen4m/nic/nic_cmd_event.c
+index 7472252..38ede32 100644
+--- a/connectivity/wlan/core/gen4m/nic/nic_cmd_event.c
++++ b/connectivity/wlan/core/gen4m/nic/nic_cmd_event.c
+@@ -2650,7 +2650,9 @@ uint32_t nicCfgChipCapPhyCap(IN struct ADAPTER *prAdapter,
+ 	wlanCfgSetUint32(prAdapter, "StbcRx", prAdapter->rWifiVar.ucRxStbc);
+ 
+ 
+-	if ((prPhyCap->ucWifiPath != 0xF) && (prPhyCap->ucWifiPath != 0x3)) {
++	/* 0: the MT6765's firmware reports no path; no band is made SISO. */
++	if ((prPhyCap->ucWifiPath != 0) &&
++	    (prPhyCap->ucWifiPath != 0xF) && (prPhyCap->ucWifiPath != 0x3)) {
+ 		/* May be legal settings in the future */
+ 		DBGLOG(INIT, ERROR, "illegle ucWifiPath %x\n",
+ 			prPhyCap->ucWifiPath);
+-- 
+2.56.0
+

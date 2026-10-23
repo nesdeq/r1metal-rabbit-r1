@@ -1,0 +1,30 @@
+From 3e08e846c793157f0d38652fb422c8c6a1ca01a9 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 16:09:09 +0200
+Subject: [PATCH] timer: timesync: the sysram block is optional and asked for
+ only where it is listed
+
+sysram_base is mapped only where the node lists it; otherwise sysram
+support stays off, as for any failed map, without the "invalid
+resource" error of devm_ioremap_resource().
+---
+ drivers/misc/mediatek/timer/timesync/mtk_sys_timer.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/timer/timesync/mtk_sys_timer.c b/drivers/misc/mediatek/timer/timesync/mtk_sys_timer.c
+index f4f3904fc..a79899c95 100644
+--- a/drivers/misc/mediatek/timer/timesync/mtk_sys_timer.c
++++ b/drivers/misc/mediatek/timer/timesync/mtk_sys_timer.c
+@@ -452,7 +452,8 @@ static int sys_timer_timesync_init(struct platform_device *pdev)
+ 	/* get sysram base */
+ 
+ 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "sysram_base");
+-	timesync_cxt.ram_base = devm_ioremap_resource(dev, res);
++	timesync_cxt.ram_base = res ? devm_ioremap_resource(dev, res) :
++				IOMEM_ERR_PTR(-ENOENT);
+ 
+ 	if (IS_ERR((void const *)timesync_cxt.ram_base)) {
+ 
+-- 
+2.56.0
+

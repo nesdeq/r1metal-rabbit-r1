@@ -1,0 +1,108 @@
+From af6fbce41b5919b45b1679c03f10a08c1e8391e0 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 11:21:19 +0200
+Subject: [PATCH] devapc: ten violations within a second raise the exception at
+ any time
+
+- Ten violations within 1000 ms of their window's first raise the AEE
+  exception at any time, not only as a slave's first ten.
+- devapc_probe frees the violation interrupt where the clock is missing
+  or does not enable.
+- The driver offers no sysfs unbind: remove stops the clock and leaves
+  the interrupt.
+- devapc_init returns -ENOMEM where cdev_alloc fails.
+---
+ drivers/soc/mediatek/devapc/mt6765/devapc.c | 47 ++++++++++++---------
+ 1 file changed, 26 insertions(+), 21 deletions(-)
+
+diff --git a/drivers/soc/mediatek/devapc/mt6765/devapc.c b/drivers/soc/mediatek/devapc/mt6765/devapc.c
+index df9deaa93..0a4a9d392 100644
+--- a/drivers/soc/mediatek/devapc/mt6765/devapc.c
++++ b/drivers/soc/mediatek/devapc/mt6765/devapc.c
+@@ -642,33 +642,29 @@ static void evaluate_aee_exception(unsigned int i, unsigned int dbg0,
+ 	unsigned long long current_time;
+ 
+ 	if (devapc_vio_aee_shown[i] == 0) {
+-		if (devapc_vio_count[i] < DEVAPC_VIO_AEE_TRIGGER_TIMES) {
+-			devapc_vio_count[i]++;
+-			if (devapc_vio_count[i] == 1) {
+-		/* this slave violation is triggered for the first time */
+ 		/* get current time from start-up in ns */
+-				devapc_vio_first_trigger_time[i] =
+-					sched_clock();
+-				DEVAPC_VIO_MSG("%s %s %llu\n",
+-					"[DEVAPC]",
+-					"devapc_vio_first_trigger_time:",
+-					div_u64(devapc_vio_first_trigger_time[i],
+-						NSEC_PER_MSEC)); /* ms */
+-			}
++		current_time = sched_clock();
++		/* a violation past the window of the first one opens the next window */
++		if (devapc_vio_count[i] &&
++			((current_time - devapc_vio_first_trigger_time[i])
++			/ 1000000) > (unsigned long long)
++			DEVAPC_VIO_AEE_TRIGGER_FREQUENCY)
++			devapc_vio_count[i] = 0;
++		devapc_vio_count[i]++;
++		if (devapc_vio_count[i] == 1) {
++			devapc_vio_first_trigger_time[i] = current_time;
++			DEVAPC_VIO_MSG("%s %s %llu\n",
++				"[DEVAPC]",
++				"devapc_vio_first_trigger_time:",
++				div_u64(devapc_vio_first_trigger_time[i],
++					NSEC_PER_MSEC)); /* ms */
+ 		}
+ 		if (devapc_vio_count[i] >= DEVAPC_VIO_AEE_TRIGGER_TIMES) {
+-			/* get current time from start-up in ns */
+-			current_time = sched_clock();
+ 			DEVAPC_VIO_MSG("[DEVAPC] current_time: %llu\n",
+ 					div_u64(current_time, NSEC_PER_MSEC)); /* ms */
+ 			DEVAPC_VIO_MSG("[DEVAPC] devapc_vio_count[%d]: %d\n",
+ 					i, devapc_vio_count[i]);
+-			if (((current_time - devapc_vio_first_trigger_time[i])
+-				/ 1000000) <= (unsigned long long)
+-				DEVAPC_VIO_AEE_TRIGGER_FREQUENCY) {
+-				/* diff time by ms */
+-				execute_aee(i, dbg0, dbg1);
+-			}
++			execute_aee(i, dbg0, dbg1);
+ 		}
+ 	}
+ }
+@@ -903,9 +899,15 @@ static int devapc_probe(struct platform_device *pdev)
+ 	if (IS_ERR(dapc_infra_clk)) {
+ 		pr_info("[DEVAPC] (Infra) %s\n",
+ 			"Cannot get devapc clock from common clock framework.");
++		free_irq(devapc_infra_irq, &g_devapc_ctrl);
+ 		return PTR_ERR(dapc_infra_clk);
+ 	}
+-	clk_prepare_enable(dapc_infra_clk);
++	ret = clk_prepare_enable(dapc_infra_clk);
++	if (ret) {
++		pr_info("[DEVAPC] (Infra) cannot enable its clock (%d)\n", ret);
++		free_irq(devapc_infra_irq, &g_devapc_ctrl);
++		return ret;
++	}
+ #endif
+ 
+ #ifdef CONFIG_MTK_HIBERNATION
+@@ -1056,6 +1058,8 @@ static struct platform_driver devapc_driver = {
+ 		.name = "devapc",
+ 		.owner = THIS_MODULE,
+ 		.of_match_table	= plat_devapc_dt_match,
++		/* the violation interrupt outlives remove, which stops the clock */
++		.suppress_bind_attrs = true,
+ 	},
+ };
+ 
+@@ -1076,6 +1080,7 @@ static int __init devapc_init(void)
+ 
+ 	g_devapc_ctrl = cdev_alloc();
+ 	if (!g_devapc_ctrl) {
++		ret = -ENOMEM;
+ 		pr_info("[DEVAPC] Failed to add devapc device! (%d)\n", ret);
+ 		platform_driver_unregister(&devapc_driver);
+ 		return ret;
+-- 
+2.56.0
+

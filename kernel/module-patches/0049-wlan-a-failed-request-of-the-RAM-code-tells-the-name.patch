@@ -1,0 +1,29 @@
+From 854e1b3efda3f6530a3ec1bbf82f97d2f4653ef0 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 11:47:26 +0200
+Subject: [PATCH] wlan: a failed request of the RAM code tells the name it
+ asked for
+
+wlanReadRamCodeReleaseManifest's failure line prints the name it
+requested, aucFwName[0], instead of the bytes of the pointer array;
+DBGLOG has no printf attribute to catch it.
+---
+ connectivity/wlan/core/gen4m/chips/common/fw_dl.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/connectivity/wlan/core/gen4m/chips/common/fw_dl.c b/connectivity/wlan/core/gen4m/chips/common/fw_dl.c
+index dd0f542..c29c3fd 100644
+--- a/connectivity/wlan/core/gen4m/chips/common/fw_dl.c
++++ b/connectivity/wlan/core/gen4m/chips/common/fw_dl.c
+@@ -2637,7 +2637,7 @@ void wlanReadRamCodeReleaseManifest(uint8_t *pucManifestBuffer,
+ 	glGetDev((void *)prChipInfo->pdev, &prDev);
+ 	if (_kalRequestFirmware(&fw_entry, aucFwName[0], prDev)) {
+ 		DBGLOG(INIT, WARN, "Request FW image: %s failed\n",
+-				aucFwName);
++				aucFwName[0]);
+ 		goto exit;
+ 	} else
+ 		DBGLOG(INIT, INFO, "Request FW image: %s done\n",
+-- 
+2.56.0
+

@@ -1,0 +1,28 @@
+From de81f0ed0c6933120d79c2d6eb331125ebb7b429 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 13:00:12 +0200
+Subject: [PATCH] wlan: the MAC address line of a power on tells both addresses
+
+kalUpdateMACAddress hands MACSTR the old address's bytes through
+MAC2STR, as it does for the new one, instead of the pointer, which
+prints part of a kernel pointer.
+---
+ connectivity/wlan/core/gen4m/os/linux/gl_kal.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/connectivity/wlan/core/gen4m/os/linux/gl_kal.c b/connectivity/wlan/core/gen4m/os/linux/gl_kal.c
+index b2c3a40..b01670d 100644
+--- a/connectivity/wlan/core/gen4m/os/linux/gl_kal.c
++++ b/connectivity/wlan/core/gen4m/os/linux/gl_kal.c
+@@ -816,7 +816,7 @@ void kalUpdateMACAddress(IN struct GLUE_INFO *prGlueInfo,
+ 
+ 	DBGLOG(INIT, INFO,
+ 			MACSTR ", " MACSTR ".\n",
+-			prGlueInfo->prDevHandler->dev_addr,
++			MAC2STR(prGlueInfo->prDevHandler->dev_addr),
+ 			MAC2STR(pucMacAddr));
+ 
+ 	if (UNEQUAL_MAC_ADDR(prGlueInfo->prDevHandler->dev_addr,
+-- 
+2.56.0
+

@@ -1,0 +1,40 @@
+From 29fdc6a7b3539c4b6b253767b32c1fb6995f3fef Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 19:38:08 +0200
+Subject: [PATCH] imgsensor: a pin state the board does not wire is no failure
+
+gpio_init prints no error for a camera pin state the tree does not name
+(-ENODEV) and prints any other failure with its code; gpio_set still
+reports a use of an absent state. The R1's tree names only the states of
+the pins it wires.
+---
+ .../imgsensor/src/mt6765/camera_hw/gpio/gpio.c         | 10 +++++++---
+ 1 file changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/misc/mediatek/imgsensor/src/mt6765/camera_hw/gpio/gpio.c b/drivers/misc/mediatek/imgsensor/src/mt6765/camera_hw/gpio/gpio.c
+index 2edfc3846..2970cda15 100644
+--- a/drivers/misc/mediatek/imgsensor/src/mt6765/camera_hw/gpio/gpio.c
++++ b/drivers/misc/mediatek/imgsensor/src/mt6765/camera_hw/gpio/gpio.c
+@@ -103,12 +103,16 @@ static enum IMGSENSOR_RETURN gpio_init(void *pinstance)
+ 					    pgpio->ppinctrl,
+ 					    str_pinctrl_name);
+ 
++				/* -ENODEV: a pin the board leaves unwired; gpio_set reports a use of it */
+ 				if (pgpio->ppinctrl_state_cam[j][i] == NULL ||
+-				    IS_ERR(pgpio->ppinctrl_state_cam[j][i])) {
++				    (IS_ERR(pgpio->ppinctrl_state_cam[j][i]) &&
++				     PTR_ERR(pgpio->ppinctrl_state_cam[j][i]) !=
++				     -ENODEV)) {
+ 					pr_info(
+-					    "%s : pinctrl err, %s\n",
++					    "%s : pinctrl err, %s: %ld\n",
+ 					    __func__,
+-					    str_pinctrl_name);
++					    str_pinctrl_name,
++					    PTR_ERR(pgpio->ppinctrl_state_cam[j][i]));
+ 
+ 					ret = IMGSENSOR_RETURN_ERROR;
+ 				}
+-- 
+2.56.0
+

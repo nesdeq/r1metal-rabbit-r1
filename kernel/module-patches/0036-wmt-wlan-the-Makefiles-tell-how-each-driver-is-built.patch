@@ -1,0 +1,81 @@
+From adfd9cf5da340cb94ea8ae6150b9c171f7d83ce0 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 20:18:01 +0200
+Subject: [PATCH] wmt, wlan: the Makefiles tell how each driver is built as
+ info
+
+The WMT Kbuild and the adaptor and gen4m Makefiles print how each driver
+is built, and the WMT chip ids, with $(info) instead of $(warning),
+which turns each into a make warning.
+---
+ connectivity/common/Kbuild            | 6 +++---
+ connectivity/wlan/adaptor/Makefile    | 4 ++--
+ connectivity/wlan/core/gen4m/Makefile | 4 ++--
+ 3 files changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/connectivity/common/Kbuild b/connectivity/common/Kbuild
+index deb3cac..2f07dad 100644
+--- a/connectivity/common/Kbuild
++++ b/connectivity/common/Kbuild
+@@ -119,10 +119,10 @@ endif
+ ###############################################################################
+ MODULE_NAME := wmt_drv
+ ifeq ($(CONFIG_WLAN_DRV_BUILD_IN),y)
+-$(warning $(MODULE_NAME) build-in boot.img)
++$(info $(MODULE_NAME) build-in boot.img)
+ obj-y += $(MODULE_NAME).o
+ else
+-$(warning $(MODULE_NAME) is kernel module)
++$(info $(MODULE_NAME) is kernel module)
+ obj-m += $(MODULE_NAME).o
+ endif
+ 
+@@ -211,7 +211,7 @@ ccflags-y += -D CFG_WMT_EVB
+ endif
+ 
+ KERNEL_VERSION_SUPPORT_CHIPID_LIST := $(patsubst %Y,%,$(patsubst %N,,$(patsubst %Ny,%Y,$(foreach chipid,$(patsubst mt%.c,%,$(notdir $(wildcard $(KO_CODE_PATH)/common_main/platform/mt[0-9][0-9][0-9][0-9].c))),$(chipid)N$(CONFIG_MTK_COMBO_CHIP_CONSYS_$(chipid))))))
+-$(warning KERNEL_VERSION_SUPPORT_CHIPID_LIST=[$(KERNEL_VERSION_SUPPORT_CHIPID_LIST)])
++$(info KERNEL_VERSION_SUPPORT_CHIPID_LIST=[$(KERNEL_VERSION_SUPPORT_CHIPID_LIST)])
+ 
+ ifeq ($(KERNEL_VERSION_SUPPORT_CHIPID_LIST),)
+ ifneq ($(CONNSYS_PLATFORM),)
+diff --git a/connectivity/wlan/adaptor/Makefile b/connectivity/wlan/adaptor/Makefile
+index 6014e5f..b70ee6e 100644
+--- a/connectivity/wlan/adaptor/Makefile
++++ b/connectivity/wlan/adaptor/Makefile
+@@ -55,10 +55,10 @@ MODULE_NAME := wmt_chrdev_wifi
+ endif
+ 
+ ifeq ($(CONFIG_WLAN_DRV_BUILD_IN),y)
+-$(warning $(MODULE_NAME) build-in boot.img)
++$(info $(MODULE_NAME) build-in boot.img)
+ obj-y += $(MODULE_NAME).o
+ else
+-$(warning $(MODULE_NAME) is kernel module)
++$(info $(MODULE_NAME) is kernel module)
+ obj-m += $(MODULE_NAME).o
+ endif
+ 
+diff --git a/connectivity/wlan/core/gen4m/Makefile b/connectivity/wlan/core/gen4m/Makefile
+index b982fcc..64948d3 100644
+--- a/connectivity/wlan/core/gen4m/Makefile
++++ b/connectivity/wlan/core/gen4m/Makefile
+@@ -583,13 +583,13 @@ obj-$(CONFIG_MTK_COMBO_WIFI) += $(MODULE_NAME).o
+ endif
+ 
+ ifeq ($(CONFIG_WLAN_DRV_BUILD_IN),y)
+-$(warning $(MODULE_NAME) build-in boot.img)
++$(info $(MODULE_NAME) build-in boot.img)
+ obj-y += $(MODULE_NAME).o
+ ccflags-y += -DCONFIG_WLAN_DRV_BUILD_IN=1
+ # net/wireless/reg.c defines an is_world_regdom of its own.
+ ccflags-y += -Dis_world_regdom=wlan_is_world_regdom
+ else
+-$(warning $(MODULE_NAME) is kernel module)
++$(info $(MODULE_NAME) is kernel module)
+ obj-m += $(MODULE_NAME).o
+ ccflags-y += -DCONFIG_WLAN_DRV_BUILD_IN=0
+ endif
+-- 
+2.56.0
+

@@ -1,0 +1,38 @@
+From 159b209bf6e6fc17d6f0a3e8b33f71e76e879c66 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Thu, 8 Oct 2026 21:07:27 +0200
+Subject: [PATCH] power: mtk_basic_charger: keep the thermal charge limits next
+ to JEITA
+
+With software JEITA on, the charging and input current limits also take
+the thermal coolers' limits where those are lower. Upstream applies them
+only with JEITA off, so the thermal policy cannot throttle the charge.
+---
+ drivers/power/supply/mtk_basic_charger.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/drivers/power/supply/mtk_basic_charger.c b/drivers/power/supply/mtk_basic_charger.c
+index 92d7e57a7..0c4de5b82 100644
+--- a/drivers/power/supply/mtk_basic_charger.c
++++ b/drivers/power/supply/mtk_basic_charger.c
+@@ -240,6 +240,17 @@ static bool select_charging_current_limit(struct mtk_charger *info,
+ 		else if (pdata->charging_current_limit > info->sw_jeita.cc)
+ 			chr_err("[%s] jeita cc:%duA\n", __func__, info->sw_jeita.cc);
+ 			pdata->charging_current_limit = info->sw_jeita.cc;
++		/* The thermal coolers' limits apply with JEITA too: the lower limit wins. */
++		if (pdata->thermal_charging_current_limit != -1 &&
++		    pdata->thermal_charging_current_limit <
++				pdata->charging_current_limit)
++			pdata->charging_current_limit =
++				pdata->thermal_charging_current_limit;
++		if (pdata->thermal_input_current_limit != -1 &&
++		    pdata->thermal_input_current_limit <
++				pdata->input_current_limit)
++			pdata->input_current_limit =
++				pdata->thermal_input_current_limit;
+ 	} else {
+ 		/* not support charge control interface for thermal
+ 		 * if sw jeita is enabled, which will replace thermal policy
+-- 
+2.56.0
+

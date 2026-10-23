@@ -1,0 +1,76 @@
+From 470af63742f0bafe27f08785495b7c48f4968d2c Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 11:18:57 +0200
+Subject: [PATCH] wmt: the MCU's idle loop is polled for every 1 ms, not tested
+ after a sleep
+
+consys_hw_reset_bit_set polls for the idle loop word 0x1D1E every 1 to 2
+ms within 11 retries of 20 ms, instead of sleeping 20 ms after every
+read, the one that finds it included, and prints its three registers
+once instead of at each pass.
+---
+ .../common/common_main/platform/mt6765.c      | 31 ++++++++++++-------
+ 1 file changed, 20 insertions(+), 11 deletions(-)
+
+diff --git a/connectivity/common/common_main/platform/mt6765.c b/connectivity/common/common_main/platform/mt6765.c
+index 2ee1381..6ec8377 100644
+--- a/connectivity/common/common_main/platform/mt6765.c
++++ b/connectivity/common/common_main/platform/mt6765.c
+@@ -103,6 +103,10 @@
+ /* Bound of a chip id poll, and the pause after a failed ROM patch. */
+ #define CONSYS_CHIPID_RETRY_MS	20
+ 
++/* The idle loop poll gives up after 11 retries of 20 ms. */
++#define CONSYS_IDLE_POLL_RETRIES	11
++#define CONSYS_IDLE_POLL_RETRY_MS	20
++
+ /*******************************************************************************
+ *                             D A T A   T Y P E S
+ ********************************************************************************
+@@ -639,7 +643,8 @@ static VOID consys_set_if_pinmux(MTK_WCN_BOOL enable)
+ static VOID consys_hw_reset_bit_set(MTK_WCN_BOOL enable)
+ {
+ 	UINT32 consys_ver_id = 0;
+-	UINT32 cnt = 0;
++	ktime_t start;
++	unsigned long limit;
+ 
+ 	if (enable) {
+ 		/*3.assert CONNSYS CPU SW reset  0x10007018 "[12]=1'b1  [31:24]=8'h88 (key)" */
+@@ -652,19 +657,23 @@ static VOID consys_hw_reset_bit_set(MTK_WCN_BOOL enable)
+ 				(CONSYS_REG_READ(conn_reg.ap_rgu_base + CONSYS_CPU_SW_RST_OFFSET) &
+ 				 ~CONSYS_CPU_SW_RST_BIT) | CONSYS_CPU_SW_RST_CTRL_KEY);
+ 
++		/* The ROM writes 0x1D1E here once the CPU is in its idle loop. */
++		start = ktime_get();
++		limit = jiffies + CONSYS_IDLE_POLL_RETRIES * OSAL_MSLEEP_JIFFIES(CONSYS_IDLE_POLL_RETRY_MS);
+ 		consys_ver_id = CONSYS_REG_READ(conn_reg.mcu_base + 0x600);
+-		while (consys_ver_id != 0x1D1E) {
+-			if (cnt > 10)
+-				break;
++		while (consys_ver_id != 0x1D1E && time_before(jiffies, limit)) {
++			usleep_range(CONSYS_POLL_INTERVAL_US, 2 * CONSYS_POLL_INTERVAL_US);
+ 			consys_ver_id = CONSYS_REG_READ(conn_reg.mcu_base + 0x600);
+-			WMT_PLAT_PR_INFO("0x18002600(0x%x)\n", consys_ver_id);
+-			WMT_PLAT_PR_INFO("0x1800216c(0x%x)\n",
+-					CONSYS_REG_READ(conn_reg.mcu_base + 0x16c));
+-			WMT_PLAT_PR_INFO("0x18007104(0x%x)\n",
+-					CONSYS_REG_READ(conn_reg.mcu_conn_hif_on_base + CONSYS_CPUPCR_OFFSET));
+-			msleep(20);
+-			cnt++;
+ 		}
++		OSAL_WAIT_LOG("idle loop", start);
++		if (consys_ver_id != 0x1D1E)
++			WMT_PLAT_PR_ERR("CPU not in its idle loop: 0x18002600(0x%x) 0x1800216c(0x%x) 0x18007104(0x%x)\n",
++					consys_ver_id, CONSYS_REG_READ(conn_reg.mcu_base + 0x16c),
++					CONSYS_REG_READ(conn_reg.mcu_conn_hif_on_base + CONSYS_CPUPCR_OFFSET));
++		else
++			WMT_PLAT_PR_INFO("CPU in its idle loop: 0x18002600(0x%x) 0x1800216c(0x%x) 0x18007104(0x%x)\n",
++					consys_ver_id, CONSYS_REG_READ(conn_reg.mcu_base + 0x16c),
++					CONSYS_REG_READ(conn_reg.mcu_conn_hif_on_base + CONSYS_CPUPCR_OFFSET));
+ 	}
+ }
+ 
+-- 
+2.56.0
+

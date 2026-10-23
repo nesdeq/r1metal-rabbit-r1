@@ -1,0 +1,31 @@
+From 9bf1a125be2b8eda038d4b05e6518adbb8d71b5d Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 00:13:15 +0200
+Subject: [PATCH] PBM: the modem's share of the budget is reserved while the
+ modem has power
+
+hpf_ctrl's switch_md1 starts at 0, so PBM reserves the modem's share of
+DLPT's budget only from md_cd_power_on to md_cd_power_off. Upstream
+starts at 1, which takes MAX_MD1_POWER, 4000 mW, off the processors'
+budget on a boot that never powers the modem.
+---
+ drivers/misc/mediatek/base/power/pbm_v4/mtk_pbm.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/base/power/pbm_v4/mtk_pbm.c b/drivers/misc/mediatek/base/power/pbm_v4/mtk_pbm.c
+index 6238a0fa7..4b0d9bd7d 100644
+--- a/drivers/misc/mediatek/base/power/pbm_v4/mtk_pbm.c
++++ b/drivers/misc/mediatek/base/power/pbm_v4/mtk_pbm.c
+@@ -63,7 +63,8 @@ static int mt_pbm_log_counter;
+ #define BIT_CHECK(a, b) ((a) & (1<<(b)))
+ 
+ static struct hpf hpf_ctrl = {
+-	.switch_md1 = 1,
++	/* the modem's share follows its power: md_cd_power_on reserves it, md_cd_power_off releases it */
++	.switch_md1 = 0,
+ 	.switch_gpu = 0,
+ 	.switch_flash = 0,
+ 
+-- 
+2.56.0
+

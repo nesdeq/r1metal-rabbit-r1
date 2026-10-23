@@ -1,0 +1,145 @@
+From 347eb02e7614c0d3d35bd6e75a5f7cc6c768e90a Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 16:33:18 +0200
+Subject: [PATCH] power: mt6370: defaults are no error, the children have a DMA
+ mask, and shipping mode lets go of its lock
+
+- An absent alias name is a debug line, since a default follows.
+- The I2C client's DMA mask points at its coherent mask before the MFD
+  children copy it, so the platform core does not warn for each.
+- shipping_mode_store() releases adc_access_lock on every path and
+  lowers hidden mode right after the write that needs it.
+- The probe's error path and remove take off every attribute made.
+---
+ .../mediatek/pmic/mt6370/mt6370_pmu_charger.c | 43 ++++++++++++-------
+ .../mediatek/pmic/mt6370/mt6370_pmu_i2c.c     |  3 ++
+ 2 files changed, 30 insertions(+), 16 deletions(-)
+
+diff --git a/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_charger.c b/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_charger.c
+index c511116f4..7214e0c55 100755
+--- a/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_charger.c
++++ b/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_charger.c
+@@ -3828,6 +3828,7 @@ static inline int mt_parse_dt(struct device *dev,
+ 	struct mt6370_pmu_charger_desc *chg_desc = NULL;
+ 	struct device_node *np = dev->of_node;
+ 	struct i2c_client *i2c = chg_data->chip->i2c;
++	int ret;
+ 
+ 	dev_info(chg_data->dev, "%s\n", __func__);
+ 	chg_data->chg_desc = &mt6370_default_chg_desc;
+@@ -3840,15 +3841,23 @@ static inline int mt_parse_dt(struct device *dev,
+ 		sizeof(struct mt6370_pmu_charger_desc));
+ 
+ 	/* Alias name is in charger properties but not in desc */
+-	if (of_property_read_string(np, "chg_alias_name",
+-		&(chg_data->chg_props.alias_name)) < 0) {
+-		dev_err(chg_data->dev, "%s: no chg alias name\n", __func__);
++	ret = of_property_read_string(np, "chg_alias_name",
++		&(chg_data->chg_props.alias_name));
++	if (ret < 0) {
++		if (ret == -EINVAL)
++			dev_dbg(chg_data->dev, "%s: no chg alias name\n", __func__);
++		else
++			dev_err(chg_data->dev, "%s: chg alias name unreadable: %d\n", __func__, ret);
+ 		chg_data->chg_props.alias_name = "mt6370_chg";
+ 	}
+ 
+-	if (of_property_read_string(np, "ls_alias_name",
+-		&(chg_data->ls_props.alias_name)) < 0) {
+-		dev_err(chg_data->dev, "%s: no ls alias name\n", __func__);
++	ret = of_property_read_string(np, "ls_alias_name",
++		&(chg_data->ls_props.alias_name));
++	if (ret < 0) {
++		if (ret == -EINVAL)
++			dev_dbg(chg_data->dev, "%s: no ls alias name\n", __func__);
++		else
++			dev_err(chg_data->dev, "%s: ls alias name unreadable: %d\n", __func__, ret);
+ 		chg_data->ls_props.alias_name = "mt6370_ls";
+ 	}
+ 
+@@ -4219,39 +4228,39 @@ static ssize_t shipping_mode_store(struct device *dev,
+ 				   MT6370_PMU_REG_RSTPASCODE1, 0xA9);
+ 	if (ret < 0) {
+ 		dev_notice(dev, "set passcode1 fail\n");
+-		return ret;
++		goto out;
+ 	}
+ 	ret = mt6370_pmu_reg_write(chg_data->chip,
+ 				   MT6370_PMU_REG_RSTPASCODE2, 0x96);
+ 	if (ret < 0) {
+ 		dev_notice(dev, "set passcode2 fail\n");
+-		return ret;
++		goto out;
+ 	}
+ 	/* reset all chg/fled/ldo/rgb/bl/db reg and logic */
+ 	ret = mt6370_pmu_reg_write(chg_data->chip,
+ 				     MT6370_PMU_REG_CORECTRL2, 0x7F);
+ 	if (ret < 0) {
+ 		dev_notice(dev, "set reset bits fail\n");
+-		return ret;
++		goto out;
+ 	}
+ 	/* disable chg auto sensing */
+ 	mt6370_enable_hidden_mode(chg_data, true);
+ 	ret = mt6370_pmu_reg_clr_bit(chg_data->chip,
+ 		MT6370_PMU_REG_CHGHIDDENCTRL15, 0x01);
++	mt6370_enable_hidden_mode(chg_data, false);
+ 	if (ret < 0) {
+ 		dev_notice(dev, "set auto sensing disable\n");
+-		return ret;
++		goto out;
+ 	}
+-	mt6370_enable_hidden_mode(chg_data, false);
+ 	mdelay(50);
+ 	/* enter shipping mode */
+ 	ret = mt6370_pmu_reg_set_bit(chg_data->chip,
+ 				     MT6370_PMU_REG_CHGCTRL2, 0x80);
+-	if (ret < 0) {
++	if (ret < 0)
+ 		dev_notice(dev, "enter shipping mode\n");
+-		return ret;
+-	}
+-	return count;
++out:
++	mutex_unlock(&chg_data->adc_access_lock);
++	return ret < 0 ? ret : count;
+ }
+ 
+ static const DEVICE_ATTR_WO(shipping_mode);
+@@ -4931,9 +4940,10 @@ static int mt6370_pmu_charger_probe(struct platform_device *pdev)
+ #endif
+ err_register_otg:
+ err_register_psy:
++err_devfs:
+ 	device_remove_file(chg_data->dev, &dev_attr_shipping_mode);
++	device_remove_file(chg_data->dev, &dev_attr_poweroff);
+ 	device_remove_file(chg_data->dev, &dev_attr_ibat);
+-err_devfs:
+ 	charger_device_unregister(chg_data->ls_dev);
+ err_register_ls_dev:
+ 	charger_device_unregister(chg_data->chg_dev);
+@@ -4959,6 +4969,7 @@ static int mt6370_pmu_charger_remove(struct platform_device *pdev)
+ 
+ 	if (chg_data) {
+ 		device_remove_file(chg_data->dev, &dev_attr_shipping_mode);
++		device_remove_file(chg_data->dev, &dev_attr_poweroff);
+ 		device_remove_file(chg_data->dev, &dev_attr_ibat);
+ 		charger_device_unregister(chg_data->ls_dev);
+ 		charger_device_unregister(chg_data->chg_dev);
+diff --git a/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_i2c.c b/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_i2c.c
+index 198b6643f..f034dde31 100644
+--- a/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_i2c.c
++++ b/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_i2c.c
+@@ -303,6 +303,9 @@ static int mt6370_pmu_probe(struct i2c_client *i2c,
+ 	ret = mt6370_pmu_irq_register(chip);
+ 	if (ret < 0)
+ 		goto out_irq;
++	/* the sub-devices copy this pointer, and none of them does DMA */
++	if (!i2c->dev.dma_mask)
++		i2c->dev.dma_mask = &i2c->dev.coherent_dma_mask;
+ 	ret = mt6370_pmu_subdevs_register(chip);
+ 	if (ret < 0)
+ 		goto out_subdevs;
+-- 
+2.56.0
+

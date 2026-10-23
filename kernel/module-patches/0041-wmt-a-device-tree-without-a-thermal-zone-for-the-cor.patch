@@ -1,0 +1,32 @@
+From 87fdf3978df0f5a8b21d2362526e97d716fe2790 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Tue, 20 Oct 2026 09:22:19 +0200
+Subject: [PATCH] wmt: a device tree without a thermal zone for the core is no
+ failure
+
+wmt_thermal_register logs -ENODEV, a device tree with no thermal zone
+naming the core, as that and not as a failure to register; other errors
+keep the failure line.
+---
+ connectivity/common/common_main/platform/mtk_wcn_consys_hw.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/connectivity/common/common_main/platform/mtk_wcn_consys_hw.c b/connectivity/common/common_main/platform/mtk_wcn_consys_hw.c
+index b49b96e..6eb45b5 100644
+--- a/connectivity/common/common_main/platform/mtk_wcn_consys_hw.c
++++ b/connectivity/common/common_main/platform/mtk_wcn_consys_hw.c
+@@ -353,7 +353,10 @@ static INT32 wmt_thermal_register(struct platform_device *pdev)
+ 
+ 	if (IS_ERR(tz)) {
+ 		ret = PTR_ERR(tz);
+-		WMT_PLAT_PR_INFO("Failed to register thermal zone device %d\n", ret);
++		if (ret == -ENODEV)
++			WMT_PLAT_PR_INFO("No thermal zone of the device tree names the core\n");
++		else
++			WMT_PLAT_PR_INFO("Failed to register thermal zone device %d\n", ret);
+ 		return -1;
+ 	}
+ 	WMT_PLAT_PR_INFO("Register thermal zone device.\n");
+-- 
+2.56.0
+

@@ -1,0 +1,36 @@
+From 5189edc68cdd3f071564976cfbd80ba4725d9c8b Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 16:36:31 +0200
+Subject: [PATCH] tcpc: a port without PD takes no deferred event
+
+pd_put_deferred_tcp_event refuses an event on a port in a Type-C only
+state, which reaches no ready state to serve it. Every battery change
+queues one, so on such a port the ring of four fills and upstream logs
+"pd_put_tcp_event failed1".
+---
+ drivers/misc/mediatek/typec/tcpc/tcpci_event.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/drivers/misc/mediatek/typec/tcpc/tcpci_event.c b/drivers/misc/mediatek/typec/tcpc/tcpci_event.c
+index 80a5a8bdc..9c9b72549 100644
+--- a/drivers/misc/mediatek/typec/tcpc/tcpci_event.c
++++ b/drivers/misc/mediatek/typec/tcpc/tcpci_event.c
+@@ -483,6 +483,15 @@ bool pd_put_deferred_tcp_event(
+ 		goto unlock_out;
+ 	}
+ 
++	/* A port without PD reaches no ready state, so it never serves one */
++	switch (pd_port->pd_connect_state) {
++	case PD_CONNECT_TYPEC_ONLY_SNK_DFT:
++	case PD_CONNECT_TYPEC_ONLY_SNK:
++	case PD_CONNECT_TYPEC_ONLY_SRC:
++		ret = false;
++		goto unlock_out;
++	}
++
+ 	if (tcpc->tcp_event_count >= TCP_EVENT_BUF_SIZE) {
+ 		PD_ERR("pd_put_tcp_event failed1\n");
+ 		ret = false;
+-- 
+2.56.0
+

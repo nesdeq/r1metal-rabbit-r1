@@ -1,0 +1,38 @@
+From 69c777315d1f5fc5c38307a2515014a16166268f Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 19:02:29 +0200
+Subject: [PATCH] kbuild: unused-but-set and default-const-init warnings are
+ off for clang too
+
+-Wunused-but-set-variable, a make W=1 warning, is disabled for every
+compiler, not GCC alone, as in mainline since 885480b08469.
+-Wdefault-const-init-unsafe, new in clang 21, is disabled as in
+mainline: the kernel's typeof() idioms leave such consts uninitialized
+on purpose, and -Wuninitialized still flags a read of one.
+---
+ Makefile | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index 7c9b8a5a8..b6245f493 100644
+--- a/Makefile
++++ b/Makefile
+@@ -733,12 +733,13 @@ KBUILD_CFLAGS += $(call cc-disable-warning, tautological-compare)
+ # See modpost pattern 2
+ KBUILD_CFLAGS += $(call cc-option, -mno-global-merge,)
+ KBUILD_CFLAGS += $(call cc-option, -fcatch-undefined-behavior)
+-else
++endif
+ 
+ # These warnings generated too much noise in a regular build.
+ # Use make W=1 to enable them (see scripts/Makefile.extrawarn)
+ KBUILD_CFLAGS += $(call cc-disable-warning, unused-but-set-variable)
+-endif
++# A const left uninitialized by the kernel's typeof() idioms is no fault; -Wuninitialized still flags a read of one.
++KBUILD_CFLAGS += $(call cc-disable-warning, default-const-init-unsafe)
+ 
+ KBUILD_CFLAGS += $(call cc-disable-warning, unused-const-variable)
+ ifdef CONFIG_FRAME_POINTER
+-- 
+2.56.0
+

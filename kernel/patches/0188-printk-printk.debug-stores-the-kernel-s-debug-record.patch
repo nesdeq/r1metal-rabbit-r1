@@ -1,0 +1,204 @@
+From 317240f78f86f4aa7afbb7e22c4f5fb8d5f6670a Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 13:20:52 +0200
+Subject: [PATCH] printk: printk.debug stores the kernel's debug records, and
+ other logs follow both switches
+
+- printk.debug, off by default and also an early parameter, has
+  log_store keep the kernel's debug records, which it drops otherwise.
+- printk_silenced() and printk_debugging() tell other logs the switches;
+  printk_logging_notifier_register() blocks run at each change.
+- Setting printk.silent also zeroes log_buf, which the preloader saves
+  whole after a boot that did not come up.
+---
+ include/linux/printk.h | 22 ++++++++++
+ kernel/printk/printk.c | 98 +++++++++++++++++++++++++++++++++++++-----
+ 2 files changed, 109 insertions(+), 11 deletions(-)
+
+diff --git a/include/linux/printk.h b/include/linux/printk.h
+index f8391bc67..bea33cf7a 100644
+--- a/include/linux/printk.h
++++ b/include/linux/printk.h
+@@ -236,6 +236,12 @@ void show_regs_print_info(const char *log_lvl);
+ extern asmlinkage void dump_stack(void) __cold;
+ extern void printk_safe_flush(void);
+ extern void printk_safe_flush_on_panic(void);
++
++struct notifier_block;
++/* The two printk switches, for logs outside the record buffer and drivers' debug switches. */
++extern bool printk_silenced(void);
++extern bool printk_debugging(void);
++extern int printk_logging_notifier_register(struct notifier_block *nb);
+ #else
+ static inline __printf(1, 0)
+ int vprintk(const char *s, va_list args)
+@@ -307,6 +313,22 @@ static inline void printk_safe_flush(void)
+ static inline void printk_safe_flush_on_panic(void)
+ {
+ }
++
++struct notifier_block;
++static inline bool printk_silenced(void)
++{
++	return true;
++}
++
++static inline bool printk_debugging(void)
++{
++	return false;
++}
++
++static inline int printk_logging_notifier_register(struct notifier_block *nb)
++{
++	return 0;
++}
+ #endif
+ 
+ extern int kptr_restrict;
+diff --git a/kernel/printk/printk.c b/kernel/printk/printk.c
+index 84cfe85ad..42a45e896 100644
+--- a/kernel/printk/printk.c
++++ b/kernel/printk/printk.c
+@@ -47,6 +47,8 @@
+ #include <linux/sched/debug.h>
+ #include <linux/sched/task_stack.h>
+ #include <linux/proc_fs.h>
++#include <linux/notifier.h>
++#include <linux/workqueue.h>
+ 
+ #include <linux/uaccess.h>
+ #include <asm/sections.h>
+@@ -694,6 +696,11 @@ static u32 truncate_msg(u16 *text_len, u16 *trunc_msg_len,
+ 	return msg_used_size(*text_len + *trunc_msg_len, 0, pad_len);
+ }
+ 
++/* While set nothing is logged: no record of any level is stored, and no console prints. */
++static bool printk_silent;
++/* While set the kernel's records of debug level are stored too. */
++static bool printk_debug;
++
+ /* insert record into the buffer, discard old ones, update heads */
+ static int log_store(int facility, int level,
+ 		     enum log_flags flags, u64 ts_nsec,
+@@ -716,6 +723,9 @@ static int log_store(int facility, int level,
+ 	static bool initialized;
+ #endif
+ 
++	if (level == LOGLEVEL_DEBUG && facility == 0 && !READ_ONCE(printk_debug))
++		return 0;
++
+ #ifdef CONFIG_PRINTK_PREFIX_ENHANCE
+ 		if (state == 0) {
+ 			this_cpu_write(printk_state, ' ');
+@@ -2106,24 +2116,67 @@ static size_t log_output(int facility, int level, enum log_flags lflags, const c
+ #endif
+ }
+ 
+-/* While set nothing is logged: no record of any level is stored, and no console prints. */
+-static bool printk_silent;
++static BLOCKING_NOTIFIER_HEAD(printk_logging_chain);
++/* Set by the first registration; a switch changed before it tells nobody. */
++static bool printk_logging_followed;
++
++/* Runs the chain from a worker, so that setting a switch waits for no follower. */
++static void printk_logging_tell(struct work_struct *work)
++{
++	blocking_notifier_call_chain(&printk_logging_chain, 0, NULL);
++}
++
++static DECLARE_WORK(printk_logging_work, printk_logging_tell);
++
++static void printk_logging_changed(void)
++{
++	if (READ_ONCE(printk_logging_followed))
++		schedule_work(&printk_logging_work);
++}
++
++/* True while printk.silent has nothing logged at all. */
++bool printk_silenced(void)
++{
++	return READ_ONCE(printk_silent);
++}
++EXPORT_SYMBOL(printk_silenced);
++
++/* True while the kernel's debug records are logged. */
++bool printk_debugging(void)
++{
++	return READ_ONCE(printk_debug) && !READ_ONCE(printk_silent);
++}
++EXPORT_SYMBOL(printk_debugging);
++
++/* nb is called from a worker after either switch changes; it reads the switches itself. */
++int printk_logging_notifier_register(struct notifier_block *nb)
++{
++	WRITE_ONCE(printk_logging_followed, true);
++	return blocking_notifier_chain_register(&printk_logging_chain, nb);
++}
++EXPORT_SYMBOL(printk_logging_notifier_register);
+ 
+-/* Setting printk.silent empties the record buffer and drops a pending continuation, so no reader finds what was logged before. */
++/* Setting printk.silent empties the record buffer, bytes and all, and any pending continuation. */
+ static int printk_silent_set(const char *val, const struct kernel_param *kp)
+ {
+ 	unsigned long flags;
++	bool was = printk_silent;
+ 	int ret = param_set_bool(val, kp);
+ 
+-	if (ret || !printk_silent)
++	if (ret)
+ 		return ret;
+-	logbuf_lock_irqsave(flags);
+-	cont.len = 0;
+-	log_first_seq = log_next_seq;
+-	log_first_idx = log_next_idx;
+-	clear_seq = log_first_seq;
+-	clear_idx = log_first_idx;
+-	logbuf_unlock_irqrestore(flags);
++	if (printk_silent) {
++		logbuf_lock_irqsave(flags);
++		cont.len = 0;
++		log_first_seq = log_next_seq;
++		log_first_idx = log_next_idx;
++		clear_seq = log_first_seq;
++		clear_idx = log_first_idx;
++		memset(log_buf, 0, log_buf_len);
++		logbuf_unlock_irqrestore(flags);
++	}
++	if (printk_silent != was)
++		printk_logging_changed();
+ 	return 0;
+ }
+ 
+@@ -2133,6 +2186,29 @@ static const struct kernel_param_ops printk_silent_ops = {
+ };
+ module_param_cb(silent, &printk_silent_ops, &printk_silent, 0644);
+ 
++static int printk_debug_set(const char *val, const struct kernel_param *kp)
++{
++	bool was = printk_debug;
++	int ret = param_set_bool(val, kp);
++
++	if (!ret && printk_debug != was)
++		printk_logging_changed();
++	return ret;
++}
++
++static const struct kernel_param_ops printk_debug_ops = {
++	.set = printk_debug_set,
++	.get = param_get_bool,
++};
++module_param_cb(debug, &printk_debug_ops, &printk_debug, 0644);
++
++/* As an early parameter printk.debug holds for setup_arch's debug records. */
++static int __init printk_debug_early(char *str)
++{
++	return kstrtobool(str ?: "1", &printk_debug);
++}
++early_param("printk.debug", printk_debug_early);
++
+ /* Must be called under logbuf_lock. */
+ int vprintk_store(int facility, int level,
+ 		  const char *dict, size_t dictlen,
+-- 
+2.56.0
+

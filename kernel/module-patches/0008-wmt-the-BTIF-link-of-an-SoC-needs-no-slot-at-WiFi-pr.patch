@@ -1,0 +1,28 @@
+From baf11e8829be5dad76ef4f06c24d18771a4ed909 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 10:37:36 +0200
+Subject: [PATCH] wmt: the BTIF link of an SoC needs no slot at WiFi probe
+
+opfunc_wlan_probe passes a BTIF link without logging "not implemented
+yet hifType" as an error: the Wi-Fi function of an SoC on BTIF has no
+slot to power.
+---
+ connectivity/common/common_main/core/wmt_core.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/connectivity/common/common_main/core/wmt_core.c b/connectivity/common/common_main/core/wmt_core.c
+index b57fe0a..54de1c7 100644
+--- a/connectivity/common/common_main/core/wmt_core.c
++++ b/connectivity/common/common_main/core/wmt_core.c
+@@ -3455,6 +3455,8 @@ static INT32 opfunc_wlan_probe(P_WMT_OP pWmtOp)
+ 			wmt_lib_wlan_lock_release();
+ 			goto done;
+ 		}
++	} else if (gMtkWmtCtx.wmtHifConf.hifType == WMT_HIF_BTIF) {
++		/* BTIF is up already; an SoC's Wi-Fi has no slot to power. */
+ 	} else {
+ 		WMT_ERR_FUNC("not implemented yet hifType: 0x%x, unspecified wifi_hif\n",
+ 				gMtkWmtCtx.wmtHifConf.hifType);
+-- 
+2.56.0
+

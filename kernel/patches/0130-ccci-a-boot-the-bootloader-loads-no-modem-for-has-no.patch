@@ -1,0 +1,68 @@
+From 67ae97ac69ed40e1bacd09f2ae3bb9e4cf724d68 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 22:36:40 +0200
+Subject: [PATCH] ccci: a boot the bootloader loads no modem for has no modem
+ to drive
+
+On a boot the bootloader loads no modem for, as one a cable starts:
+- md_cd_get_modem_hw_info returns -ENODEV, which ccci_modem_probe
+  returns without a failure line and the driver core takes as no device.
+- The SCP ready event sends CCISM_SHM_INIT to no modem.
+---
+ drivers/misc/mediatek/eccci/ccci_core.c               | 6 ++++--
+ drivers/misc/mediatek/eccci/modem_sys1.c              | 4 ++++
+ drivers/misc/mediatek/eccci/mt6765/md_sys1_platform.c | 3 ++-
+ 3 files changed, 10 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/misc/mediatek/eccci/ccci_core.c b/drivers/misc/mediatek/eccci/ccci_core.c
+index bc0279c45..a31290d55 100644
+--- a/drivers/misc/mediatek/eccci/ccci_core.c
++++ b/drivers/misc/mediatek/eccci/ccci_core.c
+@@ -60,8 +60,10 @@ static int apsync_event(struct notifier_block *this,
+ 	case SCP_EVENT_READY:
+ 		fsm_scp_init0();
+ 		if (scp_stop == 1) {
+-			ccci_port_send_msg_to_md(MD_SYS1,
+-				CCCI_SYSTEM_TX, CCISM_SHM_INIT, 0, 1);
++			/* a modem the bootloader loaded no image for takes no message */
++			if (get_modem_is_enabled(MD_SYS1))
++				ccci_port_send_msg_to_md(MD_SYS1,
++					CCCI_SYSTEM_TX, CCISM_SHM_INIT, 0, 1);
+ 			CCCI_NORMAL_LOG(0, CORE, "SCP reboot---\n");
+ 			scp_stop = 0;
+ 		}
+diff --git a/drivers/misc/mediatek/eccci/modem_sys1.c b/drivers/misc/mediatek/eccci/modem_sys1.c
+index e0de89fcf..2db535a4a 100644
+--- a/drivers/misc/mediatek/eccci/modem_sys1.c
++++ b/drivers/misc/mediatek/eccci/modem_sys1.c
+@@ -1328,6 +1328,10 @@ static int ccci_modem_probe(struct platform_device *plat_dev)
+ 		return -1;
+ 	}
+ 	ret = md_cd_get_modem_hw_info(plat_dev, &dev_cfg, md_hw);
++	if (ret == -ENODEV) {
++		kfree(md_hw);
++		return ret;
++	}
+ 	if (ret != 0) {
+ 		CCCI_ERROR_LOG(-1, TAG,
+ 			"%s:get hw info fail(%d)\n", __func__, ret);
+diff --git a/drivers/misc/mediatek/eccci/mt6765/md_sys1_platform.c b/drivers/misc/mediatek/eccci/mt6765/md_sys1_platform.c
+index 8ac8ebc86..7678170a2 100644
+--- a/drivers/misc/mediatek/eccci/mt6765/md_sys1_platform.c
++++ b/drivers/misc/mediatek/eccci/mt6765/md_sys1_platform.c
+@@ -127,10 +127,11 @@ int md_cd_get_modem_hw_info(struct platform_device *dev_ptr,
+ 		"mediatek,md_id", &dev_cfg->index);
+ 	CCCI_DEBUG_LOG(dev_cfg->index, TAG,
+ 		"modem hw info get idx:%d\n", dev_cfg->index);
++	/* a boot the bootloader loads no modem image for has no modem to drive */
+ 	if (!get_modem_is_enabled(dev_cfg->index)) {
+ 		CCCI_ERROR_LOG(dev_cfg->index, TAG,
+ 			"modem %d not enable, exit\n", dev_cfg->index + 1);
+-		return -1;
++		return -ENODEV;
+ 	}
+ 
+ 	memset(hw_info, 0, sizeof(struct md_hw_info));
+-- 
+2.56.0
+

@@ -1,0 +1,49 @@
+From f1cf64794720cac4820ff76822a6298d2b3d5b69 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Thu, 8 Oct 2026 20:58:53 +0200
+Subject: [PATCH] input: och1970: poll the wheel on the power efficient
+ workqueue
+
+On the per-CPU system workqueue the wheel's 50 ms poll keeps waking the
+CPU it first ran on. system_power_efficient_wq is unbound
+(CONFIG_WQ_POWER_EFFICIENT_DEFAULT), so the scheduler places each run.
+---
+ drivers/input/touchscreen/och1970.c | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/input/touchscreen/och1970.c b/drivers/input/touchscreen/och1970.c
+index 4d8358c42..4659b472c 100644
+--- a/drivers/input/touchscreen/och1970.c
++++ b/drivers/input/touchscreen/och1970.c
+@@ -413,14 +413,16 @@ static void och1970_dump_work(struct work_struct *data)
+ 		och1970->pre_time = time_now;
+ 	}
+ 	if (resume_flag)
+-		schedule_delayed_work(&och1970->dump_work, HZ/20);
++		queue_delayed_work(system_power_efficient_wq,
++				   &och1970->dump_work, HZ/20);
+ }
+ 
+ void och1970_resume(void)
+ {
+ 	printk(" och1970_resume ");
+ 	if (och1970)
+-		schedule_delayed_work(&och1970->dump_work, 0);
++		queue_delayed_work(system_power_efficient_wq,
++				   &och1970->dump_work, 0);
+ 	resume_flag = true;
+ }
+ EXPORT_SYMBOL(och1970_resume);
+@@ -510,7 +512,8 @@ static int och1970_probe(struct i2c_client *client, const struct i2c_device_id *
+ 
+ 	resume_flag = true;
+ 	INIT_DELAYED_WORK(&och1970->dump_work, och1970_dump_work);
+-	schedule_delayed_work(&och1970->dump_work, 5*HZ);
++	queue_delayed_work(system_power_efficient_wq,
++			   &och1970->dump_work, 5*HZ);
+ 
+ 	//register_syscore_ops(&och1970_ops);
+ 
+-- 
+2.56.0
+

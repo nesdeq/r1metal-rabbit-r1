@@ -1,0 +1,81 @@
+From 2c74e4843ab90a1f464c6d444c2891830b41c579 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 11:01:39 +0200
+Subject: [PATCH] disp: mtkfb_fence: a failed allocation, an unmatched buffer
+ and a line's argument
+
+- mtkfb_get_buf_info returns NULL where kzalloc fails, and
+  disp_sync_prepare_buf returns NULL before taking a fence index.
+- mtkfb_update_buf_info_new prints the mva of the buffer it matched, 0
+  where none matched, not the list head's container.
+- mtkfb_ion_phys_mmu_addr's "ion handle is not valid" line has a %s for
+  its __func__.
+---
+ .../mediatek/video/mt6765/videox/mtkfb_fence.c   | 16 +++++++++++-----
+ 1 file changed, 11 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/misc/mediatek/video/mt6765/videox/mtkfb_fence.c b/drivers/misc/mediatek/video/mt6765/videox/mtkfb_fence.c
+index 180acdadf..0530e5380 100644
+--- a/drivers/misc/mediatek/video/mt6765/videox/mtkfb_fence.c
++++ b/drivers/misc/mediatek/video/mt6765/videox/mtkfb_fence.c
+@@ -415,7 +415,7 @@ static size_t mtkfb_ion_phys_mmu_addr(struct ion_client *client,
+ 			*mva = (unsigned int)phy_addr;
+ 		}
+ 	} else {
+-		pr_info("[DISP][ION] ERR: ion handle is not valid\n", __func__);
++		pr_info("[DISP][ION] ERR: %s: ion handle is not valid\n", __func__);
+ 		return 0;
+ 	}
+ 
+@@ -687,6 +687,7 @@ bool mtkfb_update_buf_info_new(unsigned int session_id,
+ 	struct disp_session_sync_info *session_info;
+ 	struct disp_sync_info *layer_info;
+ 	unsigned int mva = 0x0;
++	unsigned long buf_mva = 0;
+ 
+ 	if (buf_info->layer_id >= DISP_SESSION_TIMELINE_COUNT) {
+ 		DISPWARN("layer_id %d !!!!!!!!(Warning)\n",
+@@ -712,6 +713,7 @@ bool mtkfb_update_buf_info_new(unsigned int session_id,
+ 	list_for_each_entry(buf, &layer_info->buf_list, list) {
+ 		if (buf->idx == buf_info->next_buff_idx) {
+ 			buf->layer_type = buf_info->layer_type;
++			buf_mva = buf->mva;
+ 			break;
+ 		}
+ 	}
+@@ -721,7 +723,7 @@ bool mtkfb_update_buf_info_new(unsigned int session_id,
+ 	DISPMSG(
+ 		"mva updaten:session_id=0x%08x, layer_id=%d, %x, mva=0x%lx-%x\n",
+ 		session_id, buf_info->layer_id,	buf_info->next_buff_idx,
+-		buf->mva, buf_info->layer_type);
++		buf_mva, buf_info->layer_type);
+ 
+ 	return mva;
+ }
+@@ -896,9 +898,11 @@ static struct mtkfb_fence_buf_info *mtkfb_get_buf_info(void)
+ 	} else {
+ 		info = kzalloc(sizeof(struct mtkfb_fence_buf_info),
+ 			GFP_KERNEL);
+-		mtkfb_init_buf_info(info);
+-		MTKFB_FENCE_LOG("create new mtkfb_fence_buf_info node %p\n",
+-			info);
++		if (info) {
++			mtkfb_init_buf_info(info);
++			MTKFB_FENCE_LOG("create new mtkfb_fence_buf_info node %p\n",
++				info);
++		}
+ 		mutex_unlock(&fence_buffer_mutex);
+ 	}
+ 
+@@ -1295,6 +1299,8 @@ struct mtkfb_fence_buf_info *disp_sync_prepare_buf(
+ 	dprec_start(&session_info->event_prepare, buf->layer_id, buf->ion_fd);
+ 
+ 	buf_info = mtkfb_get_buf_info();
++	if (!buf_info)
++		return NULL;
+ 	mutex_lock(&layer_info->sync_lock);
+ 	data.fence = MTK_FB_INVALID_FENCE_FD;
+ 	data.value = ++(layer_info->fence_idx);
+-- 
+2.56.0
+

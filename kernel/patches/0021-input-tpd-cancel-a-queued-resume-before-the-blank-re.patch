@@ -1,0 +1,38 @@
+From 40752a7fb54f2ca80527e2df9b8c672788500b19 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 10:42:05 +0200
+Subject: [PATCH] input: tpd: cancel a queued resume before the blank reads the
+ flag
+
+At a blank the resume work is cancelled before tpd_suspend_flag is
+read, so a queued resume is dropped and a running one finishes before
+the chip is suspended. Upstream cancels only with the flag clear, when
+nothing can be queued, and logs a failure at every blank.
+---
+ drivers/input/touchscreen/GT1151/tpd_control.c | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/input/touchscreen/GT1151/tpd_control.c b/drivers/input/touchscreen/GT1151/tpd_control.c
+index f458f1a71..45246512f 100644
+--- a/drivers/input/touchscreen/GT1151/tpd_control.c
++++ b/drivers/input/touchscreen/GT1151/tpd_control.c
+@@ -378,11 +378,11 @@ static int tpd_fb_notifier_callback(
+ 		break;
+ 	case FB_BLANK_POWERDOWN:
+ 		TPD_DEBUG("LCD OFF Notify\n");
+-		if (g_tpd_drv && !tpd_suspend_flag) {
+-			err = cancel_work_sync(&touch_resume_work);
+-			if (!err)
+-				TPD_ERR("cancel resume_workqueue failed\n");
+-			g_tpd_drv->suspend(NULL);
++		if (g_tpd_drv) {
++			/* Drop a queued resume or wait for a running one before reading the flag. */
++			cancel_work_sync(&touch_resume_work);
++			if (!tpd_suspend_flag)
++				g_tpd_drv->suspend(NULL);
+ 		}
+ 		tpd_suspend_flag = 1;
+ 		break;
+-- 
+2.56.0
+

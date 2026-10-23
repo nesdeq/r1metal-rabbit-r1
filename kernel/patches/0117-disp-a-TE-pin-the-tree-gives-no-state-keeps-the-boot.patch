@@ -1,0 +1,70 @@
+From 9201335d0950e7bd605858bcfb247d79d27804c4 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 19:52:05 +0200
+Subject: [PATCH] disp: a TE pin the tree gives no state keeps the bootloader's
+ mode
+
+primary_display_requset_eint selects the TE pin's mode_te_te state only
+where the tree names it, as disp_dts_gpio_names_state tells; elsewhere,
+as on the R1, the pin keeps the bootloader's mode, which delivers TE to
+the ESD check already.
+---
+ .../mediatek/video/mt6765/videox/disp_dts_gpio.c    | 13 +++++++++++++
+ .../mediatek/video/mt6765/videox/disp_dts_gpio.h    |  3 +++
+ .../mediatek/video/mt6765/videox/disp_recovery.c    |  5 +++--
+ 3 files changed, 19 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/misc/mediatek/video/mt6765/videox/disp_dts_gpio.c b/drivers/misc/mediatek/video/mt6765/videox/disp_dts_gpio.c
+index 2d4f6a219..d2723808c 100644
+--- a/drivers/misc/mediatek/video/mt6765/videox/disp_dts_gpio.c
++++ b/drivers/misc/mediatek/video/mt6765/videox/disp_dts_gpio.c
+@@ -90,3 +90,16 @@ long disp_dts_gpio_select_state(enum DTS_GPIO_STATE s)
+ 	}
+ 	return _set_state(this_state_name[s]);
+ }
++
++bool disp_dts_gpio_names_state(enum DTS_GPIO_STATE s)
++{
++#ifndef CONFIG_FPGA_EARLY_PORTING
++	/* a handle not got, or a state out of range, is for disp_dts_gpio_select_state() to report */
++	if (!this_pctrl || (unsigned int)s >= (unsigned int)DTS_GPIO_STATE_MAX)
++		return true;
++	return PTR_ERR_OR_ZERO(pinctrl_lookup_state(this_pctrl,
++		this_state_name[s])) != -ENODEV;
++#else
++	return true;
++#endif
++}
+diff --git a/drivers/misc/mediatek/video/mt6765/videox/disp_dts_gpio.h b/drivers/misc/mediatek/video/mt6765/videox/disp_dts_gpio.h
+index e92ec10cd..32640708e 100644
+--- a/drivers/misc/mediatek/video/mt6765/videox/disp_dts_gpio.h
++++ b/drivers/misc/mediatek/video/mt6765/videox/disp_dts_gpio.h
+@@ -46,6 +46,9 @@ long disp_dts_gpio_init(struct platform_device *pdev);
+  */
+ long disp_dts_gpio_select_state(enum DTS_GPIO_STATE s);
+ 
++/* whether the device tree names the state, which a board that leaves the pin as its bootloader set it does not */
++bool disp_dts_gpio_names_state(enum DTS_GPIO_STATE s);
++
+ /* repo of initialization */
+ #ifdef CONFIG_MTK_LEGACY
+ #define disp_dts_gpio_init_repo(x)  (0)
+diff --git a/drivers/misc/mediatek/video/mt6765/videox/disp_recovery.c b/drivers/misc/mediatek/video/mt6765/videox/disp_recovery.c
+index c1b2f5060..ed7aecee4 100644
+--- a/drivers/misc/mediatek/video/mt6765/videox/disp_recovery.c
++++ b/drivers/misc/mediatek/video/mt6765/videox/disp_recovery.c
+@@ -828,8 +828,9 @@ void primary_display_requset_eint(void)
+ 		/* 2.disable irq */
+ 		disable_irq(te_irq);
+ 
+-		/* 3.set DSI_TE GPIO to TE MODE */
+-		disp_dts_gpio_select_state(DTS_GPIO_STATE_TE_MODE_TE);
++		/* 3.set DSI_TE GPIO to TE MODE, where the tree names it; elsewhere the pin keeps the bootloader's mode */
++		if (disp_dts_gpio_names_state(DTS_GPIO_STATE_TE_MODE_TE))
++			disp_dts_gpio_select_state(DTS_GPIO_STATE_TE_MODE_TE);
+ 	}
+ }
+ 
+-- 
+2.56.0
+

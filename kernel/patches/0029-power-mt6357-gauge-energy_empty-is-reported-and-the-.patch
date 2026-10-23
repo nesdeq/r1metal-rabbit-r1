@@ -1,0 +1,56 @@
+From ef8a2fa2e6e5227768f38a4ad618821b04b55a4d Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 15:28:58 +0200
+Subject: [PATCH] power: mt6357-gauge: energy_empty is reported, and the RTC
+ prints name their function
+
+- energy_empty breaks instead of falling through to -EINVAL, which
+  makes the mtk-gauge supply drop every uevent.
+- The two prints of rtc_ui_soc_get() pass __func__ for their "[%s]".
+---
+ drivers/power/supply/mt6357-gauge.c | 14 +++++++-------
+ 1 file changed, 7 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/power/supply/mt6357-gauge.c b/drivers/power/supply/mt6357-gauge.c
+index e4bad8cf3..6d6ed14e3 100644
+--- a/drivers/power/supply/mt6357-gauge.c
++++ b/drivers/power/supply/mt6357-gauge.c
+@@ -1530,7 +1530,6 @@ static int psy_gauge_get_property(struct power_supply *psy,
+ 	enum power_supply_property psp, union power_supply_propval *val)
+ {
+ 	struct mtk_gauge *gauge;
+-	struct mtk_battery *gm;
+ 
+ 	gauge = (struct mtk_gauge *)power_supply_get_drvdata(psy);
+ 
+@@ -1552,10 +1551,11 @@ static int psy_gauge_get_property(struct power_supply *psy,
+ 		val->intval = get_ptim_current(gauge);
+ 		break;
+ 	case POWER_SUPPLY_PROP_ENERGY_EMPTY:
+-		gm = gauge->gm;
+-		if (gm != NULL)
+-			val->intval = gm->sdc.shutdown_status.is_dlpt_shutdown;
+-
++		if (gauge == NULL || gauge->gm == NULL)
++			val->intval = 0;
++		else
++			val->intval = gauge->gm->sdc.shutdown_status.is_dlpt_shutdown;
++		break;
+ 	default:
+ 		return -EINVAL;
+ 	}
+@@ -2193,9 +2193,9 @@ static int rtc_ui_soc_get(struct mtk_gauge *gauge,
+ 	*val = rtc_ui_soc;
+ 
+ 	if (rtc_ui_soc > 100 || rtc_ui_soc < 0)
+-		bm_err("[%s]ERR!rtc=0x%x,ui_soc=%d\n", rtc_value, rtc_ui_soc);
++		bm_err("[%s]ERR!rtc=0x%x,ui_soc=%d\n", __func__, rtc_value, rtc_ui_soc);
+ 	else
+-		bm_debug("[%s]rtc=0x%x,ui_soc=%d\n", rtc_value, rtc_ui_soc);
++		bm_debug("[%s]rtc=0x%x,ui_soc=%d\n", __func__, rtc_value, rtc_ui_soc);
+ 
+ 	return 0;
+ }
+-- 
+2.56.0
+

@@ -1,0 +1,98 @@
+From c34a5016519016f40d081058da0630fa4e7a85df Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 20:18:01 +0200
+Subject: [PATCH] mediatek: the Makefiles print their facts as information
+
+The CCU and connectivity Makefiles print their facts with $(info), not
+$(warning), and the QoS and unified power Makefiles fix the ifeq lines
+make warns of as extraneous text, one missing a space, one with a
+parenthesis too many. An MT6765 build compiles the same.
+---
+ drivers/misc/mediatek/base/power/qos/Makefile       | 2 +-
+ drivers/misc/mediatek/base/power/upower_v2/Makefile | 2 +-
+ drivers/misc/mediatek/ccu/src/1.2/Makefile          | 4 +---
+ drivers/misc/mediatek/ccu/src/Makefile              | 4 ++--
+ drivers/misc/mediatek/connectivity/Makefile         | 6 +++---
+ 5 files changed, 8 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/misc/mediatek/base/power/qos/Makefile b/drivers/misc/mediatek/base/power/qos/Makefile
+index 203601dc9..b5c6a9c45 100644
+--- a/drivers/misc/mediatek/base/power/qos/Makefile
++++ b/drivers/misc/mediatek/base/power/qos/Makefile
+@@ -42,7 +42,7 @@ endif
+ 
+ ifeq ($(CONFIG_MACH_MT6877),y)
+ ccflags-y += -I$(srctree)/drivers/misc/mediatek/base/power/qos/mt6877
+-else ifeq($(CONFIG_MACH_MT6781),y)
++else ifeq ($(CONFIG_MACH_MT6781),y)
+ ccflags-y += -I$(srctree)/drivers/misc/mediatek/base/power/qos/$(MTK_PLATFORM)/
+ else
+ ccflags-y += -I$(srctree)/drivers/misc/mediatek/base/power/qos/$(CONFIG_MTK_PLATFORM)
+diff --git a/drivers/misc/mediatek/base/power/upower_v2/Makefile b/drivers/misc/mediatek/base/power/upower_v2/Makefile
+index 817503f66..242a9bc15 100644
+--- a/drivers/misc/mediatek/base/power/upower_v2/Makefile
++++ b/drivers/misc/mediatek/base/power/upower_v2/Makefile
+@@ -30,7 +30,7 @@ ccflags-y += \
+ 
+ ifeq ($(CONFIG_MTK_TINYSYS_SSPM_SUPPORT), y)
+ #for mt6768
+-ifeq ($(CONFIG_MACH_MT6768),y))
++ifeq ($(CONFIG_MACH_MT6768),y)
+ ccflags-y += -I$(srctree)/drivers/misc/mediatek/sspm/v1/
+ else
+ ccflags-y += -I$(srctree)/drivers/misc/mediatek/sspm/
+diff --git a/drivers/misc/mediatek/ccu/src/1.2/Makefile b/drivers/misc/mediatek/ccu/src/1.2/Makefile
+index 7aae34038..6a5a463a3 100644
+--- a/drivers/misc/mediatek/ccu/src/1.2/Makefile
++++ b/drivers/misc/mediatek/ccu/src/1.2/Makefile
+@@ -25,9 +25,7 @@ ccflags-y += -I$(srctree)/drivers/i2c/busses
+ ccflags-y += -I$(srctree)/drivers/misc/mediatek/imgsensor/inc
+ 
+ ccflags-y += -I$(srctree)/drivers/iommu/
+-$(warning CCU_INC=$(srctree)/drivers/misc/mediatek/ccu/src/$(MTK_PLATFORM)/ccu_ext_interface)
+-
+-#$(warning $(subdir-ccflags-y))
++$(info CCU_INC=$(srctree)/drivers/misc/mediatek/ccu/src/$(MTK_PLATFORM)/ccu_ext_interface)
+ 
+ #obj-$(CONFIG_MTK_VPU) += ccu_drv.o ccu_algo.o ccu_dbg.o
+ obj-y += ccu_drv.o ccu_n3d_a.o ccu_i2c.o
+diff --git a/drivers/misc/mediatek/ccu/src/Makefile b/drivers/misc/mediatek/ccu/src/Makefile
+index f4340623f..59a3c3999 100644
+--- a/drivers/misc/mediatek/ccu/src/Makefile
++++ b/drivers/misc/mediatek/ccu/src/Makefile
+@@ -30,7 +30,7 @@ endif
+ 
+ obj-y += $(subst ",,$(platform))/
+ 
+-$(warning CCU_MAKE_FILE_CALLED)
++$(info CCU_MAKE_FILE_CALLED)
+ ifneq (,$(filter $(platform),mt6757 mt6799))
+     obj-y += 1.0/
+ else ifneq (,$(filter $(platform),mt6758 mt6763))
+@@ -41,5 +41,5 @@ else ifneq (,$(filter $(platform),mt6771 mt6775 mt6785))
+     obj-y += 2.0/
+ else ifneq (,$(filter $(platform),mt6779))
+     obj-y += 2.1/
+-    $(warning CCU_MAKE_FILE_CALLED_2_1)
++    $(info CCU_MAKE_FILE_CALLED_2_1)
+ endif
+diff --git a/drivers/misc/mediatek/connectivity/Makefile b/drivers/misc/mediatek/connectivity/Makefile
+index 59f62fe26..48bc1b72f 100644
+--- a/drivers/misc/mediatek/connectivity/Makefile
++++ b/drivers/misc/mediatek/connectivity/Makefile
+@@ -72,9 +72,9 @@ endif
+             $(error $(ABS_PATH_TO_WLAN_DRV) is not existed)
+         endif
+ 
+-        $(warning symbolic link to $(PATH_TO_WMT_DRV))
+-        $(warning symbolic link to $(PATH_TO_WLAN_CHR_DRV))
+-        $(warning symbolic link to $(PATH_TO_WLAN_DRV))
++        $(info symbolic link to $(PATH_TO_WMT_DRV))
++        $(info symbolic link to $(PATH_TO_WLAN_CHR_DRV))
++        $(info symbolic link to $(PATH_TO_WLAN_DRV))
+ 
+         $(shell unlink $(srctree)/$(src)/wmt_drv)
+         $(shell unlink $(srctree)/$(src)/wmt_chrdev_wifi)
+-- 
+2.56.0
+

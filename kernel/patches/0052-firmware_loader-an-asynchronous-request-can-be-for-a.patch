@@ -1,0 +1,151 @@
+From e7ecb88d4b5857914ee4b9520393327784fde06e Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 16:59:12 +0200
+Subject: [PATCH] firmware_loader: an asynchronous request can be for a file
+ that may be absent
+
+firmware_request_nowait_nowarn is request_firmware_nowait with uevent
+set and FW_OPT_NO_WARN, for an asynchronous request of a file that may
+be absent, as firmware_request_nowarn is for a synchronous one.
+---
+ drivers/base/firmware_loader/main.c | 75 ++++++++++++++++++-----------
+ include/linux/firmware.h            | 12 +++++
+ 2 files changed, 60 insertions(+), 27 deletions(-)
+
+diff --git a/drivers/base/firmware_loader/main.c b/drivers/base/firmware_loader/main.c
+index 03035955a..ab748550f 100644
+--- a/drivers/base/firmware_loader/main.c
++++ b/drivers/base/firmware_loader/main.c
+@@ -791,34 +791,10 @@ static void request_firmware_work_func(struct work_struct *work)
+ 	kfree(fw_work);
+ }
+ 
+-/**
+- * request_firmware_nowait() - asynchronous version of request_firmware
+- * @module: module requesting the firmware
+- * @uevent: sends uevent to copy the firmware image if this flag
+- *	is non-zero else the firmware copy must be done manually.
+- * @name: name of firmware file
+- * @device: device for which firmware is being loaded
+- * @gfp: allocation flags
+- * @context: will be passed over to @cont, and
+- *	@fw may be %NULL if firmware request fails.
+- * @cont: function will be called asynchronously when the firmware
+- *	request is over.
+- *
+- *	Caller must hold the reference count of @device.
+- *
+- *	Asynchronous variant of request_firmware() for user contexts:
+- *		- sleep for as small periods as possible since it may
+- *		  increase kernel boot time of built-in device drivers
+- *		  requesting firmware in their ->probe() methods, if
+- *		  @gfp is GFP_KERNEL.
+- *
+- *		- can't sleep at all if @gfp is GFP_ATOMIC.
+- **/
+-int
+-request_firmware_nowait(
++static int _request_firmware_nowait(
+ 	struct module *module, bool uevent,
+ 	const char *name, struct device *device, gfp_t gfp, void *context,
+-	void (*cont)(const struct firmware *fw, void *context))
++	void (*cont)(const struct firmware *fw, void *context), bool nowarn)
+ {
+ 	struct firmware_work *fw_work;
+ 
+@@ -836,7 +812,8 @@ request_firmware_nowait(
+ 	fw_work->context = context;
+ 	fw_work->cont = cont;
+ 	fw_work->opt_flags = FW_OPT_NOWAIT |
+-		(uevent ? FW_OPT_UEVENT : FW_OPT_USERHELPER);
++		(uevent ? FW_OPT_UEVENT : FW_OPT_USERHELPER) |
++		(nowarn ? FW_OPT_NO_WARN : 0);
+ 
+ 	if (!uevent && fw_cache_is_setup(device, name)) {
+ 		kfree_const(fw_work->name);
+@@ -855,8 +832,52 @@ request_firmware_nowait(
+ 	schedule_work(&fw_work->work);
+ 	return 0;
+ }
++
++/**
++ * request_firmware_nowait() - asynchronous version of request_firmware
++ * @module: module requesting the firmware
++ * @uevent: sends uevent to copy the firmware image if this flag
++ *	is non-zero else the firmware copy must be done manually.
++ * @name: name of firmware file
++ * @device: device for which firmware is being loaded
++ * @gfp: allocation flags
++ * @context: will be passed over to @cont, and
++ *	@fw may be %NULL if firmware request fails.
++ * @cont: function will be called asynchronously when the firmware
++ *	request is over.
++ *
++ *	Caller must hold the reference count of @device.
++ *
++ *	Asynchronous variant of request_firmware() for user contexts:
++ *		- sleep for as small periods as possible since it may
++ *		  increase kernel boot time of built-in device drivers
++ *		  requesting firmware in their ->probe() methods, if
++ *		  @gfp is GFP_KERNEL.
++ *
++ *		- can't sleep at all if @gfp is GFP_ATOMIC.
++ **/
++int
++request_firmware_nowait(
++	struct module *module, bool uevent,
++	const char *name, struct device *device, gfp_t gfp, void *context,
++	void (*cont)(const struct firmware *fw, void *context))
++{
++	return _request_firmware_nowait(module, uevent, name, device, gfp,
++					context, cont, false);
++}
+ EXPORT_SYMBOL(request_firmware_nowait);
+ 
++/* request_firmware_nowait() for a file that may be absent: its absence is not warned of */
++int firmware_request_nowait_nowarn(
++	struct module *module, const char *name,
++	struct device *device, gfp_t gfp, void *context,
++	void (*cont)(const struct firmware *fw, void *context))
++{
++	return _request_firmware_nowait(module, true, name, device, gfp,
++					context, cont, true);
++}
++EXPORT_SYMBOL_GPL(firmware_request_nowait_nowarn);
++
+ #ifdef CONFIG_FW_CACHE
+ static ASYNC_DOMAIN_EXCLUSIVE(fw_cache_domain);
+ 
+diff --git a/include/linux/firmware.h b/include/linux/firmware.h
+index 2dd566c91..2d20e0126 100644
+--- a/include/linux/firmware.h
++++ b/include/linux/firmware.h
+@@ -48,6 +48,10 @@ int request_firmware_nowait(
+ 	struct module *module, bool uevent,
+ 	const char *name, struct device *device, gfp_t gfp, void *context,
+ 	void (*cont)(const struct firmware *fw, void *context));
++int firmware_request_nowait_nowarn(
++	struct module *module, const char *name,
++	struct device *device, gfp_t gfp, void *context,
++	void (*cont)(const struct firmware *fw, void *context));
+ int request_firmware_direct(const struct firmware **fw, const char *name,
+ 			    struct device *device);
+ int request_firmware_into_buf(const struct firmware **firmware_p,
+@@ -77,6 +81,14 @@ static inline int request_firmware_nowait(
+ 	return -EINVAL;
+ }
+ 
++static inline int firmware_request_nowait_nowarn(
++	struct module *module, const char *name,
++	struct device *device, gfp_t gfp, void *context,
++	void (*cont)(const struct firmware *fw, void *context))
++{
++	return -EINVAL;
++}
++
+ static inline void release_firmware(const struct firmware *fw)
+ {
+ }
+-- 
+2.56.0
+

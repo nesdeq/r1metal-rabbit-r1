@@ -1,0 +1,30 @@
+From b7d14b6d447caebc0164afb572af37272169e6c2 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 11:23:45 +0200
+Subject: [PATCH] sched/fair: the first idle CPU of a group balances, an
+ isolated one does not
+
+should_we_balance passes over isolated CPUs when it picks the local
+group's first idle CPU to balance. The inverted upstream test picks only
+an idle isolated CPU, which never balances, and with none isolated the
+group's first CPU balances, idle or busy.
+---
+ kernel/sched/fair.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index ebf0acd6c..0e91ac007 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -10242,7 +10242,7 @@ static int should_we_balance(struct lb_env *env)
+ 		if (!idle_cpu(cpu))
+ 			continue;
+ 
+-		if (!cpu_isolated(cpu))
++		if (cpu_isolated(cpu))
+ 			continue;
+ 
+ 		balance_cpu = cpu;
+-- 
+2.56.0
+

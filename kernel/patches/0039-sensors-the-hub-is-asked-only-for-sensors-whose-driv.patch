@@ -1,0 +1,85 @@
+From 8ada4022f630bfec5b5cd0afcb1a8c78a0336f5b Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 16:09:09 +0200
+Subject: [PATCH] sensors: the hub is asked only for sensors whose driver is
+ built
+
+- The sensor list asks the hub only for kinds whose hub driver is
+  configured; the hub refuses the others with an error each.
+- gyrohub's gpio_config() returns quietly without a gyroscope node,
+  which a gyroscope behind the hub does not need.
+---
+ .../sensors-1.0/gyroscope/gyrohub/gyrohub.c         |  5 ++---
+ .../sensors-1.0/hwmon/sensor_list/sensor_list.c     | 13 +++++++++++++
+ 2 files changed, 15 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/misc/mediatek/sensors-1.0/gyroscope/gyrohub/gyrohub.c b/drivers/misc/mediatek/sensors-1.0/gyroscope/gyrohub/gyrohub.c
+index 5e173b2dd..37c1a95cd 100644
+--- a/drivers/misc/mediatek/sensors-1.0/gyroscope/gyrohub/gyrohub.c
++++ b/drivers/misc/mediatek/sensors-1.0/gyroscope/gyrohub/gyrohub.c
+@@ -770,10 +770,9 @@ static int gpio_config(void)
+ 	struct pinctrl_state *pins_default;
+ 	struct pinctrl_state *pins_cfg;
+ 
+-	if (gyroPltFmDev == NULL) {
+-		pr_err("Cannot find gyro device!\n");
++	/* no gyroscope node: no AP pin state to select */
++	if (gyroPltFmDev == NULL)
+ 		return 0;
+-	}
+ 
+ 	pinctrl = devm_pinctrl_get(&gyroPltFmDev->dev);
+ 	if (IS_ERR(pinctrl)) {
+diff --git a/drivers/misc/mediatek/sensors-1.0/hwmon/sensor_list/sensor_list.c b/drivers/misc/mediatek/sensors-1.0/hwmon/sensor_list/sensor_list.c
+index 2a3816076..5698a0185 100644
+--- a/drivers/misc/mediatek/sensors-1.0/hwmon/sensor_list/sensor_list.c
++++ b/drivers/misc/mediatek/sensors-1.0/hwmon/sensor_list/sensor_list.c
+@@ -71,32 +71,45 @@ inline int sensor_to_handle(int sensor)
+ 	return handle;
+ }
+ 
++/* a sensor is asked for only where its hub driver is built */
+ static inline int handle_to_sensor(int handle)
+ {
+ 	int sensor = -1;
+ 
+ 	switch (handle) {
++#ifdef CONFIG_MTK_ACCELHUB
+ 	case accel:
+ 		sensor = ID_ACCELEROMETER;
+ 		break;
++#endif
++#ifdef CONFIG_MTK_GYROHUB
+ 	case gyro:
+ 		sensor = ID_GYROSCOPE;
+ 		break;
++#endif
++#ifdef CONFIG_MTK_MAGHUB
+ 	case mag:
+ 		sensor = ID_MAGNETIC;
+ 		break;
++#endif
++#ifdef CONFIG_MTK_ALSPSHUB
+ 	case als:
+ 		sensor = ID_LIGHT;
+ 		break;
+ 	case ps:
+ 		sensor = ID_PROXIMITY;
+ 		break;
++#endif
++#ifdef CONFIG_MTK_BAROHUB
+ 	case baro:
+ 		sensor = ID_PRESSURE;
+ 		break;
++#endif
++#ifdef CONFIG_MTK_SAR_HUB
+ 	case sar:
+ 		sensor = ID_SAR;
+ 		break;
++#endif
+ 	}
+ 	return sensor;
+ }
+-- 
+2.56.0
+

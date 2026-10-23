@@ -1,0 +1,183 @@
+From 2cadf804447f6e2b41a54238721b5f5b181123cc Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 18:01:07 +0200
+Subject: [PATCH] musb: the gadget leaves the registers of a stopped controller
+ alone
+
+While musb->power is clear, the endpoint operations leave the stopped
+controller alone, as their register writes in the teardown after a
+cable out restart an RX queue and race the clock's unprepare:
+- A dequeue gives the request back at once; a FIFO flush does nothing.
+- A disable clears the descriptor and gives back the requests, with
+  the QMU descriptors reset in memory.
+- A queue, an enable, a halt, ep0's halt and a FIFO status answer
+  -ESHUTDOWN; mass storage's bulk-in halt and wedge take it silently.
+---
+ drivers/misc/mediatek/usb20/musb_gadget.c     | 46 +++++++++++++++----
+ drivers/misc/mediatek/usb20/musb_gadget_ep0.c |  5 ++
+ drivers/usb/gadget/function/f_mass_storage.c  |  6 ++-
+ 3 files changed, 47 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/misc/mediatek/usb20/musb_gadget.c b/drivers/misc/mediatek/usb20/musb_gadget.c
+index 574db4ba0..8acd01444 100644
+--- a/drivers/misc/mediatek/usb20/musb_gadget.c
++++ b/drivers/misc/mediatek/usb20/musb_gadget.c
+@@ -244,7 +244,11 @@ static void nuke(struct musb_ep *ep, const int status)
+ 
+ 	ep->busy = 1;
+ #ifdef CONFIG_MTK_MUSB_QMU_SUPPORT
+-	musb_flush_qmu(ep->hw_ep->epnum, (ep->is_in ? TXQ : RXQ));
++	/* musb_stop stopped the queues of a stopped controller */
++	if (ep->musb->power)
++		musb_flush_qmu(ep->hw_ep->epnum, (ep->is_in ? TXQ : RXQ));
++	else
++		qmu_reset_gpd_pool(ep->hw_ep->epnum, (ep->is_in ? TXQ : RXQ));
+ #else
+ 	if (is_dma_capable() && ep->dma) {
+ 		struct dma_controller *c = ep->musb->dma_controller;
+@@ -1312,6 +1316,10 @@ static int musb_gadget_enable
+ 		status = -EBUSY;
+ 		goto fail;
+ 	}
++	if (!musb->power) {
++		status = -ESHUTDOWN;
++		goto fail;
++	}
+ 	musb_ep->type = usb_endpoint_type(desc);
+ 
+ 	/* check direction and (later) maxpacket size against endpoint */
+@@ -1499,6 +1507,11 @@ static int musb_gadget_disable(struct usb_ep *ep)
+ 	epio = musb->endpoints[epnum].regs;
+ 
+ 	spin_lock_irqsave(&musb->lock, flags);
++
++	/* musb_stop flushed a stopped controller's FIFOs */
++	if (!musb->power)
++		goto stopped;
++
+ 	musb_ep_select(musb->mregs, epnum);
+ 
+ 	/* zero the endpoint sizes */
+@@ -1528,6 +1541,7 @@ static int musb_gadget_disable(struct usb_ep *ep)
+ 		musb_writew(epio, MUSB_RXMAXP, 0);
+ 	}
+ 
++stopped:
+ 	musb_ep->desc = NULL;
+ 	musb_ep->end_point.desc = NULL;
+ 
+@@ -1655,8 +1669,8 @@ static int musb_gadget_queue
+ 
+ 	spin_lock_irqsave(&musb->lock, lockflags);
+ 
+-	/* don't queue if the ep is down */
+-	if (!musb_ep->desc) {
++	/* don't queue if the ep or its controller is down */
++	if (!musb_ep->desc || !musb->power) {
+ 		DBG(2,
+ 			"req %p queued to %s while ep %s\n",
+ 			req, ep->name, "disabled");
+@@ -1790,8 +1804,9 @@ static int musb_gadget_dequeue(struct usb_ep *ep, struct usb_request *request)
+ 		goto done;
+ 	}
+ 
+-	/* if the hardware doesn't have the request, easy ... */
+-	if (musb_ep->req_list.next != &req->list || musb_ep->busy)
++	/* if the hardware doesn't have the request or is stopped, easy ... */
++	if (musb_ep->req_list.next != &req->list || musb_ep->busy ||
++			!musb->power)
+ 		musb_g_giveback(musb_ep, request, -ECONNRESET);
+ #ifdef CONFIG_MTK_MUSB_QMU_SUPPORT
+ 	else {
+@@ -1861,6 +1876,11 @@ static int musb_gadget_set_halt(struct usb_ep *ep, int value)
+ 		goto done;
+ 	}
+ 
++	if (!musb->power) {
++		status = -ESHUTDOWN;
++		goto done;
++	}
++
+ 	musb_ep_select(mbase, epnum);
+ 
+ 	request = next_request(musb_ep);
+@@ -1949,9 +1969,13 @@ static int musb_gadget_fifo_status(struct usb_ep *ep)
+ 
+ 		spin_lock_irqsave(&musb->lock, flags);
+ 
+-		musb_ep_select(mbase, epnum);
+-		/* FIXME return zero unless RXPKTRDY is set */
+-		retval = musb_readw(epio, MUSB_RXCOUNT);
++		if (!musb->power) {
++			retval = -ESHUTDOWN;
++		} else {
++			musb_ep_select(mbase, epnum);
++			/* FIXME return zero unless RXPKTRDY is set */
++			retval = musb_readw(epio, MUSB_RXCOUNT);
++		}
+ 
+ 		spin_unlock_irqrestore(&musb->lock, flags);
+ 	}
+@@ -1971,6 +1995,11 @@ static void musb_gadget_fifo_flush(struct usb_ep *ep)
+ 	mbase = musb->mregs;
+ 
+ 	spin_lock_irqsave(&musb->lock, flags);
++
++	/* musb_stop flushed a stopped controller's FIFOs and queues */
++	if (!musb->power)
++		goto unlock;
++
+ 	musb_ep_select(mbase, (u8) epnum);
+ 
+ #ifndef CONFIG_MTK_MUSB_QMU_SUPPORT
+@@ -2013,6 +2042,7 @@ static void musb_gadget_fifo_flush(struct usb_ep *ep)
+ 	/* re-enable interrupt */
+ 	musb_writew(mbase, MUSB_INTRTXE, musb->intrtxe);
+ #endif
++unlock:
+ 	spin_unlock_irqrestore(&musb->lock, flags);
+ }
+ 
+diff --git a/drivers/misc/mediatek/usb20/musb_gadget_ep0.c b/drivers/misc/mediatek/usb20/musb_gadget_ep0.c
+index d32d69ad4..a0f52f4a4 100644
+--- a/drivers/misc/mediatek/usb20/musb_gadget_ep0.c
++++ b/drivers/misc/mediatek/usb20/musb_gadget_ep0.c
+@@ -1139,6 +1139,11 @@ static int musb_g_ep0_halt(struct usb_ep *e, int value)
+ 		goto cleanup;
+ 	}
+ 
++	if (!musb->power) {
++		status = -ESHUTDOWN;
++		goto cleanup;
++	}
++
+ 	musb_ep_select(base, 0);
+ 	csr = musb->ackpend;
+ 
+diff --git a/drivers/usb/gadget/function/f_mass_storage.c b/drivers/usb/gadget/function/f_mass_storage.c
+index 8c8591438..232137d26 100644
+--- a/drivers/usb/gadget/function/f_mass_storage.c
++++ b/drivers/usb/gadget/function/f_mass_storage.c
+@@ -1431,7 +1431,8 @@ static int halt_bulk_in_endpoint(struct fsg_dev *fsg)
+ 		VDBG(fsg, "delayed bulk-in endpoint halt\n");
+ 	while (rc != 0) {
+ 		if (rc != -EAGAIN) {
+-			WARNING(fsg, "usb_ep_set_halt -> %d\n", rc);
++			if (rc != -ESHUTDOWN)
++				WARNING(fsg, "usb_ep_set_halt -> %d\n", rc);
+ 			rc = 0;
+ 			break;
+ 		}
+@@ -1454,7 +1455,8 @@ static int wedge_bulk_in_endpoint(struct fsg_dev *fsg)
+ 		VDBG(fsg, "delayed bulk-in endpoint wedge\n");
+ 	while (rc != 0) {
+ 		if (rc != -EAGAIN) {
+-			WARNING(fsg, "usb_ep_set_wedge -> %d\n", rc);
++			if (rc != -ESHUTDOWN)
++				WARNING(fsg, "usb_ep_set_wedge -> %d\n", rc);
+ 			rc = 0;
+ 			break;
+ 		}
+-- 
+2.56.0
+

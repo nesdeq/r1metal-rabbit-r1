@@ -1,0 +1,59 @@
+From be703db1465243088e6935e53b6f983d5367fa95 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 10:12:45 +0200
+Subject: [PATCH] charger: the R1 charges at 5 V by choice
+
+mtk_charger_probe leaves high voltage charging off, so no algorithm
+raises VBUS above 5 V until voltage_max turns it on: at the tree's 1 A
+limits a higher VBUS only heats the MT6370. support_fast_charging passes
+over the same algorithms, so a ready PD adapter does not make the basic
+path skip AICL.
+---
+ drivers/power/supply/mtk_basic_charger.c | 9 ++++++++-
+ drivers/power/supply/mtk_charger.c       | 3 ++-
+ 2 files changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/power/supply/mtk_basic_charger.c b/drivers/power/supply/mtk_basic_charger.c
+index 96bbd439b..9d25dccdc 100644
+--- a/drivers/power/supply/mtk_basic_charger.c
++++ b/drivers/power/supply/mtk_basic_charger.c
+@@ -84,7 +84,7 @@ static void select_cv(struct mtk_charger *info)
+ static bool support_fast_charging(struct mtk_charger *info)
+ {
+ 	struct chg_alg_device *alg;
+-	int i = 0, state = 0;
++	int i = 0, state = 0, val = 0;
+ 	bool ret = false;
+ 
+ 	for (i = 0; i < MAX_ALG_NO; i++) {
+@@ -92,6 +92,13 @@ static bool support_fast_charging(struct mtk_charger *info)
+ 		if (alg == NULL)
+ 			continue;
+ 
++		/* do_algorithm runs nothing above 5 V while high voltage charging is off */
++		if (!info->enable_hv_charging) {
++			chg_alg_get_prop(alg, ALG_MAX_VBUS, &val);
++			if (val > 5000)
++				continue;
++		}
++
+ 		chg_alg_set_current_limit(alg, &info->setting);
+ 		state = chg_alg_is_algo_ready(alg);
+ 		chr_debug("%s %s ret:%s\n", __func__, dev_name(&alg->dev),
+diff --git a/drivers/power/supply/mtk_charger.c b/drivers/power/supply/mtk_charger.c
+index 742a1da2a..2c1e794f1 100644
+--- a/drivers/power/supply/mtk_charger.c
++++ b/drivers/power/supply/mtk_charger.c
+@@ -2206,7 +2206,8 @@ static int mtk_charger_probe(struct platform_device *pdev)
+ 		info->chg_data[i].thermal_input_current_limit = -1;
+ 		info->chg_data[i].input_current_limit_by_aicl = -1;
+ 	}
+-	info->enable_hv_charging = true;
++	/* 5 V only, until voltage_max asks for more */
++	info->enable_hv_charging = false;
+ 
+ 	info->psy_desc1.name = "mtk-master-charger";
+ 	info->psy_desc1.type = POWER_SUPPLY_TYPE_UNKNOWN;
+-- 
+2.56.0
+

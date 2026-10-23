@@ -1,0 +1,147 @@
+From a5c7605361f60befc4509926923c9966e231db69 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Tue, 20 Oct 2026 11:19:18 +0200
+Subject: [PATCH] wlan: the states a join, a link's end and a radio off pass
+ are told at info
+
+These normal states log at info instead of warning or error:
+- a CNM timer started after the list's next expiry passed, before the
+  kernel timer ran;
+- a command or event id past the wake statistics' table;
+- a Deauth from a sender without a STA record;
+- frames held until the firmware makes their STA record valid;
+- a DHCP ACK after the join's channel is released;
+- a battery threshold crossed with the radio off or stopping;
+- a link quality round without a connection.
+---
+ connectivity/wlan/core/gen4m/common/debug.c    |  8 ++++----
+ connectivity/wlan/core/gen4m/common/wlan_lib.c |  2 +-
+ connectivity/wlan/core/gen4m/mgmt/cnm_timer.c  |  2 +-
+ connectivity/wlan/core/gen4m/mgmt/saa_fsm.c    |  4 ++--
+ connectivity/wlan/core/gen4m/nic/que_mgt.c     | 12 +++++-------
+ connectivity/wlan/core/gen4m/os/linux/gl_kal.c |  9 ++++++---
+ 6 files changed, 19 insertions(+), 18 deletions(-)
+
+diff --git a/connectivity/wlan/core/gen4m/common/debug.c b/connectivity/wlan/core/gen4m/common/debug.c
+index 890ae32..7381e81 100644
+--- a/connectivity/wlan/core/gen4m/common/debug.c
++++ b/connectivity/wlan/core/gen4m/common/debug.c
+@@ -299,8 +299,8 @@ uint32_t wlanWakeLogCmd(uint8_t ucCmdId)
+ 		}
+ 
+ 		if (j >= WAKE_MAX_CMD_EVENT_NUM) {
+-			DBGLOG_LIMITED(OID, WARN,
+-			"Wake cmd over flow %d-0x%02x\n",
++			DBGLOG_LIMITED(OID, INFO,
++			"the wake statistics count %d command ids, 0x%02x is not counted\n",
+ 			WAKE_MAX_CMD_EVENT_NUM, ucCmdId);
+ 		}
+ 	}
+@@ -343,8 +343,8 @@ uint32_t wlanWakeLogEvent(uint8_t ucEventId)
+ 		}
+ 
+ 		if (j >= WAKE_MAX_CMD_EVENT_NUM) {
+-			DBGLOG(OID, WARN,
+-			"Wake event over flow %d-0x%02x\n",
++			DBGLOG(OID, INFO,
++			"the wake statistics count %d event ids, 0x%02x is not counted\n",
+ 			WAKE_MAX_CMD_EVENT_NUM, ucEventId);
+ 		}
+ 	}
+diff --git a/connectivity/wlan/core/gen4m/common/wlan_lib.c b/connectivity/wlan/core/gen4m/common/wlan_lib.c
+index 56e96be..b1c4d36 100644
+--- a/connectivity/wlan/core/gen4m/common/wlan_lib.c
++++ b/connectivity/wlan/core/gen4m/common/wlan_lib.c
+@@ -12877,7 +12877,7 @@ uint32_t wlanLinkQualityMonitor(struct GLUE_INFO *prGlueInfo, bool bFgIsOid)
+ 		ucBssIndex) !=
+ 	    MEDIA_STATE_CONNECTED) {
+ 		/* not connected */
+-		DBGLOG(SW4, ERROR, "not yet connected\n");
++		DBGLOG(SW4, INFO, "no connection, no link quality to collect\n");
+ 		return u4Status;
+ 	}
+ 
+diff --git a/connectivity/wlan/core/gen4m/mgmt/cnm_timer.c b/connectivity/wlan/core/gen4m/mgmt/cnm_timer.c
+index 726b75a..67fa5d1 100644
+--- a/connectivity/wlan/core/gen4m/mgmt/cnm_timer.c
++++ b/connectivity/wlan/core/gen4m/mgmt/cnm_timer.c
+@@ -526,7 +526,7 @@ void cnmTimerStartTimer(IN struct ADAPTER *prAdapter, IN struct TIMER *prTimer,
+ 		TIME_BEFORE(prRootTimer->rNextExpiredSysTime, rCurSysTime) &&
+ 		!test_bit(GLUE_FLAG_TIMEOUT_BIT,
+ 				       &prAdapter->prGlueInfo->ulFlag)) {
+-		log_dbg(CNM, WARN, "Invalid NextExpiredSysTime: %u, currentSysTime: %u\n",
++		log_dbg(CNM, INFO, "the timer list's next expiry %u has passed at %u, its check runs now\n",
+ 			prRootTimer->rNextExpiredSysTime, rCurSysTime);
+ 		set_bit(GLUE_FLAG_TIMEOUT_BIT,
+ 				       &prAdapter->prGlueInfo->ulFlag);
+diff --git a/connectivity/wlan/core/gen4m/mgmt/saa_fsm.c b/connectivity/wlan/core/gen4m/mgmt/saa_fsm.c
+index 78b7ece..50d5952 100644
+--- a/connectivity/wlan/core/gen4m/mgmt/saa_fsm.c
++++ b/connectivity/wlan/core/gen4m/mgmt/saa_fsm.c
+@@ -1250,8 +1250,8 @@ uint32_t saaFsmRunEventRxDeauth(IN struct ADAPTER *prAdapter,
+ 
+ 		/* We should have the corresponding Sta Record. */
+ 		if (!prStaRec) {
+-			DBGLOG(SAA, WARN,
+-			       "Received a Deauth: wlanIdx[%d] w/o corresponding staRec\n",
++			DBGLOG(SAA, INFO,
++			       "Received a Deauth: wlanIdx[%d] has no STA record, nothing to tear down\n",
+ 			       ucWlanIdx);
+ 			break;
+ 		}
+diff --git a/connectivity/wlan/core/gen4m/nic/que_mgt.c b/connectivity/wlan/core/gen4m/nic/que_mgt.c
+index 81f5755..74aec5c 100644
+--- a/connectivity/wlan/core/gen4m/nic/que_mgt.c
++++ b/connectivity/wlan/core/gen4m/nic/que_mgt.c
+@@ -1707,12 +1707,10 @@ qmDequeueTxPacketsFromPerStaQueues(IN struct ADAPTER *prAdapter,
+ 						fgEndThisRound = TRUE;
+ 					break;
+ 				} else if (!prStaRec->fgIsValid) {
+-					/* In roaming, if the sta_rec doesn't
+-					 * active by event 0x0C, it can't
+-					 * dequeue data.
+-					 */
+-					DBGLOG_LIMITED(QM, WARN,
+-						"sta_rec is not valid\n");
++					/* Event 0x0C from the firmware makes the record valid. */
++					DBGLOG_LIMITED(QM, INFO,
++						"STA[%u] waits for its record from the firmware, its frames stay queued\n",
++						prStaRec->ucIndex);
+ 					break;
+ 				}
+ 
+@@ -8846,7 +8844,7 @@ void qmReleaseCHAtFinishedDhcp(struct ADAPTER *prAdapter,
+ 		prAisFsmInfo = aisGetAisFsmInfo(prAdapter, ucBssIndex);
+ 
+ 		if (!timerPendingTimer(&prAisFsmInfo->rJoinTimeoutTimer)) {
+-			DBGLOG(QM, ERROR, "No channel occupation\n");
++			DBGLOG(QM, INFO, "Dhcp done, the join's channel is released already\n");
+ 		} else {
+ 			DBGLOG(QM, INFO, "Dhcp done, stop join timer.\n");
+ 			cnmTimerStopTimer(prAdapter,
+diff --git a/connectivity/wlan/core/gen4m/os/linux/gl_kal.c b/connectivity/wlan/core/gen4m/os/linux/gl_kal.c
+index b8e4408..b2c3a40 100644
+--- a/connectivity/wlan/core/gen4m/os/linux/gl_kal.c
++++ b/connectivity/wlan/core/gen4m/os/linux/gl_kal.c
+@@ -10505,12 +10505,15 @@ static void kal_bat_volt_notifier_callback(unsigned int volt)
+ 	if (prRegInfo == NULL ||
+ 		prGlueInfo->prAdapter == NULL ||
+ 		prGlueInfo->u4ReadyFlag == 0) {
+-		DBGLOG(NIC, ERROR,
+-			"volt = %d, wlan not start", volt);
++		DBGLOG(NIC, INFO,
++			"battery crossed %u mV with the radio off, its next start sets the TX power by it\n",
++			volt);
+ 		return;
+ 	}
+ 	if (test_bit(GLUE_FLAG_HALT_BIT, &prGlueInfo->ulFlag)) {
+-		DBGLOG(NIC, ERROR, "volt = %d, Wi-Fi is stopped", volt);
++		DBGLOG(NIC, INFO,
++			"battery crossed %u mV while the radio stops, its next start sets the TX power by it\n",
++			volt);
+ 		fgIsTxPowerDecreased = FALSE;
+ 		return;
+ 	}
+-- 
+2.56.0
+

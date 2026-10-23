@@ -1,0 +1,64 @@
+From f7327f08feaf2dbc238a58ba4b9706af62af1703 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 10:55:23 +0200
+Subject: [PATCH] input: hynitron: take every finger id the chip numbers
+
+Up to five points a frame are taken, ids 0 to 4 as the chip numbers
+them, and ABS_MT_TRACKING_ID spans that range. Upstream drops frames of
+more than two fingers and stops a frame at an id above the device
+tree's max_touch_num, though protocol A indexes nothing by the id.
+---
+ drivers/input/touchscreen/CST8xx/hynitron_core.c | 8 ++++----
+ drivers/input/touchscreen/CST8xx/hynitron_core.h | 2 ++
+ 2 files changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/input/touchscreen/CST8xx/hynitron_core.c b/drivers/input/touchscreen/CST8xx/hynitron_core.c
+index bd13f8b0d..9e449d4ab 100644
+--- a/drivers/input/touchscreen/CST8xx/hynitron_core.c
++++ b/drivers/input/touchscreen/CST8xx/hynitron_core.c
+@@ -861,7 +861,7 @@ static void cst3xx_touch_report(void)
+ 	} 
+ 	
+ 	cnt = buf[5] & 0x7F;
+-	if(cnt > HYN_MAX_POINTS) 		goto OUT_PROCESS;
++	if(cnt > HYN_CST3XX_MAX_FINGERS) 		goto OUT_PROCESS;
+ 	else if(cnt==0)     			goto CLR_POINT;
+ 	
+ 	if(cnt == 0x01) {
+@@ -1013,9 +1013,9 @@ static void cst3xx_touch_report(void)
+ #if (HYN_DEBUG_EN && (HYN_DEBUG_LEVEL == 2))	   
+         HYN_INFO(" cst3xx Point x:%d, y:%d, id:%d, sw:%d, press:%d. \n", input_x, input_y, finger_id, sw,input_w);
+ #endif
+-		if((hyn_ts_data->pdata->max_touch_num <finger_id)
++		if((finger_id >= HYN_CST3XX_MAX_FINGERS)
+ 			||((sw!=0x03)&&(sw!=0x0))){
+-        	HYN_INFO(" cst3xx error Point x:%d, y:%d, id:%d, sw:%d, press:%d. \n", input_x, input_y, finger_id, sw,input_w);
++			HYN_ERROR(" cst3xx invalid point x:%d, y:%d, id:%d, sw:%d, press:%d. \n", input_x, input_y, finger_id, sw,input_w);
+ 			break;
+ 		}	
+ 		if (sw == 0x03) {
+@@ -1357,7 +1357,7 @@ int hyn_input_dev_int(struct hynitron_ts_data *ts_data)
+ 	input_dev->keybit[BIT_WORD(BTN_TOUCH)] = BIT_MASK(BTN_TOUCH);
+ #endif
+ 
+-	input_set_abs_params(input_dev, ABS_MT_TRACKING_ID, 0,  ts_data->pdata->max_touch_num, 0, 0); 
++	input_set_abs_params(input_dev, ABS_MT_TRACKING_ID, 0,  HYN_CST3XX_MAX_FINGERS - 1, 0, 0);
+ 
+ 	input_set_abs_params(input_dev, ABS_MT_POSITION_X, 0, 480,0, 0);  // fuzz --flat
+ 	input_set_abs_params(input_dev, ABS_MT_POSITION_Y, 0, 640,0, 0);
+diff --git a/drivers/input/touchscreen/CST8xx/hynitron_core.h b/drivers/input/touchscreen/CST8xx/hynitron_core.h
+index 98d5f57ac..4a8f473d8 100644
+--- a/drivers/input/touchscreen/CST8xx/hynitron_core.h
++++ b/drivers/input/touchscreen/CST8xx/hynitron_core.h
+@@ -76,6 +76,8 @@
+ 
+ #define HYN_MAX_KEYS						        3
+ #define HYN_MAX_POINTS                           	2
++/* A mutual capacitance chip reports up to five fingers, numbered 0 to 4. */
++#define HYN_CST3XX_MAX_FINGERS                   5
+ #define HYN_MAX_SELFCAP_ID  						2
+ 
+ /**********************************************************/
+-- 
+2.56.0
+

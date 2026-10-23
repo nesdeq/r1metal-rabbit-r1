@@ -1,0 +1,59 @@
+From 938cba1228b333a913aa4ba40c13f18f1d689b1b Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 12:13:05 +0200
+Subject: [PATCH] wlan: an OID's length is bounded by the bytes the private
+ ioctl was handed
+
+- PRIV_CMD_OID refuses an inNdisOidlength beyond the bytes copied or
+  aucOidBuf's room, which OIDs without a length check read past.
+- wlanoidSetWapiKey refuses a length under sizeof(struct PARAM_WPI_KEY),
+  which overruns its command buffer.
+---
+ connectivity/wlan/core/gen4m/common/wlan_oid.c       | 4 ++++
+ connectivity/wlan/core/gen4m/os/linux/gl_wext_priv.c | 8 ++++++++
+ 2 files changed, 12 insertions(+)
+
+diff --git a/connectivity/wlan/core/gen4m/common/wlan_oid.c b/connectivity/wlan/core/gen4m/common/wlan_oid.c
+index 4aeec3c..b0e1170 100644
+--- a/connectivity/wlan/core/gen4m/common/wlan_oid.c
++++ b/connectivity/wlan/core/gen4m/common/wlan_oid.c
+@@ -11078,6 +11078,10 @@ wlanoidSetWapiKey(IN struct ADAPTER *prAdapter,
+ 		return WLAN_STATUS_ADAPTER_NOT_READY;
+ 	}
+ 
++	*pu4SetInfoLen = sizeof(struct PARAM_WPI_KEY);
++	if (u4SetBufferLen < sizeof(struct PARAM_WPI_KEY))
++		return WLAN_STATUS_INVALID_LENGTH;
++
+ 	prNewKey = (struct PARAM_WPI_KEY *) pvSetBuffer;
+ 
+ 	ucBssIndex = prNewKey->ucBssIdx;
+diff --git a/connectivity/wlan/core/gen4m/os/linux/gl_wext_priv.c b/connectivity/wlan/core/gen4m/os/linux/gl_wext_priv.c
+index a036da5..e28d5c4 100644
+--- a/connectivity/wlan/core/gen4m/os/linux/gl_wext_priv.c
++++ b/connectivity/wlan/core/gen4m/os/linux/gl_wext_priv.c
+@@ -1770,6 +1770,11 @@ __priv_set_struct(IN struct net_device *prNetDev,
+ 			status = -EFAULT;
+ 			break;
+ 		}
++		prNdisReq = (struct NDIS_TRANSPORT_STRUCT *) &aucOidBuf[0];
++		if (u4CmdLen < OFFSET_OF(struct NDIS_TRANSPORT_STRUCT,
++		    ndisOidContent) || prNdisReq->inNdisOidlength > u4CmdLen -
++		    OFFSET_OF(struct NDIS_TRANSPORT_STRUCT, ndisOidContent))
++			return -EINVAL;
+ 		if (!kalMemCmp(&aucOidBuf[0], pcExtra, u4CmdLen)) {
+ 			/* ToDo:: DBGLOG */
+ 			DBGLOG(REQ, INFO, "pcExtra buffer is valid\n");
+@@ -1968,6 +1973,9 @@ __priv_get_struct(IN struct net_device *prNetDev,
+ 		}
+ 
+ 		prNdisReq = (struct NDIS_TRANSPORT_STRUCT *) &aucOidBuf[0];
++		if (prNdisReq->inNdisOidlength > sizeof(aucOidBuf) -
++		    OFFSET_OF(struct NDIS_TRANSPORT_STRUCT, ndisOidContent))
++			return -EINVAL;
+ #if 0
+ 		DBGLOG(INIT, INFO,
+ 		       "\n priv_get_struct cmd 0x%02x len:%d OID:0x%08x OID Len:%d\n",
+-- 
+2.56.0
+

@@ -1,0 +1,48 @@
+From 2cec7e8459d458c95ea92b23c1ff071b76eec97b Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 11:35:14 +0200
+Subject: [PATCH] stp: the tx queue dump and the test sends tell what they hold
+ and sent
+
+- stp_dump_tx_queue dumps at most 8 bytes of a wrapped packet's second
+  part, as of its first.
+- The error lines of mtk_wcn_stp_inband_reset and mtk_wcn_stp_test_cmd
+  name the length they send, the payload plus 14 bytes, not plus 10.
+---
+ connectivity/common/common_main/core/stp_core.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/connectivity/common/common_main/core/stp_core.c b/connectivity/common/common_main/core/stp_core.c
+index eb4541d..9b511f4 100644
+--- a/connectivity/common/common_main/core/stp_core.c
++++ b/connectivity/common/common_main/core/stp_core.c
+@@ -817,7 +817,7 @@ static VOID stp_dump_tx_queue(UINT32 txseq)
+ 		last_len = MTKSTP_BUFFER_SIZE - tx_read;
+ 		stp_dump_data(&stp_core_ctx.tx_buf[tx_read], "tx_q_0", (last_len >= 8) ? (8) : (last_len));
+ 		stp_dump_data(&stp_core_ctx.tx_buf[0], "tx_q_0",
+-			      ((tx_length - last_len) ? (8) : (tx_length - last_len)));
++			      ((tx_length - last_len >= 8) ? (8) : (tx_length - last_len)));
+ 	}
+ }
+ 
+@@ -3112,7 +3112,7 @@ VOID mtk_wcn_stp_inband_reset(VOID)
+ 
+ 	if (ret != (14 + reset_payload_len))
+ 		STP_ERR_FUNC("Inband sending error, sending %d , but ret = %d\n",
+-			     10 + reset_payload_len, ret);
++			     14 + reset_payload_len, ret);
+ 
+ 	stp_core_ctx.inband_rst_set = 1;
+ 	stp_ctx_unlock(&stp_core_ctx);
+@@ -3168,7 +3168,7 @@ void mtk_wcn_stp_test_cmd(INT32 cmd_no)
+ 		(*sys_if_tx)(&test_packet[0], 14 + reset_payload_len, &ret);
+ 		if (ret != (14 + reset_payload_len))
+ 			STP_ERR_FUNC("stp test sending error, sending %d , but ret = %d\n",
+-				     10 + reset_payload_len, ret);
++				     14 + reset_payload_len, ret);
+ 
+ 		stp_ctx_unlock(&stp_core_ctx);
+ 	}
+-- 
+2.56.0
+

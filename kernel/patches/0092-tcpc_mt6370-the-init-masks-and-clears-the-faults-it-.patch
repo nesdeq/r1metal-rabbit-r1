@@ -1,0 +1,36 @@
+From 2e0005d035fd50e3b13453e2b9306a01c8be7ab1 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 16:37:00 +0200
+Subject: [PATCH] tcpc_mt6370: the init masks and clears the faults it does not
+ handle
+
+mt6370_tcpc_init sets the fault mask and clears the fault status
+before it clears the alerts. Upstream sets the mask after and never
+clears the status, so a fault latched before the init, such as a
+failed auto discharge, raises a fault alert at the first interrupt.
+---
+ drivers/misc/mediatek/typec/tcpc/tcpc_mt6370.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/typec/tcpc/tcpc_mt6370.c b/drivers/misc/mediatek/typec/tcpc/tcpc_mt6370.c
+index fb98a8e9d..d1c6434a2 100644
+--- a/drivers/misc/mediatek/typec/tcpc/tcpc_mt6370.c
++++ b/drivers/misc/mediatek/typec/tcpc/tcpc_mt6370.c
+@@ -789,11 +789,13 @@ static int mt6370_tcpc_init(struct tcpc_device *tcpc, bool sw_reset)
+ 	mt6370_i2c_write8(tcpc, MT6370_REG_PHY_CTRL1,
+ 		MT6370_REG_PHY_CTRL1_SET(retry_discard_old, 7, 0, 1));
+ 
++	/* A fault latched before the init is masked or cleared before the alerts */
++	mt6370_init_fault_mask(tcpc);
++	mt6370_i2c_write8(tcpc, TCPC_V10_REG_FAULT_STATUS, 0xff);
+ 	tcpci_alert_status_clear(tcpc, 0xffffffff);
+ 
+ 	mt6370_init_power_status_mask(tcpc);
+ 	mt6370_init_alert_mask(tcpc);
+-	mt6370_init_fault_mask(tcpc);
+ 	mt6370_init_mt_mask(tcpc);
+ 
+ 	/* CK_300K from 320K, SHIPPING off, AUTOIDLE enable, TIMEOUT = 6.4ms */
+-- 
+2.56.0
+

@@ -1,0 +1,39 @@
+From 455e5d5565f43c2948a4c58c1e9b32b1e92b8d02 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 19:24:26 +0200
+Subject: [PATCH] mmdvfs: an _ext step and a frequency domain the tree leaves
+ out are no failures
+
+mmdvfs_get_step_array_node reads a step's _ext property only where the
+tree has it, and checks a domain's step count against vcore_steps only
+where the tree names the domain. The R1's tree has no _ext property and
+leaves four domains out, each an error upstream.
+---
+ drivers/misc/mediatek/mmdvfs/mmdvfs_pmqos.c | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/misc/mediatek/mmdvfs/mmdvfs_pmqos.c b/drivers/misc/mediatek/mmdvfs/mmdvfs_pmqos.c
+index bfa39b21e..eeb153528 100644
+--- a/drivers/misc/mediatek/mmdvfs/mmdvfs_pmqos.c
++++ b/drivers/misc/mediatek/mmdvfs/mmdvfs_pmqos.c
+@@ -1767,11 +1767,14 @@ static void mmdvfs_get_step_array_node(struct device *dev,
+ 		strncpy(ext_name, name, sizeof(ext_name)-1);
+ 		strncat(ext_name, "_ext",
+ 			sizeof(ext_name)-strlen(name)-1);
+-		mmdvfs_get_step_node(dev,
+-			ext_name, &step_configs[count]);
++		/* an _ext step adds a second clock action where the tree has one */
++		if (of_find_property(dev->of_node, ext_name, NULL))
++			mmdvfs_get_step_node(dev,
++				ext_name, &step_configs[count]);
+ 		count++;
+ 	}
+-	if (count != step_size)
++	/* a frequency domain the tree does not name has no steps of its own to count */
++	if (count != step_size && of_find_property(dev->of_node, freq_name, NULL))
+ 		pr_notice("freq setting %s is not same as vcore_steps (%d)\n",
+ 			freq_name, step_size);
+ 	pr_notice("%s: step size:%u\n", freq_name, step_size);
+-- 
+2.56.0
+

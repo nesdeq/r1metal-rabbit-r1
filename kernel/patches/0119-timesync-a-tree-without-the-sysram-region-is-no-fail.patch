@@ -1,0 +1,31 @@
+From bf42a37585226adcac7f09635edecc9facb5c53c Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 19:57:52 +0200
+Subject: [PATCH] timesync: a tree without the sysram region is no failure
+
+sys_timer_timesync_init prints "unable to ioremap sysram base" only
+where the tree names a sysram_base region that cannot be mapped. The
+R1's sys_timer node names none, and the result line says support_sysram
+0.
+---
+ drivers/misc/mediatek/timer/timesync/mtk_sys_timer.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/timer/timesync/mtk_sys_timer.c b/drivers/misc/mediatek/timer/timesync/mtk_sys_timer.c
+index a79899c95..d25677918 100644
+--- a/drivers/misc/mediatek/timer/timesync/mtk_sys_timer.c
++++ b/drivers/misc/mediatek/timer/timesync/mtk_sys_timer.c
+@@ -457,7 +457,9 @@ static int sys_timer_timesync_init(struct platform_device *pdev)
+ 
+ 	if (IS_ERR((void const *)timesync_cxt.ram_base)) {
+ 
+-		pr_info("unable to ioremap sysram base, might be disabled\n");
++		/* a tree without the region leaves sysram out, as the line of the result says */
++		if (res)
++			pr_info("unable to ioremap sysram base, might be disabled\n");
+ 
+ 		/* ensure sysram support is disabled */
+ 		timesync_cxt.support_sysram = 0;
+-- 
+2.56.0
+

@@ -1,0 +1,639 @@
+From 8cff90c070f74e9024d7425e150b9ff52a69d576 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 20:03:27 +0200
+Subject: [PATCH] treewide: clang's remaining warnings are fixed at their
+ source
+
+Each warning clang gives on the tree's own build is fixed at its
+source:
+- The clock gates' unused-callback helpers build only where their ops
+  use them, outside MT6761 and MT6765.
+- Functions nothing calls are removed: two display screen captures,
+  is_typec_adapter, and PM QoS's IRQ affinity notifier and its setup.
+- Locals nothing reads are removed; clk-mux declares name where it is
+  read.
+- ION and mtkfb cast a heap type to enum ion_heap_type to compare it
+  with MediaTek's heap enum.
+- touchscreen_parse_properties ORs one property read per statement.
+- slv_switch is unsigned, ddp_dsi_build_cmdq clears its buffer after
+  its declarations, and find_energy_efficient_cpu's max() takes 1UL.
+- The MT6359 header leaves its generic PMIC_ names to the MT6358's
+  where both are included.
+---
+ drivers/clk/mediatek/clk-gate.c               |   7 +
+ drivers/clk/mediatek/clk-mux.c                |   4 +-
+ drivers/input/touchscreen/of_touchscreen.c    |  26 ++--
+ .../mediatek/video/mt6765/dispsys/ddp_dsi.c   |   3 +-
+ .../video/mt6765/videox/mtkfb_fence.c         |   5 +-
+ .../video/mt6765/videox/primary_display.c     | 144 ------------------
+ drivers/misc/step_motor_ms35774.c             |   4 +-
+ drivers/mmc/core/mtk_mmc_block.c              |   2 +-
+ drivers/power/supply/mtk_basic_charger.c      |  36 -----
+ drivers/soc/mediatek/mtk-pmic-wrap.c          |   2 +-
+ drivers/staging/android/mtk_ion/ion.c         |  12 +-
+ .../staging/android/mtk_ion/mtk/ion_mm_heap.c |   3 +-
+ include/linux/mfd/mt6359/registers.h          |   3 +
+ kernel/power/qos.c                            |  55 -------
+ kernel/sched/fair.c                           |   3 +-
+ 15 files changed, 41 insertions(+), 268 deletions(-)
+
+diff --git a/drivers/clk/mediatek/clk-gate.c b/drivers/clk/mediatek/clk-gate.c
+index 07c3adf8a..34e9c7c84 100644
+--- a/drivers/clk/mediatek/clk-gate.c
++++ b/drivers/clk/mediatek/clk-gate.c
+@@ -38,6 +38,9 @@ static int is_subsys_pwr_on(struct mtk_clk_gate *cg)
+ 
+ 	return true;
+ }
++
++#if !defined(CONFIG_MACH_MT6761) && \
++		!defined(CONFIG_MACH_MT6765)
+ static void mtk_cg_set_bit_unused(struct clk_hw *hw)
+ {
+ 	struct mtk_clk_gate *cg = to_mtk_clk_gate(hw);
+@@ -57,6 +60,7 @@ static void mtk_cg_clr_bit_unused(struct clk_hw *hw)
+ 
+ 	regmap_write(cg->regmap, cg->clr_ofs, BIT(cg->bit));
+ }
++#endif
+ 
+ static void mtk_cg_set_bit_no_setclr_unused(struct clk_hw *hw)
+ {
+@@ -80,6 +84,8 @@ static void mtk_cg_clr_bit_no_setclr_unused(struct clk_hw *hw)
+ 	regmap_update_bits(cg->regmap, cg->sta_ofs, cgbit, 0);
+ }
+ 
++#if !defined(CONFIG_MACH_MT6761) && \
++		!defined(CONFIG_MACH_MT6765)
+ static void mtk_cg_disable_inv_unused(struct clk_hw *hw)
+ {
+ 	struct mtk_clk_gate *cg = to_mtk_clk_gate(hw);
+@@ -105,6 +111,7 @@ static void mtk_cg_disable_unused(struct clk_hw *hw)
+ 
+ 	mtk_cg_set_bit_unused(hw);
+ }
++#endif
+ 
+ static void mtk_cg_disable_inv_no_setclr_unused(struct clk_hw *hw)
+ {
+diff --git a/drivers/clk/mediatek/clk-mux.c b/drivers/clk/mediatek/clk-mux.c
+index 74e4d8953..c65cad7b4 100644
+--- a/drivers/clk/mediatek/clk-mux.c
++++ b/drivers/clk/mediatek/clk-mux.c
+@@ -181,7 +181,6 @@ static int mtk_clk_mux_set_parent_setclr_lock(struct clk_hw *hw, u8 index)
+ 	u32 mask = GENMASK(mux->data->mux_width - 1, 0);
+ 	u32 val = 0, orig = 0;
+ 	unsigned long flags = 0;
+-	const char *name;
+ 
+ 	if (mux->lock)
+ 		spin_lock_irqsave(mux->lock, flags);
+@@ -204,7 +203,8 @@ static int mtk_clk_mux_set_parent_setclr_lock(struct clk_hw *hw, u8 index)
+ 		 * clkmux switching.
+ 		 */
+ 		if (hw && hw->clk) {
+-			name = __clk_get_name(hw->clk);
++			const char *name = __clk_get_name(hw->clk);
++
+ 			if (name && !strcmp(name, "mm_sel"))
+ 				mm_polling(hw);
+ 		}
+diff --git a/drivers/input/touchscreen/of_touchscreen.c b/drivers/input/touchscreen/of_touchscreen.c
+index 9642f103b..efaaf90ae 100644
+--- a/drivers/input/touchscreen/of_touchscreen.c
++++ b/drivers/input/touchscreen/of_touchscreen.c
+@@ -80,10 +80,10 @@ void touchscreen_parse_properties(struct input_dev *input, bool multitouch,
+ 	data_present = touchscreen_get_prop_u32(dev, "touchscreen-size-x",
+ 						input_abs_get_max(input,
+ 								  axis) + 1,
+-						&maximum) |
+-		       touchscreen_get_prop_u32(dev, "touchscreen-fuzz-x",
+-						input_abs_get_fuzz(input, axis),
+-						&fuzz);
++						&maximum);
++	data_present |= touchscreen_get_prop_u32(dev, "touchscreen-fuzz-x",
++						 input_abs_get_fuzz(input, axis),
++						 &fuzz);
+ 	if (data_present)
+ 		touchscreen_set_params(input, axis, maximum - 1, fuzz);
+ 
+@@ -91,10 +91,10 @@ void touchscreen_parse_properties(struct input_dev *input, bool multitouch,
+ 	data_present = touchscreen_get_prop_u32(dev, "touchscreen-size-y",
+ 						input_abs_get_max(input,
+ 								  axis) + 1,
+-						&maximum) |
+-		       touchscreen_get_prop_u32(dev, "touchscreen-fuzz-y",
+-						input_abs_get_fuzz(input, axis),
+-						&fuzz);
++						&maximum);
++	data_present |= touchscreen_get_prop_u32(dev, "touchscreen-fuzz-y",
++						 input_abs_get_fuzz(input, axis),
++						 &fuzz);
+ 	if (data_present)
+ 		touchscreen_set_params(input, axis, maximum - 1, fuzz);
+ 
+@@ -102,11 +102,11 @@ void touchscreen_parse_properties(struct input_dev *input, bool multitouch,
+ 	data_present = touchscreen_get_prop_u32(dev,
+ 						"touchscreen-max-pressure",
+ 						input_abs_get_max(input, axis),
+-						&maximum) |
+-		       touchscreen_get_prop_u32(dev,
+-						"touchscreen-fuzz-pressure",
+-						input_abs_get_fuzz(input, axis),
+-						&fuzz);
++						&maximum);
++	data_present |= touchscreen_get_prop_u32(dev,
++						 "touchscreen-fuzz-pressure",
++						 input_abs_get_fuzz(input, axis),
++						 &fuzz);
+ 	if (data_present)
+ 		touchscreen_set_params(input, axis, maximum, fuzz);
+ 
+diff --git a/drivers/misc/mediatek/video/mt6765/dispsys/ddp_dsi.c b/drivers/misc/mediatek/video/mt6765/dispsys/ddp_dsi.c
+index 79c0fc12c..d76b62fd7 100644
+--- a/drivers/misc/mediatek/video/mt6765/dispsys/ddp_dsi.c
++++ b/drivers/misc/mediatek/video/mt6765/dispsys/ddp_dsi.c
+@@ -6314,11 +6314,12 @@ int ddp_dsi_build_cmdq(enum DISP_MODULE_ENUM module,
+ 	struct DSI_RX_DATA_REG read_data3;
+ 	unsigned char packet_type;
+ 	unsigned char buffer[30];
+-	memset((void *)buffer, 0, 30);
+ 	int recv_data_cnt = 0;
+ 
+ 	static cmdqBackupSlotHandle hSlot[4] = {0, 0, 0, 0};
+ 
++	memset((void *)buffer, 0, 30);
++
+ 	if (module == DISP_MODULE_DSIDUAL)
+ 		dsi_i = 0;
+ 	else
+diff --git a/drivers/misc/mediatek/video/mt6765/videox/mtkfb_fence.c b/drivers/misc/mediatek/video/mt6765/videox/mtkfb_fence.c
+index 8a61ca7f7..180acdadf 100644
+--- a/drivers/misc/mediatek/video/mt6765/videox/mtkfb_fence.c
++++ b/drivers/misc/mediatek/video/mt6765/videox/mtkfb_fence.c
+@@ -329,7 +329,6 @@ static struct ion_handle *mtkfb_ion_import_handle(struct ion_client *client,
+ 	int fd)
+ {
+ 	struct ion_handle *handle = NULL;
+-	struct ion_mm_data mm_data;
+ 
+ 	/* If no need Ion support, do nothing! */
+ 	if (fd == MTK_FB_NO_ION_FD) {
+@@ -376,7 +375,6 @@ static size_t mtkfb_ion_phys_mmu_addr(struct ion_client *client,
+ 	struct ion_handle *handle, unsigned int *mva)
+ {
+ 	size_t size = 0;
+-	ion_phys_addr_t phy_addr = 0;
+ 	struct ion_mm_data mm_data;
+ 
+ 	if (!ion_client) {
+@@ -388,7 +386,8 @@ static size_t mtkfb_ion_phys_mmu_addr(struct ion_client *client,
+ 
+ 	if (handle->buffer && handle->buffer->heap) {
+ 		memset((void *)&mm_data, 0, sizeof(mm_data));
+-		if (handle->buffer->heap->type == ION_HEAP_TYPE_MULTIMEDIA) {
++		if (handle->buffer->heap->type ==
++		    (enum ion_heap_type)ION_HEAP_TYPE_MULTIMEDIA) {
+ 			mm_data.mm_cmd = ION_MM_GET_IOVA;
+ 			mm_data.config_buffer_param.kernel_handle = handle;
+ 			mm_data.config_buffer_param.module_id = 0;
+diff --git a/drivers/misc/mediatek/video/mt6765/videox/primary_display.c b/drivers/misc/mediatek/video/mt6765/videox/primary_display.c
+index d2564bf4e..6497ed665 100644
+--- a/drivers/misc/mediatek/video/mt6765/videox/primary_display.c
++++ b/drivers/misc/mediatek/video/mt6765/videox/primary_display.c
+@@ -8353,150 +8353,6 @@ struct LCM_DRIVER *DISP_GetLcmDrv(void)
+ 	return NULL;
+ }
+ 
+-static int _screen_cap_by_cmdq(unsigned int mva, enum UNIFIED_COLOR_FMT ufmt,
+-			       enum DISP_MODULE_ENUM after_eng)
+-{
+-	int ret = 0;
+-	struct cmdqRecStruct *cmdq_handle = NULL;
+-	struct cmdqRecStruct *cmdq_wait_handle = NULL;
+-	struct disp_ddp_path_config *pconfig = NULL;
+-	unsigned int w_xres = primary_display_get_width();
+-	unsigned int h_yres = primary_display_get_height();
+-
+-	/* create config thread */
+-	ret = cmdqRecCreate(CMDQ_SCENARIO_PRIMARY_DISP, &cmdq_handle);
+-	if (ret) {
+-		DISPCHECK(
+-			"primary capture:Fail to create primary cmdq handle for capture\n");
+-		ret = -1;
+-		goto out;
+-	}
+-	cmdqRecReset(cmdq_handle);
+-
+-	/* create wait thread */
+-	ret = cmdqRecCreate(CMDQ_SCENARIO_DISP_SCREEN_CAPTURE,
+-		&cmdq_wait_handle);
+-	if (ret) {
+-		DISPCHECK(
+-			"primary capture:Fail to create primary cmdq wait handle for capture\n");
+-		ret = -1;
+-		goto out;
+-	}
+-	cmdqRecReset(cmdq_wait_handle);
+-
+-	dpmgr_path_memout_clock(pgc->dpmgr_handle, 1);
+-
+-	_cmdq_handle_clear_dirty(cmdq_handle);
+-	_cmdq_insert_wait_frame_done_token_mira(cmdq_handle);
+-
+-	_primary_path_lock(__func__);
+-
+-	primary_display_idlemgr_kick(__func__, 0);
+-	dpmgr_path_add_memout(pgc->dpmgr_handle, after_eng, cmdq_handle);
+-	cmdqRecClearEventToken(cmdq_handle, CMDQ_EVENT_DISP_WDMA0_EOF);
+-
+-	pconfig = dpmgr_path_get_last_config(pgc->dpmgr_handle);
+-	pconfig->wdma_dirty = 1;
+-	pconfig->ovl_dirty = 1;
+-	pconfig->dst_dirty = 1;
+-	pconfig->rdma_dirty = 1;
+-	pconfig->wdma_config.dstAddress = mva;
+-	pconfig->wdma_config.srcHeight = h_yres;
+-	pconfig->wdma_config.srcWidth = w_xres;
+-	pconfig->wdma_config.clipX = 0;
+-	pconfig->wdma_config.clipY = 0;
+-	pconfig->wdma_config.clipHeight = h_yres;
+-	pconfig->wdma_config.clipWidth = w_xres;
+-	pconfig->wdma_config.outputFormat = ufmt;
+-	pconfig->wdma_config.useSpecifiedAlpha = 1;
+-	pconfig->wdma_config.alpha = 0xFF;
+-	pconfig->wdma_config.dstPitch = w_xres * UFMT_GET_bpp(ufmt) / 8;
+-	ret = dpmgr_path_config(pgc->dpmgr_handle, pconfig, cmdq_handle);
+-	pconfig->wdma_dirty = 0;
+-
+-	_cmdq_set_config_handle_dirty_mira(cmdq_handle);
+-	_cmdq_flush_config_handle_mira(cmdq_handle, 0);
+-	DISPMSG("primary capture:Flush add memout mva(0x%x)\n", mva);
+-	/* wait wdma0 sof */
+-	cmdqRecWait(cmdq_wait_handle, CMDQ_EVENT_DISP_WDMA0_SOF);
+-	cmdqRecWait(cmdq_wait_handle, CMDQ_EVENT_DISP_WDMA0_EOF);
+-	cmdqRecFlush(cmdq_wait_handle);
+-	DISPMSG("primary capture:Flush wait wdma sof\n");
+-	cmdqRecReset(cmdq_handle);
+-	_cmdq_handle_clear_dirty(cmdq_handle);
+-	_cmdq_insert_wait_frame_done_token_mira(cmdq_handle);
+-
+-	dpmgr_path_remove_memout(pgc->dpmgr_handle, cmdq_handle);
+-
+-	cmdqRecClearEventToken(cmdq_handle, CMDQ_EVENT_DISP_WDMA0_SOF);
+-	_cmdq_set_config_handle_dirty_mira(cmdq_handle);
+-	/* flush remove memory to cmdq */
+-	cmdqRecFlushAsyncCallback(cmdq_handle, _remove_memout_callback, 0);
+-	DISPMSG("primary capture: Flush remove memout\n");
+-
+-	dpmgr_path_memout_clock(pgc->dpmgr_handle, 0);
+-	_primary_path_unlock(__func__);
+-
+-out:
+-	cmdqRecDestroy(cmdq_handle);
+-	cmdqRecDestroy(cmdq_wait_handle);
+-	return 0;
+-}
+-
+-static int _screen_cap_by_cpu(unsigned int mva, enum UNIFIED_COLOR_FMT ufmt,
+-	enum DISP_MODULE_ENUM after_eng)
+-{
+-	int ret = 0;
+-	struct disp_ddp_path_config *pconfig = NULL;
+-	unsigned int w_xres = primary_display_get_width();
+-	unsigned int h_yres = primary_display_get_height();
+-
+-	dpmgr_path_memout_clock(pgc->dpmgr_handle, 1);
+-
+-	if (_should_wait_path_idle()) {
+-		ret = dpmgr_wait_event_timeout(pgc->dpmgr_handle,
+-			DISP_PATH_EVENT_FRAME_DONE, HZ * 1);
+-		if (ret <= 0)
+-			primary_display_diagnose();
+-	}
+-
+-	_primary_path_lock(__func__);
+-	primary_display_idlemgr_kick(__func__, 1);
+-
+-	dpmgr_path_add_memout(pgc->dpmgr_handle, after_eng, NULL);
+-
+-	pconfig = dpmgr_path_get_last_config(pgc->dpmgr_handle);
+-	pconfig->wdma_dirty = 1;
+-	pconfig->wdma_config.dstAddress = mva;
+-	pconfig->wdma_config.srcHeight = h_yres;
+-	pconfig->wdma_config.srcWidth = w_xres;
+-	pconfig->wdma_config.clipX = 0;
+-	pconfig->wdma_config.clipY = 0;
+-	pconfig->wdma_config.clipHeight = h_yres;
+-	pconfig->wdma_config.clipWidth = w_xres;
+-	pconfig->wdma_config.outputFormat = ufmt;
+-	pconfig->wdma_config.useSpecifiedAlpha = 1;
+-	pconfig->wdma_config.alpha = 0xFF;
+-	pconfig->wdma_config.dstPitch = w_xres * UFMT_GET_bpp(ufmt) / 8;
+-	ret = dpmgr_path_config(pgc->dpmgr_handle, pconfig, NULL);
+-	pconfig->wdma_dirty = 0;
+-
+-	_trigger_display_interface(1, NULL, 0);
+-	msleep(20);
+-	if (_should_wait_path_idle()) {
+-		ret = dpmgr_wait_event_timeout(pgc->dpmgr_handle,
+-			DISP_PATH_EVENT_FRAME_DONE, HZ * 1);
+-		if (ret <= 0)
+-			primary_display_diagnose();
+-	}
+-
+-	dpmgr_path_remove_memout(pgc->dpmgr_handle, NULL);
+-
+-	dpmgr_path_memout_clock(pgc->dpmgr_handle, 0);
+-	_primary_path_unlock(__func__);
+-	return 0;
+-}
+-
+ int primary_display_capture_framebuffer(unsigned long pbuf)
+ {
+ 	unsigned int fb_layer_id = primary_display_get_option("FB_LAYER");
+diff --git a/drivers/misc/step_motor_ms35774.c b/drivers/misc/step_motor_ms35774.c
+index fdd6e45c3..b425923ca 100644
+--- a/drivers/misc/step_motor_ms35774.c
++++ b/drivers/misc/step_motor_ms35774.c
+@@ -96,8 +96,7 @@ static int ms35774_parse_dts(struct ms35774_data *data)
+ int m35774_run_thread_handler(void *_data)
+ {
+   struct ms35774_data *data = (struct ms35774_data *)_data;
+-  int step, orientation;
+-  bool right = true;
++  int step;
+ 
+   do {
+     wait_event_interruptible(m35774_run_thread_waiter, data->run_flag);
+@@ -182,7 +181,6 @@ static void ms35774_init_work_handler(struct work_struct *work)
+ 
+ static int ms35774_probe(struct platform_device *pdev)
+ {
+-  struct ms35774_platform_data *pdata = dev_get_platdata(&pdev->dev);
+   struct ms35774_data *data;
+   static struct task_struct *m35774_run_thread;
+   int ret = 0;
+diff --git a/drivers/mmc/core/mtk_mmc_block.c b/drivers/mmc/core/mtk_mmc_block.c
+index d1f7126b3..f76a6c650 100644
+--- a/drivers/mmc/core/mtk_mmc_block.c
++++ b/drivers/mmc/core/mtk_mmc_block.c
+@@ -296,7 +296,7 @@ EXPORT_SYMBOL_GPL(mtk_btag_pidlog_add_mmc);
+ static void mt_bio_context_eval(struct mt_bio_context *ctx)
+ {
+ 	struct mt_bio_context_task *tsk;
+-	uint64_t min, period, tsk_start, usage, result;
++	uint64_t min, period, tsk_start;
+ 	int i;
+ 
+ 	min = ctx->period_end_t;
+diff --git a/drivers/power/supply/mtk_basic_charger.c b/drivers/power/supply/mtk_basic_charger.c
+index 225994221..96bbd439b 100644
+--- a/drivers/power/supply/mtk_basic_charger.c
++++ b/drivers/power/supply/mtk_basic_charger.c
+@@ -81,20 +81,6 @@ static void select_cv(struct mtk_charger *info)
+ 	info->setting.cv = constant_voltage;
+ }
+ 
+-static bool is_typec_adapter(struct mtk_charger *info)
+-{
+-	int rp;
+-
+-	rp = adapter_dev_get_property(info->pd_adapter, TYPEC_RP_LEVEL);
+-	if (info->pd_type == MTK_PD_CONNECT_TYPEC_ONLY_SNK &&
+-			rp != 500 &&
+-			info->chr_type != POWER_SUPPLY_TYPE_USB &&
+-			info->chr_type != POWER_SUPPLY_TYPE_USB_CDP)
+-		return true;
+-
+-	return false;
+-}
+-
+ static bool support_fast_charging(struct mtk_charger *info)
+ {
+ 	struct chg_alg_device *alg;
+@@ -209,28 +195,6 @@ static bool select_charging_current_limit(struct mtk_charger *info,
+ 				pdata->input_current_limit_by_aicl =
+ 					info->data.max_dmivr_charger_current;
+ 		}
+-#if 0 /* ignore rp */
+-		if (is_typec_adapter(info)) {
+-			if (adapter_dev_get_property(info->pd_adapter, TYPEC_RP_LEVEL)
+-				== 3000) {
+-				pdata->input_current_limit = 3000000;
+-				pdata->charging_current_limit = 3000000;
+-			} else if (adapter_dev_get_property(info->pd_adapter,
+-				TYPEC_RP_LEVEL) == 1500) {
+-				pdata->input_current_limit = 1500000;
+-				pdata->charging_current_limit = 2000000;
+-			} else {
+-				chr_err("type-C: inquire rp error\n");
+-				pdata->input_current_limit = 500000;
+-				pdata->charging_current_limit = 500000;
+-			}
+-
+-			chr_err("type-C:%d current:%d\n",
+-				info->pd_type,
+-				adapter_dev_get_property(info->pd_adapter,
+-					TYPEC_RP_LEVEL));
+-		}
+-#endif
+ 	}
+ 
+ 	if (info->enable_sw_jeita) {
+diff --git a/drivers/soc/mediatek/mtk-pmic-wrap.c b/drivers/soc/mediatek/mtk-pmic-wrap.c
+index 3a0fa0694..922a5cd16 100644
+--- a/drivers/soc/mediatek/mtk-pmic-wrap.c
++++ b/drivers/soc/mediatek/mtk-pmic-wrap.c
+@@ -1322,7 +1322,7 @@ struct pmic_wrapper_type {
+ 	u32 caps;
+         u32 wdt_src1;
+ 	unsigned int has_bridge:1;
+-	int slv_switch:1;
++	unsigned int slv_switch:1;
+         u32 init_done;
+ 	int (*init_reg_clock)(struct pmic_wrapper *wrp);
+ 	int (*init_soc_specific)(struct pmic_wrapper *wrp);
+diff --git a/drivers/staging/android/mtk_ion/ion.c b/drivers/staging/android/mtk_ion/ion.c
+index 8351c9016..81c4ef54f 100644
+--- a/drivers/staging/android/mtk_ion/ion.c
++++ b/drivers/staging/android/mtk_ion/ion.c
+@@ -111,7 +111,7 @@ void ion_client_buf_add(struct ion_heap *heap, struct ion_client *client,
+ 	u64 total_size;
+ 
+ 	client->hnd_cnt++;
+-	if (heap->type == ION_HEAP_TYPE_MULTIMEDIA_SEC)
++	if (heap->type == (enum ion_heap_type)ION_HEAP_TYPE_MULTIMEDIA_SEC)
+ 		total_size =
+ 		atomic64_add_return(size, &client->total_size[SECURE_HEAP]);
+ 	else if (heap->type == ION_HEAP_TYPE_SYSTEM)
+@@ -149,7 +149,7 @@ void ion_client_buf_sub(struct ion_heap *heap, struct ion_client *client,
+ 	long long total_size;
+ 
+ 	client->hnd_cnt--;
+-	if (heap->type == ION_HEAP_TYPE_MULTIMEDIA_SEC) {
++	if (heap->type == (enum ion_heap_type)ION_HEAP_TYPE_MULTIMEDIA_SEC) {
+ 		total_size =
+ 		atomic64_sub_return(size, &client->total_size[SECURE_HEAP]);
+ 		if (total_size < 0) {
+@@ -191,7 +191,7 @@ void ion_client_buf_sub(struct ion_heap *heap, struct ion_client *client,
+ u64 ion_client_buf_dump(struct ion_heap *heap, struct ion_client *client)
+ {
+ #ifdef ION_RECORD_TOTAL_SIZE_SUPPORT
+-	if (heap->type == ION_HEAP_TYPE_MULTIMEDIA_SEC)
++	if (heap->type == (enum ion_heap_type)ION_HEAP_TYPE_MULTIMEDIA_SEC)
+ 		return (u64)(atomic64_read(&client->total_size[SECURE_HEAP]));
+ 	else if (heap->type == ION_HEAP_TYPE_SYSTEM)
+ 		return (u64)(atomic64_read(&client->total_size[SYSTEM_HEAP]));
+@@ -346,7 +346,7 @@ static struct ion_buffer *ion_buffer_create(struct ion_heap *heap,
+ 	INIT_LIST_HEAD(&buffer->attachments);
+ #endif
+ 	mutex_init(&buffer->lock);
+-	if (heap->type == ION_HEAP_TYPE_MULTIMEDIA_SEC)
++	if (heap->type == (enum ion_heap_type)ION_HEAP_TYPE_MULTIMEDIA_SEC)
+ 		goto exit;
+ 	/*
+ 	 * this will set up dma addresses for the sglist -- it is not
+@@ -2234,8 +2234,8 @@ static size_t ion_debug_heap_total(struct ion_client *client,
+ 			/* for exception dump ion_mm_heap info */
+ 		    (id == ION_HEAP_TYPE_MULTIMEDIA &&
+ 		     (type == ION_HEAP_TYPE_SYSTEM ||
+-		      type == ION_HEAP_TYPE_MULTIMEDIA ||
+-		      type == ION_HEAP_TYPE_MULTIMEDIA_SEC))) {
++		      type == (enum ion_heap_type)ION_HEAP_TYPE_MULTIMEDIA ||
++		      type == (enum ion_heap_type)ION_HEAP_TYPE_MULTIMEDIA_SEC))) {
+ 			client->dbg_hnd_cnt++;
+ 			size += handle->buffer->size;
+ 		}
+diff --git a/drivers/staging/android/mtk_ion/mtk/ion_mm_heap.c b/drivers/staging/android/mtk_ion/mtk/ion_mm_heap.c
+index 31214ed35..83c633627 100644
+--- a/drivers/staging/android/mtk_ion/mtk/ion_mm_heap.c
++++ b/drivers/staging/android/mtk_ion/mtk/ion_mm_heap.c
+@@ -2189,7 +2189,8 @@ long ion_mm_ioctl(struct ion_client *client, unsigned int cmd,
+ 			param.get_phys_param.phy_addr = phy_addr;
+ 
+ 			mutex_unlock(&buffer->lock);
+-		} else if (buffer_type == ION_HEAP_TYPE_MULTIMEDIA_SEC) {
++		} else if (buffer_type ==
++			   (enum ion_heap_type)ION_HEAP_TYPE_MULTIMEDIA_SEC) {
+ 			struct ion_heap *sec_heap;
+ 			ion_phys_addr_t phy_addr;
+ 			size_t len;
+diff --git a/include/linux/mfd/mt6359/registers.h b/include/linux/mfd/mt6359/registers.h
+index 39e426b39..8b3157839 100644
+--- a/include/linux/mfd/mt6359/registers.h
++++ b/include/linux/mfd/mt6359/registers.h
+@@ -1968,6 +1968,8 @@
+ #define MT6359_ACCDET_CON39                  0x26d6
+ #define MT6359_ACCDET_CON40                  0x26d8
+ 
++/* The MT6358's header defines these generic names too; where both are included, its names stand. */
++#ifndef __MFD_MT6358_REGISTERS_H__
+ #define PMIC_HWCID_ADDR                                     \
+ 	MT6359_HWCID
+ #define PMIC_INT_STATUS_BUCK_TOP_SHIFT                      0
+@@ -2004,6 +2006,7 @@
+ 	MT6359_PSEQ_ELR1
+ #define PMIC_RG_SDN_DLY_ENB_MASK                            0x1
+ #define PMIC_RG_SDN_DLY_ENB_SHIFT                           8
++#endif
+ 
+ #define MT6359_BUCK_TOP_ANA_ID_ADDR                           \
+ 	MT6359_BUCK_TOP_DSN_ID
+diff --git a/kernel/power/qos.c b/kernel/power/qos.c
+index c171bd09c..b6fb4a29c 100644
+--- a/kernel/power/qos.c
++++ b/kernel/power/qos.c
+@@ -1000,43 +1000,6 @@ static void pm_qos_work_fn(struct work_struct *work)
+ 	__pm_qos_update_request(req, PM_QOS_DEFAULT_VALUE);
+ }
+ 
+-#ifdef CONFIG_SMP
+-static void pm_qos_irq_release(struct kref *ref)
+-{
+-	unsigned long flags;
+-	struct irq_affinity_notify *notify = container_of(ref,
+-					struct irq_affinity_notify, kref);
+-	struct pm_qos_request *req = container_of(notify,
+-					struct pm_qos_request, irq_notify);
+-	struct pm_qos_constraints *c =
+-				pm_qos_array[req->pm_qos_class]->constraints;
+-
+-	spin_lock_irqsave(&pm_qos_lock, flags);
+-	cpumask_setall(&req->cpus_affine);
+-	spin_unlock_irqrestore(&pm_qos_lock, flags);
+-
+-	pm_qos_update_target(c, &req->node, PM_QOS_UPDATE_REQ,
+-			c->default_value, false);
+-}
+-
+-static void pm_qos_irq_notify(struct irq_affinity_notify *notify,
+-		const cpumask_t *mask)
+-{
+-	unsigned long flags;
+-	struct pm_qos_request *req = container_of(notify,
+-					struct pm_qos_request, irq_notify);
+-	struct pm_qos_constraints *c =
+-				pm_qos_array[req->pm_qos_class]->constraints;
+-
+-	spin_lock_irqsave(&pm_qos_lock, flags);
+-	cpumask_copy(&req->cpus_affine, mask);
+-	spin_unlock_irqrestore(&pm_qos_lock, flags);
+-
+-	pm_qos_update_target(c, &req->node, PM_QOS_UPDATE_REQ, req->node.prio,
+-			false);
+-}
+-#endif
+-
+ /**
+  * pm_qos_add_request - inserts new qos request into the list
+  * @req: pointer to a preallocated handle
+@@ -1071,24 +1034,6 @@ void pm_qos_add_request(struct pm_qos_request *req,
+ 	trace_pm_qos_add_request(pm_qos_class, value);
+ 	pm_qos_update_target(pm_qos_array[pm_qos_class]->constraints,
+ 			     &req->node, PM_QOS_ADD_REQ, value, false);
+-
+-#ifdef CONFIG_SMP
+-	if (req->type == PM_QOS_REQ_AFFINE_IRQ &&
+-			irq_can_set_affinity(req->irq)) {
+-		int ret = 0;
+-
+-		ret = irq_set_affinity_notifier(req->irq,
+-					&req->irq_notify);
+-		if (ret) {
+-			WARN(1, "IRQ affinity notify set failed\n");
+-			req->type = PM_QOS_REQ_ALL_CORES;
+-			cpumask_setall(&req->cpus_affine);
+-			pm_qos_update_target(
+-				pm_qos_array[pm_qos_class]->constraints,
+-				&req->node, PM_QOS_UPDATE_REQ, value, false);
+-		}
+-	}
+-#endif
+ }
+ EXPORT_SYMBOL_GPL(pm_qos_add_request);
+ 
+diff --git a/kernel/sched/fair.c b/kernel/sched/fair.c
+index ea145d7aa..ebf0acd6c 100644
+--- a/kernel/sched/fair.c
++++ b/kernel/sched/fair.c
+@@ -7655,7 +7655,7 @@ static int find_energy_efficient_cpu(struct task_struct *p, int prev_cpu, int sy
+ 			int cur_cpu_cap = capacity_orig_of(cpu);
+ 
+ 			if (cur_cpu_cap > best_cpu_cap){
+-				if((best_energy - cur_energy) > max(1, (best_energy >> 4))) {
++				if((best_energy - cur_energy) > max(1UL, (best_energy >> 4))) {
+ 					best_energy = cur_energy;
+ 					best_energy_cpu = cpu;
+ 				}
+@@ -7721,7 +7721,6 @@ SELECT_TASK_RQ_FAIR(struct task_struct *p, int prev_cpu, int sd_flag,
+ 
+ {
+ 	struct sched_domain *tmp, *sd = NULL;
+-	struct root_domain *rd = cpu_rq(smp_processor_id())->rd;
+ 	int cpu = smp_processor_id();
+ 	int new_cpu = prev_cpu;
+ 	int want_affine = 0;
+-- 
+2.56.0
+

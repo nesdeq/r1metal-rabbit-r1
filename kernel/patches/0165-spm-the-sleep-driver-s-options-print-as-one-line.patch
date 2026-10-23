@@ -1,0 +1,28 @@
+From 809bbf6864a1bd14e0d476f7795fb1f0a3ac17bc Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 10:29:16 +0200
+Subject: [PATCH] spm: the sleep driver's options print as one line
+
+slp_module_init prints the second half of its options line with pr_cont.
+As a second pr_info, with a level of its own, it begins a record of its
+own.
+---
+ drivers/misc/mediatek/base/power/spm/common/mtk_sleep.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/base/power/spm/common/mtk_sleep.c b/drivers/misc/mediatek/base/power/spm/common/mtk_sleep.c
+index bf75a36a0..74abc6cff 100644
+--- a/drivers/misc/mediatek/base/power/spm/common/mtk_sleep.c
++++ b/drivers/misc/mediatek/base/power/spm/common/mtk_sleep.c
+@@ -394,7 +394,7 @@ void slp_module_init(void)
+ 	spm_output_sleep_option();
+ 	pr_info("[SLP] SLEEP_DPIDLE_EN:%d, REPLACE_DEF_WAKESRC:%d",
+ 		SLP_SLEEP_DPIDLE_EN, SLP_REPLACE_DEF_WAKESRC);
+-	pr_info(", SUSPEND_LOG_EN:%d\n", SLP_SUSPEND_LOG_EN);
++	pr_cont(", SUSPEND_LOG_EN:%d\n", SLP_SUSPEND_LOG_EN);
+ 	suspend_set_ops(&slp_suspend_ops);
+ #if SLP_SUSPEND_LOG_EN
+ 	console_suspend_enabled = 0;
+-- 
+2.56.0
+

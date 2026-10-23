@@ -1,0 +1,34 @@
+From ed742475a28dbb2b0567f9a4da5a5387747f6a33 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Tue, 20 Oct 2026 11:07:58 +0200
+Subject: [PATCH] wmt: a build without the register table makes no register
+ dump
+
+execute_dump_action skips a dump with an info line where the register
+table is empty: the table is set up only with WMT_DBG_SUPPORT, which a
+user build lacks, and each of the thirteen dumps before a chip reset
+otherwise logs "can't get reg_addr".
+---
+ .../common/common_main/platform/mtk_wcn_dump_util.c         | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/connectivity/common/common_main/platform/mtk_wcn_dump_util.c b/connectivity/common/common_main/platform/mtk_wcn_dump_util.c
+index b683f7e..e9ae65f 100644
+--- a/connectivity/common/common_main/platform/mtk_wcn_dump_util.c
++++ b/connectivity/common/common_main/platform/mtk_wcn_dump_util.c
+@@ -84,6 +84,12 @@ INT32 execute_dump_action(const char *trg_str, const char *dump_prefix, struct c
+ 		WMT_PLAT_PR_WARN("[%s] dump_ary is null", __func__);
+ 		return -1;
+ 	}
++	/* The register table is set up only in a build with WMT_DBG_SUPPORT */
++	if (g_mapped_reg_table_sz == 0) {
++		WMT_PLAT_PR_INFO("[%s][%s] not dumped, the build sets up no register table",
++				trg_str, dump_prefix);
++		return 0;
++	}
+ 	if (p_trg_str == NULL)
+ 		p_trg_str = p_undefined_str;
+ 	if (p_dump_prefix)
+-- 
+2.56.0
+

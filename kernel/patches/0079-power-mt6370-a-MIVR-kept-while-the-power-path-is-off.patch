@@ -1,0 +1,31 @@
+From 0af0f2f81dce274107f3a37e7b995ef8c5cb1c70 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 20:48:24 +0200
+Subject: [PATCH] power: mt6370: a MIVR kept while the power path is off is no
+ error
+
+With the power path disabled, mt6370_set_mivr keeps the value for
+mt6370_enable_power_path to apply and logs it at info. The charger sets
+the MIVR after every unplug.
+---
+ drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_charger.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_charger.c b/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_charger.c
+index 1d14d6b98..821d57c7f 100755
+--- a/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_charger.c
++++ b/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_charger.c
+@@ -2202,8 +2202,8 @@ static int mt6370_set_mivr(struct charger_device *chg_dev, u32 uV)
+ 	mutex_lock(&chg_data->pp_lock);
+ 
+ 	if (!chg_data->pp_en) {
+-		dev_err(chg_data->dev, "%s: power path is disabled\n",
+-			__func__);
++		dev_info(chg_data->dev, "%s: power path is disabled, %d uV kept for its enable\n",
++			 __func__, uV);
+ 		goto out;
+ 	}
+ 
+-- 
+2.56.0
+

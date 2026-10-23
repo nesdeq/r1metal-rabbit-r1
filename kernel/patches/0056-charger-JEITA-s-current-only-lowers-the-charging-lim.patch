@@ -1,0 +1,78 @@
+From 6ef3e71921f13ef2b55a9860a1960fce221cfa19 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 18:21:50 +0200
+Subject: [PATCH] charger: JEITA's current only lowers the charging limit
+
+select_charging_current_limit lowers the charging limit to the JEITA
+current only where the limit is above it; upstream's unbraced else
+runs the assignment on every pass, raising a lower limit. The routine
+lines of the current selection and do_algorithm print with chr_debug.
+---
+ drivers/power/supply/mtk_basic_charger.c | 15 ++++++++-------
+ 1 file changed, 8 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/power/supply/mtk_basic_charger.c b/drivers/power/supply/mtk_basic_charger.c
+index 0c4de5b82..225994221 100644
+--- a/drivers/power/supply/mtk_basic_charger.c
++++ b/drivers/power/supply/mtk_basic_charger.c
+@@ -237,9 +237,10 @@ static bool select_charging_current_limit(struct mtk_charger *info,
+ 		if (IS_ENABLED(CONFIG_USBIF_COMPLIANCE)
+ 			&& info->chr_type == POWER_SUPPLY_TYPE_USB)
+ 			chr_debug("USBIF & STAND_HOST skip current check\n");
+-		else if (pdata->charging_current_limit > info->sw_jeita.cc)
+-			chr_err("[%s] jeita cc:%duA\n", __func__, info->sw_jeita.cc);
++		else if (pdata->charging_current_limit > info->sw_jeita.cc) {
++			chr_debug("[%s] jeita cc:%duA\n", __func__, info->sw_jeita.cc);
+ 			pdata->charging_current_limit = info->sw_jeita.cc;
++		}
+ 		/* The thermal coolers' limits apply with JEITA too: the lower limit wins. */
+ 		if (pdata->thermal_charging_current_limit != -1 &&
+ 		    pdata->thermal_charging_current_limit <
+@@ -324,7 +325,7 @@ static bool select_charging_current_limit(struct mtk_charger *info,
+ 		is_basic = true;
+ 	}
+ 
+-	chr_err("m:%d chg1:%d,%d,%d,%d chg2:%d,%d,%d,%d type:%d:%d usb_unlimited:%d usbif:%d usbsm:%d aicl:%d atm:%d bm:%d b:%d\n",
++	chr_debug("m:%d chg1:%d,%d,%d,%d chg2:%d,%d,%d,%d type:%d:%d usb_unlimited:%d usbif:%d usbsm:%d aicl:%d atm:%d bm:%d b:%d\n",
+ 		info->config,
+ 		_uA_to_mA(pdata->thermal_input_current_limit),
+ 		_uA_to_mA(pdata->thermal_charging_current_limit),
+@@ -368,7 +369,7 @@ static int do_algorithm(struct mtk_charger *info)
+ 		}
+ 	}
+ 
+-	chr_err("%s is_basic:%d\n", __func__, is_basic);
++	chr_debug("%s is_basic:%d\n", __func__, is_basic);
+ 	if (is_basic != true) {
+ 		is_basic = true;
+ 		for (i = 0; i < MAX_ALG_NO; i++) {
+@@ -382,7 +383,7 @@ static int do_algorithm(struct mtk_charger *info)
+ 				chg_alg_get_prop(alg, ALG_MAX_VBUS, &val);
+ 				if (val > 5000)
+ 					chg_alg_stop_algo(alg);
+-				chr_err("%s: alg:%s alg_vbus:%d\n", __func__,
++				chr_debug("%s: alg:%s alg_vbus:%d\n", __func__,
+ 					dev_name(&alg->dev), val);
+ 				continue;
+ 			}
+@@ -402,7 +403,7 @@ static int do_algorithm(struct mtk_charger *info)
+ 			chg_alg_set_current_limit(alg, &info->setting);
+ 			ret = chg_alg_is_algo_ready(alg);
+ 
+-			chr_err("%s %s ret:%s\n", __func__,
++			chr_debug("%s %s ret:%s\n", __func__,
+ 				dev_name(&alg->dev),
+ 				chg_alg_state_to_str(ret));
+ 
+@@ -437,7 +438,7 @@ static int do_algorithm(struct mtk_charger *info)
+ 				if (val > 5000 && chg_alg_is_algo_running(alg))
+ 					chg_alg_stop_algo(alg);
+ 
+-				chr_err("%s: Stop hv charging. en_hv:%d alg:%s alg_vbus:%d\n",
++				chr_debug("%s: Stop hv charging. en_hv:%d alg:%s alg_vbus:%d\n",
+ 					__func__, info->enable_hv_charging,
+ 					dev_name(&alg->dev), val);
+ 			}
+-- 
+2.56.0
+

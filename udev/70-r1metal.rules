@@ -1,0 +1,4 @@
+# Lets the logged in user reach the R1 in each of its USB guises, and keeps ModemManager off its serial ports.
+SUBSYSTEM=="usb", ATTR{idVendor}=="0e8d", ATTR{idProduct}=="2000", TAG+="uaccess", ENV{ID_MM_DEVICE_IGNORE}="1"
+SUBSYSTEM=="usb", ATTR{idVendor}=="0e8d", ATTR{idProduct}=="201c", TAG+="uaccess", ENV{ID_MM_DEVICE_IGNORE}="1"
+SUBSYSTEM=="usb", ATTR{idVendor}=="1d6b", ATTR{idProduct}=="0104", ATTR{product}=="r1metal console", TAG+="uaccess", ENV{ID_MM_DEVICE_IGNORE}="1"

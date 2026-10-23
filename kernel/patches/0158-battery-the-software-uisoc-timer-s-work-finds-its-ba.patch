@@ -1,0 +1,28 @@
+From affec21dfa46f160b747f8dfdcf2e1daf5453a15 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 10:20:55 +0200
+Subject: [PATCH] battery: the software uisoc timer's work finds its battery
+
+sw_uisoc_timer_work_handler takes its mtk_battery by container_of over
+sw_uisoc_timer_work, the work it runs as, not one_percent_timer_work,
+which puts gm off the battery.
+---
+ drivers/power/supply/mtk_battery.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/power/supply/mtk_battery.c b/drivers/power/supply/mtk_battery.c
+index 21efd2d47..ae9d27ce5 100755
+--- a/drivers/power/supply/mtk_battery.c
++++ b/drivers/power/supply/mtk_battery.c
+@@ -2485,7 +2485,7 @@ static void sw_uisoc_timer_work_handler(struct work_struct *data)
+ 	struct mtk_battery *gm;
+ 
+ 	gm = container_of(data,
+-		struct mtk_battery, one_percent_timer_work);
++		struct mtk_battery, sw_uisoc_timer_work);
+ 	bm_debug("[%s] %d %d\n", __func__,
+ 		gm->soc, gm->ui_soc);
+ 	if (gm->soc > gm->ui_soc)
+-- 
+2.56.0
+

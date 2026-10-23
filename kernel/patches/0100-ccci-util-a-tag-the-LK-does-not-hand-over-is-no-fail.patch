@@ -1,0 +1,142 @@
+From ebc9257998094a1d49517ea386c4a790a9636b09 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 18:53:44 +0200
+Subject: [PATCH] ccci util: a tag the LK does not hand over is no failure
+
+Where the LK hands over no udc_layout, md1_sib_info, smem_dfd_size,
+smem_amms_pos_size, smem_align_padding_size, nc_smem_info_ext_num or
+md1_bank4_cache_info tag, the modem driver keeps its default without
+an error; a tag of another size is an error. The R1's LK hands over
+none of them.
+---
+ .../mediatek/ccci_util/ccci_util_lib_fo.c     | 57 ++++++++++++-------
+ 1 file changed, 35 insertions(+), 22 deletions(-)
+
+diff --git a/drivers/misc/mediatek/ccci_util/ccci_util_lib_fo.c b/drivers/misc/mediatek/ccci_util/ccci_util_lib_fo.c
+index ec8a594d7..ec98cc2c5 100644
+--- a/drivers/misc/mediatek/ccci_util/ccci_util_lib_fo.c
++++ b/drivers/misc/mediatek/ccci_util/ccci_util_lib_fo.c
+@@ -192,6 +192,12 @@ static int find_ccci_tag_inf(char *name, char *buf, unsigned int size)
+ 	return -1;
+ }
+ 
++/* an LK without an optional tag leaves its default; a tag of another size is malformed */
++static bool ccci_tag_malformed(int ret, unsigned int size)
++{
++	return ret != -1 && ret != (int)size;
++}
++
+ /*====================================================== */
+ /* Feature option setting support section                */
+ /*====================================================== */
+@@ -403,10 +409,13 @@ static unsigned int md_mtee_support;
+ static void nc_smem_info_parsing(void)
+ {
+ 	unsigned int size, num = 0, i;
++	int ret;
+ 
+-	if (find_ccci_tag_inf("nc_smem_info_ext_num", (char *)&num,
+-		sizeof(unsigned int)) != sizeof(unsigned int)) {
+-		CCCI_UTIL_ERR_MSG("nc_smem_info_ext_num get fail\n");
++	ret = find_ccci_tag_inf("nc_smem_info_ext_num", (char *)&num,
++		sizeof(unsigned int));
++	if (ret != sizeof(unsigned int)) {
++		if (ccci_tag_malformed(ret, sizeof(unsigned int)))
++			CCCI_UTIL_ERR_MSG("nc_smem_info_ext_num get fail\n");
+ 		s_nc_smem_ext_num = 0;
+ 		return;
+ 	}
+@@ -470,11 +479,14 @@ int get_nc_smem_region_info(unsigned int id, unsigned int *ap_off,
+ static void cshare_memory_info_parsing(void)
+ {
+ 	unsigned int size = 0;
++	int ret;
+ 
+ 	memset(&csmem_info, 0, sizeof(struct _csmem_item));
+-	if (find_ccci_tag_inf("md1_bank4_cache_info", (char *)&csmem_info,
+-		sizeof(struct _csmem_item)) != sizeof(struct _csmem_item)) {
+-		CCCI_UTIL_ERR_MSG("Invalid csmem_info dt para\n");
++	ret = find_ccci_tag_inf("md1_bank4_cache_info", (char *)&csmem_info,
++		sizeof(struct _csmem_item));
++	if (ret != sizeof(struct _csmem_item)) {
++		if (ccci_tag_malformed(ret, sizeof(struct _csmem_item)))
++			CCCI_UTIL_ERR_MSG("Invalid csmem_info dt para\n");
+ 		if (ccb_info.ccb_data_buffer_addr != 0)
+ 			goto OLD_LK_CSMEM;
+ 		return;
+@@ -516,6 +528,7 @@ static void cshare_memory_info_parsing(void)
+ static void share_memory_info_parsing(void)
+ {
+ 	struct _smem_layout smem_layout;
++	int ret;
+ 	/* Get share memory layout */
+ 	if (find_ccci_tag_inf("smem_layout",
+ 						  (char *)&smem_layout,
+@@ -543,8 +556,9 @@ static void share_memory_info_parsing(void)
+ 
+ 	/* Get udc cache&noncache size */
+ 	memset(&udc_size, 0, sizeof(struct _udc_info));
+-	if (find_ccci_tag_inf("udc_layout", (char *)&udc_size,
+-		sizeof(struct _udc_info)) != sizeof(struct _udc_info))
++	ret = find_ccci_tag_inf("udc_layout", (char *)&udc_size,
++		sizeof(struct _udc_info));
++	if (ccci_tag_malformed(ret, sizeof(struct _udc_info)))
+ 		CCCI_UTIL_ERR_MSG("Invalid udc layout info dt para\n");
+ 
+ 	CCCI_UTIL_INF_MSG(
+@@ -552,10 +566,9 @@ static void share_memory_info_parsing(void)
+ 		udc_size.cache_size, udc_size.noncache_size);
+ 
+ 	/*Get sib info */
+-	if (find_ccci_tag_inf("md1_sib_info",
+-						  (char *)&sib_info,
+-						  sizeof(sib_info))
+-			!= sizeof(sib_info))
++	ret = find_ccci_tag_inf("md1_sib_info", (char *)&sib_info,
++		sizeof(sib_info));
++	if (ccci_tag_malformed(ret, sizeof(sib_info)))
+ 		CCCI_UTIL_ERR_MSG("get sib info fail\n");
+ 
+ 	CCCI_UTIL_INF_MSG("ccci_util get sib addr: 0x%llx size: %d\n",
+@@ -572,28 +585,28 @@ static void share_memory_info_parsing(void)
+ 				md1_phy_cap_size);
+ 
+ 	/* Get md1_smem_dfd_size  */
+-	if (find_ccci_tag_inf("smem_dfd_size",
+-						(char *)&md1_smem_dfd_size,
+-						sizeof(md1_smem_dfd_size))
+-			!= sizeof(md1_smem_dfd_size))
++	ret = find_ccci_tag_inf("smem_dfd_size", (char *)&md1_smem_dfd_size,
++		sizeof(md1_smem_dfd_size));
++	if (ccci_tag_malformed(ret, sizeof(md1_smem_dfd_size)))
+ 		CCCI_UTIL_ERR_MSG("get smem dfd size fail\n");
+ 
+ 	CCCI_UTIL_INF_MSG("ccci_util get md1_smem_dfd_size: %d\n",
+ 			md1_smem_dfd_size);
+ 
+ 	/* Get smem_amms_pos_size  */
+-	if (find_ccci_tag_inf("smem_amms_pos_size", (char *)&smem_amms_pos_size,
+-		sizeof(smem_amms_pos_size)) != sizeof(smem_amms_pos_size))
++	ret = find_ccci_tag_inf("smem_amms_pos_size", (char *)&smem_amms_pos_size,
++		sizeof(smem_amms_pos_size));
++	if (ccci_tag_malformed(ret, sizeof(smem_amms_pos_size)))
+ 		CCCI_UTIL_ERR_MSG("get smem amms pos size fail\n");
+ 
+ 	CCCI_UTIL_INF_MSG("ccci_util get smem_amms_pos_size: %d\n",
+ 			smem_amms_pos_size);
+ 
+ 	/* Get smem_align_padding_size  */
+-	if (find_ccci_tag_inf("smem_align_padding_size",
+-				(char *)&smem_align_padding_size,
+-		sizeof(smem_align_padding_size)) !=
+-				sizeof(smem_align_padding_size))
++	ret = find_ccci_tag_inf("smem_align_padding_size",
++		(char *)&smem_align_padding_size,
++		sizeof(smem_align_padding_size));
++	if (ccci_tag_malformed(ret, sizeof(smem_align_padding_size)))
+ 		CCCI_UTIL_ERR_MSG("get smem align padding size fail\n");
+ 
+ 	CCCI_UTIL_INF_MSG("ccci_util get smem_align_padding_size: %d\n",
+-- 
+2.56.0
+

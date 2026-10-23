@@ -1,0 +1,114 @@
+From 1964368290f8825436a3116e8d8092d26baabaaa Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Thu, 15 Oct 2026 13:10:40 +0200
+Subject: [PATCH] emi: a violation latched before the initcalls is reported,
+ not raised
+
+mpu_record_boot reads the EMI MPU's violation registers at
+early_initcall. Where the probe finds them unchanged, it reports that
+violation in one info line as latched before the initcalls and clears
+it without an AEE exception: the MPU keeps its first violation until
+cleared, and every R1 boot latches one.
+---
+ drivers/misc/mediatek/emi/submodule/mpu_v1.c | 71 +++++++++++++++++++-
+ 1 file changed, 70 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/emi/submodule/mpu_v1.c b/drivers/misc/mediatek/emi/submodule/mpu_v1.c
+index 4a933d86f..a63883880 100644
+--- a/drivers/misc/mediatek/emi/submodule/mpu_v1.c
++++ b/drivers/misc/mediatek/emi/submodule/mpu_v1.c
+@@ -10,6 +10,7 @@
+ #include <linux/device.h>
+ #include <linux/platform_device.h>
+ #include <linux/of.h>
++#include <linux/of_address.h>
+ #include <linux/of_irq.h>
+ #include <linux/printk.h>
+ #include <linux/memblock.h>
+@@ -197,6 +198,71 @@ static void check_violation(void)
+ 	clear_violation();
+ }
+ 
++static unsigned int boot_mpus, boot_mput, boot_mput_2nd;
++
++/* The first violation stays latched until cleared, so this holds one made before the initcalls. */
++static int __init mpu_record_boot(void)
++{
++	struct device_node *node;
++
++	node = of_find_compatible_node(NULL, NULL, "mediatek,emi");
++	if (!node)
++		return 0;
++	CEN_EMI_BASE = of_iomap(node, 0);
++	of_node_put(node);
++	if (!CEN_EMI_BASE)
++		return 0;
++
++	boot_mpus = readl(IOMEM(EMI_MPUS));
++	boot_mput = readl(IOMEM(EMI_MPUT));
++	boot_mput_2nd = readl(IOMEM(EMI_MPUT_2ND));
++
++	iounmap(CEN_EMI_BASE);
++	CEN_EMI_BASE = NULL;
++	return 0;
++}
++early_initcall(mpu_record_boot);
++
++static bool latched_before_initcalls(void)
++{
++	return boot_mpus && readl(IOMEM(EMI_MPUS)) == boot_mpus &&
++		readl(IOMEM(EMI_MPUT)) == boot_mput &&
++		readl(IOMEM(EMI_MPUT_2ND)) == boot_mput_2nd;
++}
++
++static const char *access_name(unsigned int mpus)
++{
++	switch ((mpus >> 29) & 0x3) {
++	case 1:
++		return "write";
++	case 2:
++		return "read";
++	}
++
++	switch ((mpus >> 27) & 0x3) {
++	case 1:
++		return "out-of-range write";
++	case 2:
++		return "out-of-range read";
++	}
++
++	return "unknown access";
++}
++
++static void report_boot_violation(void)
++{
++	unsigned int master_id = boot_mpus & 0xFFFF;
++	unsigned long long vio_addr;
++
++	vio_addr = ((((unsigned long long)(boot_mput_2nd & 0xF)) << 32) +
++		boot_mput + DRAM_OFFSET);
++
++	pr_info("[MPU] latched before the kernel's initcalls: %s of 0x%llx in region %u by %s from domain 0x%x (MPUS: %x, MPUT: %x, MPUT_2ND: %x)\n",
++		access_name(boot_mpus), vio_addr, (boot_mpus >> 16) & 0x1F,
++		id2name((master_id >> 3) & 0x1FFF, master_id & 0x7),
++		(boot_mpus >> 21) & 0xF, boot_mpus, boot_mput, boot_mput_2nd);
++}
++
+ static irqreturn_t violation_irq(int irq, void *dev_id)
+ {
+ 	check_violation_cb();
+@@ -543,7 +609,10 @@ void mpu_init(struct platform_driver *emi_ctrl, struct platform_device *pdev)
+ 
+ 	if (!check_violation_cb)
+ 		check_violation_cb = check_violation;
+-	if (readl(IOMEM(EMI_MPUS))) {
++	if (latched_before_initcalls()) {
++		report_boot_violation();
++		clear_violation();
++	} else if (readl(IOMEM(EMI_MPUS))) {
+ 		pr_info("[MPU] detect violation in driver init\n");
+ 		check_violation_cb();
+ 	} else
+-- 
+2.56.0
+

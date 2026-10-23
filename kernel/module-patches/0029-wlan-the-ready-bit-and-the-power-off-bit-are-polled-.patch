@@ -1,0 +1,60 @@
+From 643992daf0230aef108ca59e1c535c1e187bfd37 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 11:23:14 +0200
+Subject: [PATCH] wlan: the ready bit and the power-off bit are polled every 1
+ ms, not every 8 to 12
+
+wlanCheckWifiFunc polls the ready and power-off bits every 1 to 2 ms
+instead of every kalMsleep(5), 8 to 12 ms at HZ=250, with the same
+timeout, and its success lines tell the time the poll took.
+---
+ connectivity/wlan/core/gen4m/common/wlan_lib.c | 9 ++++++---
+ connectivity/wlan/core/gen4m/include/config.h  | 3 +++
+ 2 files changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/connectivity/wlan/core/gen4m/common/wlan_lib.c b/connectivity/wlan/core/gen4m/common/wlan_lib.c
+index 5ded57c..56e96be 100644
+--- a/connectivity/wlan/core/gen4m/common/wlan_lib.c
++++ b/connectivity/wlan/core/gen4m/common/wlan_lib.c
+@@ -1659,10 +1659,12 @@ uint32_t wlanCheckWifiFunc(IN struct ADAPTER *prAdapter,
+ 		if (fgResult) {
+ 			if (fgRdyChk)
+ 				DBGLOG(INIT, INFO,
+-					"Ready bit asserted\n");
++					"Ready bit asserted after %u ms\n",
++					u4CurTime - u4StartTime);
+ 			else
+ 				DBGLOG(INIT, INFO,
+-					"Wi-Fi power off done!\n");
++					"Wi-Fi power off done after %u ms\n",
++					u4CurTime - u4StartTime);
+ 
+ 			u4Status = WLAN_STATUS_SUCCESS;
+ 
+@@ -1683,7 +1685,8 @@ uint32_t wlanCheckWifiFunc(IN struct ADAPTER *prAdapter,
+ 			u4Status = WLAN_STATUS_FAILURE;
+ 			break;
+ 		}
+-		kalMsleep(CFG_RESPONSE_POLLING_DELAY);
++		kalUsleep_range(CFG_RESPONSE_POLLING_INTERVAL_US,
++				2 * CFG_RESPONSE_POLLING_INTERVAL_US);
+ 
+ 	}
+ 
+diff --git a/connectivity/wlan/core/gen4m/include/config.h b/connectivity/wlan/core/gen4m/include/config.h
+index 67e637e..079e147 100644
+--- a/connectivity/wlan/core/gen4m/include/config.h
++++ b/connectivity/wlan/core/gen4m/include/config.h
+@@ -559,6 +559,9 @@
+ #endif
+ #define CFG_RESPONSE_POLLING_DELAY              5
+ 
++/* wlanCheckWifiFunc() poll interval; the timeout is by the clock. */
++#define CFG_RESPONSE_POLLING_INTERVAL_US        1000
++
+ #define CFG_DEFAULT_SLEEP_WAITING_INTERVAL      50
+ 
+ #define CFG_PRE_CAL_SLEEP_WAITING_INTERVAL      50000
+-- 
+2.56.0
+

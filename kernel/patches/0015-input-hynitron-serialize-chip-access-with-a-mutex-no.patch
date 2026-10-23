@@ -1,0 +1,150 @@
+From ffe40ce3b879655143f6d8d6f9f3b8664e2a0496 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 10:55:23 +0200
+Subject: [PATCH] input: hynitron: serialize chip access with a mutex, not a
+ flag
+
+The touch report, the ESD check and the deep sleep command hold
+hyn_i2c_lock around their whole exchange with the chip, in place of
+hyn_esd_i2c_lock_flag, which drops a report that finds it set. The ESD
+check tests hyn_esd_running again under the lock. The lock is an
+rt_mutex, as the SCHED_RR touch thread waits on the ESD worker, whose
+100 ms wait for the chip's boot sleeps instead of spinning.
+---
+ .../input/touchscreen/CST8xx/hynitron_common.h  |  3 +++
+ .../input/touchscreen/CST8xx/hynitron_core.c    | 17 +++++++----------
+ .../input/touchscreen/CST8xx/hynitron_core.h    |  1 -
+ .../touchscreen/CST8xx/hynitron_esd_check.c     |  9 +++++----
+ drivers/input/touchscreen/CST8xx/hynitron_i2c.c |  2 +-
+ 5 files changed, 16 insertions(+), 16 deletions(-)
+
+diff --git a/drivers/input/touchscreen/CST8xx/hynitron_common.h b/drivers/input/touchscreen/CST8xx/hynitron_common.h
+index 07a2668ce..b682913b5 100644
+--- a/drivers/input/touchscreen/CST8xx/hynitron_common.h
++++ b/drivers/input/touchscreen/CST8xx/hynitron_common.h
+@@ -11,6 +11,7 @@
+ #define HYNITRON_COMMON_H__
+ 
+ 
++#include <linux/rtmutex.h>
+ #include "hynitron_config.h"
+ 
+ /*****************************************************************************
+@@ -182,6 +183,8 @@ int hyn_i2c_write_byte(struct i2c_client *client, u8 regaddr, u8 regvalue);
+ int hyn_i2c_read_byte(struct i2c_client *client, u8 regaddr, u8 *regvalue);
+ int hyn_i2c_read(struct i2c_client *client, char *writebuf,int writelen, char *readbuf, int readlen);
+ int hyn_i2c_write(struct i2c_client *client, char *writebuf, int writelen);
++/* Held by the touch report, ESD check and deep sleep; an rt_mutex, as the RT touch thread waits on the ESD worker. */
++extern struct rt_mutex hyn_i2c_lock;
+ /***************************************/
+ 
+ /************HYN_PSENSOR_EN********************/
+diff --git a/drivers/input/touchscreen/CST8xx/hynitron_core.c b/drivers/input/touchscreen/CST8xx/hynitron_core.c
+index 03f837077..bd13f8b0d 100644
+--- a/drivers/input/touchscreen/CST8xx/hynitron_core.c
++++ b/drivers/input/touchscreen/CST8xx/hynitron_core.c
+@@ -598,8 +598,11 @@ static int hyn_touch_handler(void *unused)
+ 		if(hyn_ts_data->config_chip_product_line==HYN_CHIP_PRODUCT_LINE_MUT_CAP)
+ 		{
+ 	    //mutcap
+-	    	if(hyn_ts_data->apk_rdwr_flag ==0)	
+-			cst3xx_touch_report();		
++		if(hyn_ts_data->apk_rdwr_flag ==0){
++			rt_mutex_lock(&hyn_i2c_lock);
++			cst3xx_touch_report();
++			rt_mutex_unlock(&hyn_i2c_lock);
++		}
+ 		}else if(hyn_ts_data->config_chip_product_line==HYN_CHIP_PRODUCT_LINE_SEL_CAP){
+ 		//selfcap
+ 			cst8xx_touch_report();
+@@ -802,13 +805,6 @@ static void cst3xx_touch_report(void)
+ #endif
+ 
+ 
+-#if HYN_ESDCHECK_EN
+-	if(hyn_ts_data->hyn_esd_i2c_lock_flag>0){
+-		HYN_ERROR("  hyn_esd_i2c_lock_flag is running .\n");
+-		goto END;	
+-	}	
+-#endif
+-
+ #if HYN_EN_AUTO_UPDATE
+ 	if(hyn_ts_data->fw_updating>0){
+ 		HYN_ERROR("  fw_updating is running .\n");
+@@ -1404,6 +1400,7 @@ void hyn_enter_deep_sleep(void)
+     int ret = 0;
+ 	HYN_ERROR("hyn_enter_deep_sleep");
+ /* TP enter sleep mode */
++	rt_mutex_lock(&hyn_i2c_lock);
+ 	if(hyn_ts_data->config_chip_product_line==HYN_CHIP_PRODUCT_LINE_MUT_CAP)
+ 	{
+     //mutcap
+@@ -1425,7 +1422,7 @@ void hyn_enter_deep_sleep(void)
+ 	        HYN_ERROR("Set TP to sleep mode fail, ret=%d!", ret);
+ 	    }
+ 	}
+-
++	rt_mutex_unlock(&hyn_i2c_lock);
+ }
+ 
+ 
+diff --git a/drivers/input/touchscreen/CST8xx/hynitron_core.h b/drivers/input/touchscreen/CST8xx/hynitron_core.h
+index bad5e33fb..98d5f57ac 100644
+--- a/drivers/input/touchscreen/CST8xx/hynitron_core.h
++++ b/drivers/input/touchscreen/CST8xx/hynitron_core.h
+@@ -204,7 +204,6 @@ struct hynitron_ts_data{
+ 	
+ 	u8  hyn_esd_mode    :1 ;
+ 	u8  hyn_esd_running :1 ;
+-	u8  hyn_esd_i2c_lock_flag: 1;
+ 	s32 hyn_esd_pre_counter;
+ 	s32 hyn_esd_cur_counter;
+  	s32 hyn_esd_work_cycle;
+diff --git a/drivers/input/touchscreen/CST8xx/hynitron_esd_check.c b/drivers/input/touchscreen/CST8xx/hynitron_esd_check.c
+index ffec9485f..501756306 100644
+--- a/drivers/input/touchscreen/CST8xx/hynitron_esd_check.c
++++ b/drivers/input/touchscreen/CST8xx/hynitron_esd_check.c
+@@ -214,9 +214,9 @@ static void hyn_esd_check_func(struct work_struct *work)
+ 		return;
+ 	}
+ 
+-	if((hyn_ts_data->hyn_esd_i2c_lock_flag != 0)||(hyn_ts_data->apk_rdwr_flag!=0)||(hyn_ts_data->fw_updating!=0)) 
++	rt_mutex_lock(&hyn_i2c_lock);
++	if(!hyn_ts_data->hyn_esd_running||(hyn_ts_data->apk_rdwr_flag!=0)||(hyn_ts_data->fw_updating!=0))
+ 		goto END;
+-	else hyn_ts_data->hyn_esd_i2c_lock_flag = 1;
+ 
+ 	if(hyn_ts_data->config_chip_product_line==HYN_CHIP_PRODUCT_LINE_MUT_CAP){
+ 
+@@ -258,12 +258,13 @@ static void hyn_esd_check_func(struct work_struct *work)
+ hyn_esd_check_init:
+ 	HYN_ERROR("hyn_esd_check_func reset.\n");
+ 	hyn_esd_poweron_ic(10);
+-	mdelay(100);
++	/* Sleep, not spin: the touch thread may have lifted this worker to its priority. */
++	msleep(100);
+ 	hyn_ts_data->hyn_esd_cur_counter=0;
+ 	
+ 
+ END:
+-	hyn_ts_data->hyn_esd_i2c_lock_flag = 0;
++	rt_mutex_unlock(&hyn_i2c_lock);
+ 	hyn_ts_data->hyn_esd_pre_counter=hyn_ts_data->hyn_esd_cur_counter;
+ 	mutex_lock(&hyn_ts_data->hyn_esd_lock);
+ 	if (hyn_ts_data->hyn_esd_running)
+diff --git a/drivers/input/touchscreen/CST8xx/hynitron_i2c.c b/drivers/input/touchscreen/CST8xx/hynitron_i2c.c
+index 957f2a69a..888d4c506 100644
+--- a/drivers/input/touchscreen/CST8xx/hynitron_i2c.c
++++ b/drivers/input/touchscreen/CST8xx/hynitron_i2c.c
+@@ -10,7 +10,7 @@
+ #include "hynitron_core.h"
+ 
+ /*****************************************************************************/
+-static DEFINE_MUTEX(i2c_rw_access);
++DEFINE_RT_MUTEX(hyn_i2c_lock);
+ 
+ int hyn_i2c_read(struct i2c_client *client, char *writebuf, int writelen, char *readbuf, int readlen)
+ {
+-- 
+2.56.0
+

@@ -1,0 +1,303 @@
+From e3631ef4417181b99cb57bd3861b6c8ef0b0a249 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Tue, 20 Oct 2026 10:20:17 +0200
+Subject: [PATCH] wlan: a join tells no warning that is none
+
+- wlanoidSetWapiAssocInfo returns success for elements without a WAPI
+  element, not INVALID_LENGTH, which logs "(OID WARN)" at every connect.
+- The AP's SAE Commit goes up without the check against transaction 2,
+  which logs "Discard Auth frame".
+- A capability the association response lacks logs at info, once per
+  type, only where the BSS's PHY set and the beacon hold it.
+- A connect request without Extended Capabilities logs at info, for an
+  AIS BSS only, and a missing VHT element at trace.
+- The MSCS list, timer reset, SAE AKM skip, HE ER mode, test chip id and
+  missing broadcast entry lines log at info.
+- kalExternalAuthRequest prints the SSID by its length, as it is not
+  NUL-terminated.
+---
+ .../wlan/core/gen4m/common/wlan_oid.c         |  6 +--
+ connectivity/wlan/core/gen4m/mgmt/cnm_mem.c   |  2 +-
+ connectivity/wlan/core/gen4m/mgmt/cnm_timer.c |  2 +-
+ connectivity/wlan/core/gen4m/mgmt/rlm.c       | 49 +++++++++----------
+ connectivity/wlan/core/gen4m/mgmt/rsn.c       |  2 +-
+ connectivity/wlan/core/gen4m/mgmt/saa_fsm.c   |  7 ++-
+ connectivity/wlan/core/gen4m/nic/nic.c        |  5 +-
+ connectivity/wlan/core/gen4m/nic/nic_tx.c     | 12 ++---
+ .../wlan/core/gen4m/os/linux/gl_init.c        |  2 +-
+ .../wlan/core/gen4m/os/linux/gl_kal.c         |  6 +--
+ 10 files changed, 46 insertions(+), 47 deletions(-)
+
+diff --git a/connectivity/wlan/core/gen4m/common/wlan_oid.c b/connectivity/wlan/core/gen4m/common/wlan_oid.c
+index b2b1f76..4aeec3c 100644
+--- a/connectivity/wlan/core/gen4m/common/wlan_oid.c
++++ b/connectivity/wlan/core/gen4m/common/wlan_oid.c
+@@ -10968,12 +10968,10 @@ wlanoidSetWapiAssocInfo(IN struct ADAPTER *prAdapter,
+ 
+ 	prConnSettings->fgWapiMode = FALSE;
+ 
+-	if (u4SetBufferLen < 20 /* From EID to Group cipher */)
+-		return WLAN_STATUS_INVALID_LENGTH;
+-
++	/* Elements without a WAPI element ask for no WAPI. */
+ 	if (!wextSrchDesiredWAPIIE((uint8_t *) pvSetBuffer,
+ 				   u4SetBufferLen, (uint8_t **) &prWapiInfo))
+-		return WLAN_STATUS_INVALID_LENGTH;
++		return WLAN_STATUS_SUCCESS;
+ 
+ 	if (!prWapiInfo || prWapiInfo->ucLength < 18)
+ 		return WLAN_STATUS_INVALID_LENGTH;
+diff --git a/connectivity/wlan/core/gen4m/mgmt/cnm_mem.c b/connectivity/wlan/core/gen4m/mgmt/cnm_mem.c
+index 89b5e55..f32090e 100644
+--- a/connectivity/wlan/core/gen4m/mgmt/cnm_mem.c
++++ b/connectivity/wlan/core/gen4m/mgmt/cnm_mem.c
+@@ -665,7 +665,7 @@ struct STA_RECORD *cnmStaRecAlloc(struct ADAPTER *prAdapter,
+ 
+ 			LINK_INITIALIZE(&prStaRec->rMscsMonitorList);
+ 			LINK_INITIALIZE(&prStaRec->rMscsTcpMonitorList);
+-			DBGLOG(MEM, WARN, "LINK_INITIALIZE list: %p\n",
++			DBGLOG(MEM, INFO, "LINK_INITIALIZE list: %p\n",
+ 						&prStaRec->rMscsMonitorList);
+ #if CFG_ENABLE_PER_STA_STATISTICS && CFG_ENABLE_PKT_LIFETIME_PROFILE
+ 			prStaRec->u4TotalTxPktsNumber = 0;
+diff --git a/connectivity/wlan/core/gen4m/mgmt/cnm_timer.c b/connectivity/wlan/core/gen4m/mgmt/cnm_timer.c
+index 1917ddc..726b75a 100644
+--- a/connectivity/wlan/core/gen4m/mgmt/cnm_timer.c
++++ b/connectivity/wlan/core/gen4m/mgmt/cnm_timer.c
+@@ -254,7 +254,7 @@ void cnmTimerInitialize(IN struct ADAPTER *prAdapter)
+ 
+ 	KAL_ACQUIRE_SPIN_LOCK(prAdapter, SPIN_LOCK_TIMER);
+ 
+-	log_dbg(CNM, WARN, "reset timer list\n");
++	log_dbg(CNM, INFO, "reset timer list\n");
+ 
+ 	/* Remove all pending timers */
+ 	prTimerList = &(prAdapter->rRootTimer.rLinkHead);
+diff --git a/connectivity/wlan/core/gen4m/mgmt/rlm.c b/connectivity/wlan/core/gen4m/mgmt/rlm.c
+index 55b6e08..839a230 100644
+--- a/connectivity/wlan/core/gen4m/mgmt/rlm.c
++++ b/connectivity/wlan/core/gen4m/mgmt/rlm.c
+@@ -1057,8 +1057,9 @@ static void rlmFillExtCapIE(struct ADAPTER *prAdapter,
+ 			prExtCap->ucLength = ELEM_MAX_LEN_EXT_CAP;
+ 		rlmSyncExtCapIEwithSupplicant(prExtCap->aucCapabilities,
+ 			extCapConn, extCapIeLen);
+-	} else
+-		DBGLOG(RLM, WARN, "extCapConn = NULL!");
++	} else if (IS_BSS_AIS(prBssInfo))
++		DBGLOG(RLM, INFO,
++		       "the connect request holds no Extended Capabilities element, the driver's own are sent\n");
+ 
+ 	while (prExtCap->ucLength > 0 &&
+ 		prExtCap->aucCapabilities[prExtCap->ucLength - 1] == 0) {
+@@ -1858,7 +1859,8 @@ rlmGetSupportRxNssInVhtCap(struct IE_VHT_CAP *prVhtCap)
+ 			!= VHT_CAP_INFO_MCS_NOT_SUPPORTED)
+ 			ucRxNss = 8;
+ 		} else
+-			DBGLOG(RLM, WARN, "null prVhtCap, assume RxNss=1\n");
++			DBGLOG(RLM, TRACE,
++			       "no VHT Capabilities element is taken for this BSS, RxNss is taken as 1\n");
+ 
+ 	return ucRxNss;
+ }
+@@ -3614,37 +3616,31 @@ static void rlmRecAssocRespIeInfoForClient(struct ADAPTER *prAdapter,
+ 		} /* end of switch */
+ 	}	 /* end of IE_FOR_EACH */
+ 
++	/* only a type the BSS's PHY set holds is read from the response */
+ 	if (!fgIsHasHtCap) {
+ 		prStaRec->ucDesiredPhyTypeSet &= ~PHY_TYPE_BIT_HT;
+-		if (prBssDesc) {
+-			if (prBssDesc->ucPhyTypeSet & PHY_TYPE_BIT_HT) {
+-				DBGLOG(RLM, WARN,
+-				       "PhyTypeSet in Beacon and AssocResp are unsync. ");
+-				DBGLOG(RLM, WARN,
+-				       "Follow AssocResp to disable HT.\n");
+-			}
++		if (prBssDesc && RLM_NET_IS_11N(prBssInfo)) {
++			if (prBssDesc->ucPhyTypeSet & PHY_TYPE_BIT_HT)
++				DBGLOG(RLM, INFO,
++				       "the AssocResp holds no HT Capabilities element the driver reads, so HT, which the beacon offers, is off for this association\n");
+ 		}
+ 	}
+ 	if (!fgIsHasVhtCap) {
+ 		prStaRec->ucDesiredPhyTypeSet &= ~PHY_TYPE_BIT_VHT;
+-		if (prBssDesc) {
+-			if (prBssDesc->ucPhyTypeSet & PHY_TYPE_BIT_VHT) {
+-				DBGLOG(RLM, WARN,
+-				       "PhyTypeSet in Beacon and AssocResp are unsync. ");
+-				DBGLOG(RLM, WARN,
+-				       "Follow AssocResp to disable VHT.\n");
+-			}
++		if (prBssDesc && RLM_NET_IS_11AC(prBssInfo)) {
++			if (prBssDesc->ucPhyTypeSet & PHY_TYPE_BIT_VHT)
++				DBGLOG(RLM, INFO,
++				       "the AssocResp holds no VHT Capabilities element the driver reads, so VHT, which the beacon offers, is off for this association\n");
+ 		}
+ 	}
+ #if (CFG_SUPPORT_802_11AX == 1)
+ 	if (fgEfuseCtrlAxOn == 1) {
+ 	if (!fgIsHasHeCap) {
+ 		prStaRec->ucDesiredPhyTypeSet &= ~PHY_TYPE_BIT_HE;
+-		if (prBssDesc) {
+-			if (prBssDesc->ucPhyTypeSet & PHY_TYPE_BIT_HE) {
+-				DBGLOG(RLM, WARN, "PhyTypeSet are unsync. ");
+-				DBGLOG(RLM, WARN, "Disable HE per assoc.\n");
+-			}
++		if (prBssDesc && RLM_NET_IS_11AX(prBssInfo)) {
++			if (prBssDesc->ucPhyTypeSet & PHY_TYPE_BIT_HE)
++				DBGLOG(RLM, INFO,
++				       "the AssocResp holds no HE Capabilities element the driver reads, so HE, which the beacon offers, is off for this association\n");
+ 		}
+ 	}
+ 	}
+@@ -3652,11 +3648,10 @@ static void rlmRecAssocRespIeInfoForClient(struct ADAPTER *prAdapter,
+ #if (CFG_SUPPORT_802_11BE == 1)
+ 	if (!fgIsHasEhtCap) {
+ 		prStaRec->ucDesiredPhyTypeSet &= ~PHY_TYPE_BIT_EHT;
+-		if (prBssDesc) {
+-			if (prBssDesc->ucPhyTypeSet & PHY_TYPE_BIT_EHT) {
+-				DBGLOG(RLM, WARN, "PhyTypeSet are unsync. ");
+-				DBGLOG(RLM, WARN, "Disable EHT per assoc.\n");
+-			}
++		if (prBssDesc && RLM_NET_IS_11BE(prBssInfo)) {
++			if (prBssDesc->ucPhyTypeSet & PHY_TYPE_BIT_EHT)
++				DBGLOG(RLM, INFO,
++				       "the AssocResp holds no EHT Capabilities element the driver reads, so EHT, which the beacon offers, is off for this association\n");
+ 		}
+ 	}
+ #endif
+diff --git a/connectivity/wlan/core/gen4m/mgmt/rsn.c b/connectivity/wlan/core/gen4m/mgmt/rsn.c
+index 84c402a..9edac7d 100644
+--- a/connectivity/wlan/core/gen4m/mgmt/rsn.c
++++ b/connectivity/wlan/core/gen4m/mgmt/rsn.c
+@@ -720,7 +720,7 @@ u_int8_t rsnIsSuitableBSS(IN struct ADAPTER *prAdapter,
+ 	}
+ 
+ 	if (aisGetAuthMode(prAdapter, ucBssIndex) == AUTH_MODE_WPA3_SAE) {
+-		DBGLOG(RSN, WARN, "Don't check AuthKeyMgtSuite with SAE\n");
++		DBGLOG(RSN, INFO, "Don't check AuthKeyMgtSuite with SAE\n");
+ 		return TRUE;
+ 	}
+ 
+diff --git a/connectivity/wlan/core/gen4m/mgmt/saa_fsm.c b/connectivity/wlan/core/gen4m/mgmt/saa_fsm.c
+index abe0a8e..78b7ece 100644
+--- a/connectivity/wlan/core/gen4m/mgmt/saa_fsm.c
++++ b/connectivity/wlan/core/gen4m/mgmt/saa_fsm.c
+@@ -934,12 +934,14 @@ void saaFsmRunEventRxAuth(IN struct ADAPTER *prAdapter,
+ 			  IN struct SW_RFB *prSwRfb)
+ {
+ 	struct STA_RECORD *prStaRec;
++	struct WLAN_AUTH_FRAME *prAuthFrame;
+ 	uint16_t u2StatusCode;
+ 	enum ENUM_AA_STATE eNextState;
+ 	uint8_t ucWlanIdx;
+ 
+ 	prStaRec = cnmGetStaRecByIndex(prAdapter, prSwRfb->ucStaRecIdx);
+ 	ucWlanIdx = prSwRfb->ucWlanIdx;
++	prAuthFrame = (struct WLAN_AUTH_FRAME *) prSwRfb->pvHeader;
+ 
+ 	/* We should have the corresponding Sta Record. */
+ 	if (!prStaRec) {
+@@ -1082,7 +1084,10 @@ void saaFsmRunEventRxAuth(IN struct ADAPTER *prAdapter,
+ 		break;
+ 
+ 	case SAA_STATE_EXTERNAL_AUTH:
+-		if (authCheckRxAuthFrameStatus(prAdapter,
++		/* SAE's Commit, transaction 1, is the supplicant's to check. */
++		if (!(prAuthFrame->u2AuthAlgNum == AUTH_ALGORITHM_NUM_SAE &&
++		      prAuthFrame->u2AuthTransSeqNo == AUTH_TRANSACTION_SEQ_1) &&
++		    authCheckRxAuthFrameStatus(prAdapter,
+ 					       prSwRfb,
+ 					       AUTH_TRANSACTION_SEQ_2,
+ 					       &u2StatusCode) ==
+diff --git a/connectivity/wlan/core/gen4m/nic/nic.c b/connectivity/wlan/core/gen4m/nic/nic.c
+index cba1d09..4d80713 100644
+--- a/connectivity/wlan/core/gen4m/nic/nic.c
++++ b/connectivity/wlan/core/gen4m/nic/nic.c
+@@ -1789,8 +1789,9 @@ uint32_t nicDeactivateNetworkEx(IN struct ADAPTER *prAdapter,
+ 	 * assertion if BMCWlan index is invalid.
+ 	 */
+ 	if (prBssInfo->ucBMCWlanIndex == WTBL_RESERVED_ENTRY) {
+-		DBGLOG(RSN, WARN,
+-		       "Network may be deactivated already, ignore\n");
++		DBGLOG(RSN, INFO,
++		       "BSS %u holds no broadcast entry, nothing to deactivate\n",
++		       ucBssIndex);
+ 		return WLAN_STATUS_NOT_ACCEPTED;
+ 	}
+ 
+diff --git a/connectivity/wlan/core/gen4m/nic/nic_tx.c b/connectivity/wlan/core/gen4m/nic/nic_tx.c
+index d74d2cd..2440479 100644
+--- a/connectivity/wlan/core/gen4m/nic/nic_tx.c
++++ b/connectivity/wlan/core/gen4m/nic/nic_tx.c
+@@ -4489,14 +4489,14 @@ void nicTxUpdateBssDefaultRate(struct BSS_INFO *prBssInfo)
+ #if (CFG_SUPPORT_HE_ER == 1)
+ 	if (prBssInfo->ucErMode == RA_DCM) {
+ 		prBssInfo->u2HwDefaultFixedRateCode = RATE_HE_ER_DCM_MCS_0;
+-		DBGLOG_LIMITED(TX, WARN,
++		DBGLOG_LIMITED(TX, INFO,
+ 		"nicTxUpdateBssDefaultRate:HE_ER DCM\n");
+ 	} else if (prBssInfo->ucErMode == RA_ER_106) {
+ 		prBssInfo->u2HwDefaultFixedRateCode = RATE_HE_ER_TONE_106_MCS_0;
+-		DBGLOG_LIMITED(TX, WARN,
++		DBGLOG_LIMITED(TX, INFO,
+ 		"nicTxUpdateBssDefaultRate:HE_ER 106 tone\n");
+ 	} else {
+-		DBGLOG_LIMITED(TX, WARN,
++		DBGLOG_LIMITED(TX, INFO,
+ 		"nicTxUpdateBssDefaultRate:HE_ER Disable\n");
+ 	}
+ #endif
+@@ -4549,16 +4549,16 @@ void nicTxUpdateStaRecDefaultRate(struct ADAPTER *prAdapter, struct STA_RECORD
+ 		if (prBssInfo && prBssInfo->ucErMode == RA_DCM) {
+ 			prBssInfo->u2HwDefaultFixedRateCode =
+ 				RATE_HE_ER_DCM_MCS_0;
+-			DBGLOG_LIMITED(TX, WARN,
++			DBGLOG_LIMITED(TX, INFO,
+ 			"nicTxUpdateStaRecDefaultRate:HE_ER DCM\n");
+ 		} else if (prBssInfo &&
+ 				prBssInfo->ucErMode == RA_ER_106) {
+ 			prBssInfo->u2HwDefaultFixedRateCode =
+ 				RATE_HE_ER_TONE_106_MCS_0;
+-			DBGLOG_LIMITED(TX, WARN,
++			DBGLOG_LIMITED(TX, INFO,
+ 			"nicTxUpdateStaRecDefaultRate:HE_ER 106 tone\n");
+ 		} else {
+-			DBGLOG_LIMITED(TX, WARN,
++			DBGLOG_LIMITED(TX, INFO,
+ 			"nicTxUpdateStaRecDefaultRate:HE_ER Disable\n");
+ 		}
+ 	}
+diff --git a/connectivity/wlan/core/gen4m/os/linux/gl_init.c b/connectivity/wlan/core/gen4m/os/linux/gl_init.c
+index 787d5aa..eb53cb1 100644
+--- a/connectivity/wlan/core/gen4m/os/linux/gl_init.c
++++ b/connectivity/wlan/core/gen4m/os/linux/gl_init.c
+@@ -4246,7 +4246,7 @@ uint32_t wlanServiceInit(struct GLUE_INFO *prGlueInfo)
+ 	else
+ 		prServiceTest->test_winfo->chip_id = prChipInfo->chip_id;
+ 
+-	DBGLOG(INIT, WARN,
++	DBGLOG(INIT, INFO,
+ 			"%s chip_id = 0x%x\n", __func__,
+ 			prServiceTest->test_winfo->chip_id);
+ 
+diff --git a/connectivity/wlan/core/gen4m/os/linux/gl_kal.c b/connectivity/wlan/core/gen4m/os/linux/gl_kal.c
+index 6f36f11..b8e4408 100644
+--- a/connectivity/wlan/core/gen4m/os/linux/gl_kal.c
++++ b/connectivity/wlan/core/gen4m/os/linux/gl_kal.c
+@@ -9467,9 +9467,9 @@ int kalExternalAuthRequest(IN struct ADAPTER *prAdapter,
+ 	COPY_SSID(params.ssid.ssid, params.ssid.ssid_len,
+ 		  prBssDesc->aucSSID, prBssDesc->ucSSIDLen);
+ 	params.key_mgmt_suite = RSN_AKM_SUITE_SAE;
+-	DBGLOG(AIS, INFO, "[WPA3] "MACSTR" %s %d %d %02x-%02x-%02x-%02x",
+-	       MAC2STR(params.bssid), params.ssid.ssid,
+-	       params.ssid.ssid_len, params.action,
++	DBGLOG(AIS, INFO, "[WPA3] "MACSTR" %.*s %d %d %02x-%02x-%02x-%02x",
++	       MAC2STR(params.bssid), (int)params.ssid.ssid_len,
++	       params.ssid.ssid, params.ssid.ssid_len, params.action,
+ 	       (uint8_t) (params.key_mgmt_suite & 0x000000FF),
+ 	       (uint8_t) ((params.key_mgmt_suite >> 8) & 0x000000FF),
+ 	       (uint8_t) ((params.key_mgmt_suite >> 16) & 0x000000FF),
+-- 
+2.56.0
+

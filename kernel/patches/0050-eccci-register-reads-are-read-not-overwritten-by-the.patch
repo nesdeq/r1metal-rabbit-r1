@@ -1,0 +1,83 @@
+From a9d51e78d12f3d432112f3e0dd8109d665932909 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 16:33:18 +0200
+Subject: [PATCH] eccci: register reads are read, not overwritten by their
+ return code
+
+The CLDMA reset sets the busy bit in the wakeup source mask it reads,
+and gives up on a failed read; the write-only reset registers take their
+mask alone. Upstream takes regmap_read()'s return code, 0, for the value
+read, so the mask register loses every other bit.
+---
+ .../misc/mediatek/eccci/hif/ccci_cldma_plat.c | 29 ++++++++-----------
+ 1 file changed, 12 insertions(+), 17 deletions(-)
+
+diff --git a/drivers/misc/mediatek/eccci/hif/ccci_cldma_plat.c b/drivers/misc/mediatek/eccci/hif/ccci_cldma_plat.c
+index 1dd326059..d5ffd9b66 100644
+--- a/drivers/misc/mediatek/eccci/hif/ccci_cldma_plat.c
++++ b/drivers/misc/mediatek/eccci/hif/ccci_cldma_plat.c
+@@ -50,49 +50,44 @@
+ void cldma_plat_hw_reset(unsigned char md_id)
+ {
+ 	unsigned int reg_value;
++	int ret;
+ 	//struct ccci_modem *md = ccci_md_get_modem_by_id(md_id);
+ 
+ 	CCCI_NORMAL_LOG(md_id, TAG, "%s:rst cldma\n", __func__);
+ 
+ 	/* reset cldma hw: AO Domain */
+-	reg_value = regmap_read(cldma_ctrl->plat_val.infra_ao_base,
+-		INFRA_RST0_REG_AO, &reg_value);
+-	reg_value &= ~(CLDMA_AO_RST_MASK); /* the bits in reg is WO, */
+-	reg_value |= (CLDMA_AO_RST_MASK);/* so only this bit effective */
++	/* the bits in reg are WO, so only this bit is effective */
++	reg_value = CLDMA_AO_RST_MASK;
+ 	regmap_write(cldma_ctrl->plat_val.infra_ao_base,
+ 		INFRA_RST0_REG_AO, reg_value);
+ 	CCCI_BOOTUP_LOG(md_id, TAG, "%s:clear reset\n", __func__);
+ 
+ 	/* reset cldma clr */
+-	reg_value = regmap_read(cldma_ctrl->plat_val.infra_ao_base,
+-		INFRA_RST1_REG_AO, &reg_value);
+-	reg_value &= ~(CLDMA_AO_RST_MASK);/* read no use, maybe a time delay */
+-	reg_value |= (CLDMA_AO_RST_MASK);
++	reg_value = CLDMA_AO_RST_MASK;
+ 	regmap_write(cldma_ctrl->plat_val.infra_ao_base,
+ 		INFRA_RST1_REG_AO, reg_value);
+ 	CCCI_BOOTUP_LOG(md_id, TAG, "%s:done\n", __func__);
+ 
+ 	/* reset cldma hw: PD Domain */
+-	reg_value = regmap_read(cldma_ctrl->plat_val.infra_ao_base,
+-		INFRA_RST0_REG_PD, &reg_value);
+-	reg_value &= ~(CLDMA_PD_RST_MASK);
+-	reg_value |= (CLDMA_PD_RST_MASK);
++	reg_value = CLDMA_PD_RST_MASK;
+ 	regmap_write(cldma_ctrl->plat_val.infra_ao_base,
+ 		INFRA_RST0_REG_PD, reg_value);
+ 	CCCI_BOOTUP_LOG(md_id, TAG, "%s:clear reset\n", __func__);
+ 
+ 	/* reset cldma clr */
+-	reg_value = regmap_read(cldma_ctrl->plat_val.infra_ao_base,
+-		INFRA_RST1_REG_PD, &reg_value);
+-	reg_value &= ~(CLDMA_PD_RST_MASK);
+-	reg_value |= (CLDMA_PD_RST_MASK);
++	reg_value = CLDMA_PD_RST_MASK;
+ 	regmap_write(cldma_ctrl->plat_val.infra_ao_base,
+ 		INFRA_RST1_REG_PD, reg_value);
+ 	CCCI_DEBUG_LOG(md_id, TAG, "%s:done\n", __func__);
+ 
+ 	/* set cldma wakeup source mask */
+-	reg_value = regmap_read(cldma_ctrl->plat_val.infra_ao_base,
++	ret = regmap_read(cldma_ctrl->plat_val.infra_ao_base,
+ 		INFRA_CLDMA_CTRL_REG, &reg_value);
++	if (ret) {
++		CCCI_ERROR_LOG(md_id, TAG,
++			"read cldma ctrl reg error %d\n", ret);
++		return;
++	}
+ 	reg_value |= (CLDMA_IP_BUSY_MASK);
+ 	regmap_write(cldma_ctrl->plat_val.infra_ao_base,
+ 		INFRA_CLDMA_CTRL_REG, reg_value);
+-- 
+2.56.0
+

@@ -1,0 +1,115 @@
+From ff0d1f5bfc32bcf4dad7a14f5ae988c50471c520 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 20:03:28 +0200
+Subject: [PATCH] trace: MediaTek's systrace marks make no trace_printk users
+
+event_trace_printk and CMDQ's trace marks check their format and
+record nothing, and the marks' callee, tracing_mark_write, is removed.
+Upstream's formats in __trace_printk_fmt make the kernel find
+trace_printk users at boot, print its banner and expand the ring
+buffer, and the CMDQ marks write two entries per mailbox packet.
+---
+ drivers/mailbox/mtk-cmdq-mailbox.c       |  7 -------
+ include/linux/mailbox/mtk-cmdq-mailbox.h | 25 ++++--------------------
+ include/linux/trace_events.h             | 20 +++++--------------
+ 3 files changed, 9 insertions(+), 43 deletions(-)
+
+diff --git a/drivers/mailbox/mtk-cmdq-mailbox.c b/drivers/mailbox/mtk-cmdq-mailbox.c
+index 13a35377f..255c10034 100644
+--- a/drivers/mailbox/mtk-cmdq-mailbox.c
++++ b/drivers/mailbox/mtk-cmdq-mailbox.c
+@@ -2488,13 +2488,6 @@ void cmdq_event_verify(void *chan, u16 event_id)
+ }
+ EXPORT_SYMBOL(cmdq_event_verify);
+ 
+-void tracing_mark_write(const char *buf)
+-{
+-	preempt_disable();
+-	trace_puts(buf);
+-	preempt_enable();
+-}
+-
+ unsigned long cmdq_get_tracing_mark(void)
+ {
+ 	static unsigned long __read_mostly tracing_mark_write_addr;
+diff --git a/include/linux/mailbox/mtk-cmdq-mailbox.h b/include/linux/mailbox/mtk-cmdq-mailbox.h
+index 65a550e78..f90422952 100644
+--- a/include/linux/mailbox/mtk-cmdq-mailbox.h
++++ b/include/linux/mailbox/mtk-cmdq-mailbox.h
+@@ -189,28 +189,12 @@ do { \
+ #define cmdq_dump(fmt, args...) \
+ 	pr_notice("[cmdq][err] "fmt"\n", ##args)
+ 
+-/* CMDQ FTRACE */
+-#define cmdq_trace_begin(fmt, args...) do { \
+-	char buf[MAX_INPUT]; \
+-	s32 len = snprintf( \
+-		buf, sizeof(buf), "B|%d|"fmt"\n", current->tgid, ##args); \
+-	if (len >= MAX_INPUT) \
+-		buf[MAX_INPUT - 1] = '\n'; \
+-	tracing_mark_write(buf); \
+-} while (0)
++/* No systrace marks are made: the format is checked, nothing is formatted or recorded. */
++#define cmdq_trace_begin(fmt, args...) no_printk(fmt, ##args)
+ 
+-#define cmdq_trace_end() do { \
+-	tracing_mark_write("E\n"); \
+-} while (0)
++#define cmdq_trace_end() do { } while (0)
+ 
+-#define cmdq_trace_c(fmt, args...) do { \
+-	char buf[MAX_INPUT]; \
+-	s32 len = snprintf( \
+-		buf, sizeof(buf), "C|"fmt, ##args); \
+-	if (len >= MAX_INPUT) \
+-		buf[MAX_INPUT - 1] = '\n'; \
+-	tracing_mark_write(buf); \
+-} while (0)
++#define cmdq_trace_c(fmt, args...) no_printk(fmt, ##args)
+ 
+ extern int cmdq_trace;
+ #define cmdq_trace_ex_begin(fmt, args...) do { \
+@@ -262,7 +246,6 @@ void cmdq_set_event(void *chan, u16 event_id);
+ void cmdq_clear_event(void *chan, u16 event_id);
+ u32 cmdq_get_event(void *chan, u16 event_id);
+ void cmdq_event_verify(void *chan, u16 event_id);
+-void tracing_mark_write(const char *buf);
+ unsigned long cmdq_get_tracing_mark(void);
+ u32 cmdq_thread_timeout_backup(struct cmdq_thread *thread, const u32 ms);
+ void cmdq_thread_timeout_restore(struct cmdq_thread *thread, const u32 ms);
+diff --git a/include/linux/trace_events.h b/include/linux/trace_events.h
+index fca9d6bcc..94813fb72 100644
+--- a/include/linux/trace_events.h
++++ b/include/linux/trace_events.h
+@@ -541,23 +541,13 @@ extern int trace_event_get_offsets(struct trace_event_call *call);
+ 
+ int trace_set_clr_event(const char *system, const char *event, int set);
+ 
+-/*
+- * The double __builtin_constant_p is because gcc will give us an error
+- * if we try to allocate the static variable to fmt if it is not a
+- * constant. Even with the outer if statement optimizing out.
+- */
++/* MediaTek's systrace marks are its only callers and nothing reads them: the format is checked, nothing is recorded. */
+ #define event_trace_printk(ip, fmt, args...)				\
+ do {									\
+-	__trace_printk_check_format(fmt, ##args);			\
+-	tracing_record_cmdline(current);				\
+-	if (__builtin_constant_p(fmt)) {				\
+-		static const char *trace_printk_fmt __used		\
+-		  __attribute__((section("__trace_printk_fmt"))) =	\
+-			__builtin_constant_p(fmt) ? fmt : NULL;		\
+-									\
+-		__trace_bprintk(ip, trace_printk_fmt, ##args);		\
+-	} else								\
+-		__trace_printk(ip, fmt, ##args);			\
++	if (0) {							\
++		(void)(ip);						\
++		__trace_printk_check_format(fmt, ##args);		\
++	}								\
+ } while (0)
+ 
+ #ifdef CONFIG_PERF_EVENTS
+-- 
+2.56.0
+

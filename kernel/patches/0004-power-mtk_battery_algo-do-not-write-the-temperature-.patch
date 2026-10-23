@@ -1,0 +1,48 @@
+From b1f0bb343e9dd359de88bdf424d3d2d35e7562be Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Thu, 8 Oct 2026 18:36:29 +0200
+Subject: [PATCH] power: mtk_battery_algo: do not write the temperature gap as
+ the level
+
+set_fg_bat_tmp_c_gap() only writes the gap of 1 to BAT_PROP_UISOC, the
+level in hundredths of a percent, so the battery reads 0 % until the
+same pass writes the real level back. The function and its calls go.
+---
+ drivers/power/supply/mtk_battery_algo.c | 7 -------
+ 1 file changed, 7 deletions(-)
+
+diff --git a/drivers/power/supply/mtk_battery_algo.c b/drivers/power/supply/mtk_battery_algo.c
+index f7aba4466..7f4fd6162 100644
+--- a/drivers/power/supply/mtk_battery_algo.c
++++ b/drivers/power/supply/mtk_battery_algo.c
+@@ -14,11 +14,6 @@ int set_kernel_soc(struct mtk_battery *gm, int _soc)
+ 	return 0;
+ }
+ 
+-void set_fg_bat_tmp_c_gap(int tmp)
+-{
+-	battery_set_property(BAT_PROP_UISOC, tmp);
+-}
+-
+ void set_fg_time(struct mtk_battery *gm, int _time)
+ {
+ 	struct timespec time, time_now, end_time;
+@@ -1431,7 +1426,6 @@ void fgr_temp_c_int_handler(struct mtk_battery *gm)
+ 
+ 	fgr_set_soc_by_vc_mode(gm);
+ 	algo->fg_bat_tmp_c_gap = 1;
+-	set_fg_bat_tmp_c_gap(algo->fg_bat_tmp_c_gap);
+ }
+ 
+ void fgr_update_fg_bat_int1_threshold(struct mtk_battery *gm)
+@@ -1769,7 +1763,6 @@ void fgr_set_int1(struct mtk_battery *gm)
+ 
+ 	/*set bat tempture  */
+ 	algo->fg_bat_tmp_c_gap = 1;
+-	set_fg_bat_tmp_c_gap(algo->fg_bat_tmp_c_gap);
+ 	bm_debug("[%s]fg_bat_tmp_c_gap %d\n",
+ 		__func__, algo->fg_bat_tmp_c_gap);
+ 
+-- 
+2.56.0
+

@@ -1,0 +1,186 @@
+From 3ad85a03695bd607717bfda80c2aa61e3992cf9a Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 18:21:50 +0200
+Subject: [PATCH] power: the idle governor's dumps run only when dynamic debug
+ asks for them
+
+dynamic_debug_enabled(fmt) is true while the dynamic debug callsite of
+that format is switched on, and false without CONFIG_DYNAMIC_DEBUG.
+The MCDI heart beat, idle count and idle block reason dumps, run at
+every idle selection, do their work and print, at KERN_DEBUG, only
+while theirs is on; the block counts reset either way, and the idle
+ratio report keeps its own switch.
+---
+ .../base/power/mcdi/mcdi_v1/mtk_mcdi_main.c   |  6 +++-
+ .../base/power/spm/common/mtk_idle_profile.c  | 34 ++++++++++++-------
+ .../power/spm/common/mtk_spm_resource_req.c   |  3 +-
+ include/linux/dynamic_debug.h                 |  8 +++++
+ 4 files changed, 36 insertions(+), 15 deletions(-)
+
+diff --git a/drivers/misc/mediatek/base/power/mcdi/mcdi_v1/mtk_mcdi_main.c b/drivers/misc/mediatek/base/power/mcdi/mcdi_v1/mtk_mcdi_main.c
+index d159ea25b..75c11f853 100644
+--- a/drivers/misc/mediatek/base/power/mcdi/mcdi_v1/mtk_mcdi_main.c
++++ b/drivers/misc/mediatek/base/power/mcdi/mcdi_v1/mtk_mcdi_main.c
+@@ -17,6 +17,7 @@
+ #include <linux/uaccess.h>
+ #include <linux/kthread.h>
+ #include <linux/delay.h>
++#include <linux/dynamic_debug.h>
+ 
+ #include <mtk_cpuidle.h>
+ #include <mtk_idle.h>
+@@ -562,6 +563,9 @@ void mcdi_heart_beat_log_dump(void)
+ 	unsigned int cluster_mask = 0;
+ 	struct mcdi_feature_status feature_stat;
+ 
++	if (!dynamic_debug_enabled("mcdi heart beat\n"))
++		return;
++
+ 	spin_lock_irqsave(&mcdi_heart_beat_spin_lock, flags);
+ 
+ 	mcdi_heart_beat_log_curr = idle_get_current_time_ms();
+@@ -625,7 +629,7 @@ void mcdi_heart_beat_log_dump(void)
+ 	mcdi_buf_append(buf, ", system_idle_hint = %08x",
+ 						system_idle_hint_result_raw());
+ 
+-	printk_deferred("%s\n", get_mcdi_buf(buf));
++	printk_deferred(KERN_DEBUG "%s\n", get_mcdi_buf(buf));
+ }
+ 
+ int wfi_enter(int cpu)
+diff --git a/drivers/misc/mediatek/base/power/spm/common/mtk_idle_profile.c b/drivers/misc/mediatek/base/power/spm/common/mtk_idle_profile.c
+index ac7961a1d..8485cc550 100644
+--- a/drivers/misc/mediatek/base/power/spm/common/mtk_idle_profile.c
++++ b/drivers/misc/mediatek/base/power/spm/common/mtk_idle_profile.c
+@@ -4,6 +4,7 @@
+  */
+ 
+ #include <linux/kernel.h>
++#include <linux/dynamic_debug.h>
+ #include <linux/math64.h>
+ 
+ #include <mtk_idle.h>
+@@ -329,6 +330,10 @@ void mtk_idle_dump_cnt_in_interval(void)
+ 	unsigned long long idle_cnt_dump_curr_time = 0;
+ 	unsigned long flags;
+ 	bool dump_log = false;
++	bool dump_cnt = dynamic_debug_enabled("idle counts\n");
++
++	if (!dump_cnt && !idle_ratio_en)
++		return;
+ 
+ 	idle_cnt_dump_curr_time = idle_get_current_time_ms();
+ 
+@@ -349,14 +354,17 @@ void mtk_idle_dump_cnt_in_interval(void)
+ 		return;
+ 
+ 	/* dump idle count */
+-	reset_log();
++	if (dump_cnt) {
++		reset_log();
+ 
+-	mtk_idle_dump_cnt(IDLE_TYPE_DP);
+-	mtk_idle_dump_cnt(IDLE_TYPE_SO3);
+-	mtk_idle_dump_cnt(IDLE_TYPE_SO);
++		mtk_idle_dump_cnt(IDLE_TYPE_DP);
++		mtk_idle_dump_cnt(IDLE_TYPE_SO3);
++		mtk_idle_dump_cnt(IDLE_TYPE_SO);
+ 
+-	/* dump log */
+-	printk_deferred("[name:spm&]Power/swap %s\n", get_log());
++		/* dump log */
++		printk_deferred(KERN_DEBUG "[name:spm&]Power/swap %s\n",
++				get_log());
++	}
+ 
+ 	/* dump idle ratio */
+ 	if (idle_ratio_en) {
+@@ -422,7 +430,7 @@ bool mtk_idle_select_state(int type, int reason)
+ 
+ 	spin_unlock_irqrestore(&idle_blocking_spin_lock, flags);
+ 
+-	if (dump_block_info) {
++	if (dump_block_info && dynamic_debug_enabled("idle block reasons\n")) {
+ 		/* xxidle, rgidle count */
+ 		reset_idle_buf(idle_state_log);
+ 		idle_buf_append(idle_state_log
+@@ -433,7 +441,7 @@ bool mtk_idle_select_state(int type, int reason)
+ 				, "[%d] = (%lu), "
+ 				, i, p_idle->cnt[i]);
+ 
+-		printk_deferred("[name:spm&]Power/swap %s\n"
++		printk_deferred(KERN_DEBUG "[name:spm&]Power/swap %s\n"
+ 				, get_idle_buf(idle_state_log));
+ 
+ 		/* block category */
+@@ -445,7 +453,7 @@ bool mtk_idle_select_state(int type, int reason)
+ 						, "[%s] = %lu, "
+ 						, mtk_idle_block_reason_name(i)
+ 						, p_idle->block_cnt[i]);
+-		printk_deferred("[name:spm&]Power/swap %s\n"
++		printk_deferred(KERN_DEBUG "[name:spm&]Power/swap %s\n"
+ 				, get_idle_buf(idle_state_log));
+ 
+ 		/* block mask */
+@@ -455,14 +463,14 @@ bool mtk_idle_select_state(int type, int reason)
+ 		idle_state_log.p_idx += mtk_idle_cond_append_info(true, type,
+ 			idle_state_log.p_idx,
+ 			IDLE_LOG_BUF_LEN - strlen(idle_state_log.buf));
+-		printk_deferred("[name:spm&]Power/swap %s\n"
++		printk_deferred(KERN_DEBUG "[name:spm&]Power/swap %s\n"
+ 				, get_idle_buf(idle_state_log));
+ 
+-		memset(p_idle->block_cnt, 0,
+-			NR_REASONS * sizeof(p_idle->block_cnt[0]));
+-
+ 		spm_resource_req_block_dump();
+ 	}
++	if (dump_block_info)
++		memset(p_idle->block_cnt, 0,
++			NR_REASONS * sizeof(p_idle->block_cnt[0]));
+ 	p_idle->block_cnt[reason]++;
+ 	return false;
+ }
+diff --git a/drivers/misc/mediatek/base/power/spm/common/mtk_spm_resource_req.c b/drivers/misc/mediatek/base/power/spm/common/mtk_spm_resource_req.c
+index 78271df19..ac8ea7fc8 100644
+--- a/drivers/misc/mediatek/base/power/spm/common/mtk_spm_resource_req.c
++++ b/drivers/misc/mediatek/base/power/spm/common/mtk_spm_resource_req.c
+@@ -333,7 +333,8 @@ void spm_resource_req_block_dump(void)
+ 	spin_lock_irqsave(&spm_resource_desc_update_lock, flags);
+ 
+ 	if (curr_res_usage == SPM_RESOURCE_ALL) {
+-		printk_deferred("[name:spm&][resource_req_block] user: 0x%x, 0x%x\n",
++		printk_deferred(KERN_DEBUG
++				"[name:spm&][resource_req_block] user: 0x%x, 0x%x\n",
+ 				resc_desc[0].user_usage[0],
+ 				resc_desc[0].user_usage[1]);
+ 	}
+diff --git a/include/linux/dynamic_debug.h b/include/linux/dynamic_debug.h
+index ba37379e2..2cf9055d0 100644
+--- a/include/linux/dynamic_debug.h
++++ b/include/linux/dynamic_debug.h
+@@ -264,6 +264,13 @@ do {								\
+ 			       buf, len, ascii);		\
+ } while (0)
+ 
++/* Whether this callsite is switched on in the dynamic debug control, for work only a debug print needs. */
++#define dynamic_debug_enabled(fmt)				\
++({								\
++	DEFINE_DYNAMIC_DEBUG_METADATA(descriptor, fmt);		\
++	DYNAMIC_DEBUG_BRANCH(descriptor);			\
++})
++
+ #else
+ 
+ #include <linux/string.h>
+@@ -290,6 +297,7 @@ static inline int ddebug_dyndbg_module_param_cb(char *param, char *val,
+ 	do { if (0) printk(KERN_DEBUG pr_fmt(fmt), ##__VA_ARGS__); } while (0)
+ #define dynamic_dev_dbg(dev, fmt, ...)					\
+ 	do { if (0) dev_printk(KERN_DEBUG, dev, fmt, ##__VA_ARGS__); } while (0)
++#define dynamic_debug_enabled(fmt) false
+ #endif
+ 
+ #endif
+-- 
+2.56.0
+

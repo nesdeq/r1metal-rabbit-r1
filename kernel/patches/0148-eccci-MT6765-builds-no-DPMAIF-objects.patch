@@ -1,0 +1,33 @@
+From b142266baf9308a2bd8a70b609bd7da5c49baf80 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Tue, 20 Oct 2026 23:35:29 +0200
+Subject: [PATCH] eccci: MT6765 builds no DPMAIF objects
+
+The ccci HIF Makefile builds ccci_hif_dpmaif.o and dpmaif_drv.o for
+every platform but mt6765, whose 6293 modem runs on CLDMA and CCIF:
+DPMAIF serves modems from generation 6297 on, and its probe binds only a
+mediatek,dpmaif node the R1's tree lacks.
+---
+ drivers/misc/mediatek/eccci/hif/Makefile | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/eccci/hif/Makefile b/drivers/misc/mediatek/eccci/hif/Makefile
+index 0fd595c73..de90aeeba 100644
+--- a/drivers/misc/mediatek/eccci/hif/Makefile
++++ b/drivers/misc/mediatek/eccci/hif/Makefile
+@@ -29,7 +29,11 @@ obj-$(CONFIG_MTK_ECCCI_DRIVER) := ccci_hif_all.o
+ ccci_hif_all-y := ccci_hif.o \
+ 		ccci_cldma_plat.o \
+ 		ccci_hif_cldma.o \
+-		ccci_hif_dpmaif.o dpmaif_drv.o ccci_debug_info.o
++		ccci_debug_info.o
++# MT6765's modem runs on CLDMA and CCIF, no DPMAIF
++ifeq (,$(filter $(CONFIG_MTK_PLATFORM), "mt6765"))
++ccci_hif_all-y += ccci_hif_dpmaif.o dpmaif_drv.o
++endif
+ 
+ ccci_hif_all-y += net_speed_monitor.o
+ ccci_hif_all-y += ccci_ringbuf.o ccci_hif_ccif.o
+-- 
+2.56.0
+

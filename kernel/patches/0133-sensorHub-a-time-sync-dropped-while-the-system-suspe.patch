@@ -1,0 +1,29 @@
+From 3b4f1f453be6f33b1b68638f78ad84f5cbe3c02a Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 22:58:47 +0200
+Subject: [PATCH] sensorHub: a time sync dropped while the system suspends is
+ told as information
+
+The time sync sensor_send_timestamp_to_hub drops between
+PM_SUSPEND_PREPARE and PM_POST_SUSPEND prints at info: the drop is by
+design, and the PM_POST_SUSPEND notifier sends a fresh sync.
+---
+ .../mediatek/sensors-1.0/sensorHub/SCP_nanoHub/SCP_nanoHub.c    | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/sensors-1.0/sensorHub/SCP_nanoHub/SCP_nanoHub.c b/drivers/misc/mediatek/sensors-1.0/sensorHub/SCP_nanoHub/SCP_nanoHub.c
+index 9da69e7e2..5114b8eac 100644
+--- a/drivers/misc/mediatek/sensors-1.0/sensorHub/SCP_nanoHub/SCP_nanoHub.c
++++ b/drivers/misc/mediatek/sensors-1.0/sensorHub/SCP_nanoHub/SCP_nanoHub.c
+@@ -1279,7 +1279,7 @@ static int sensor_send_timestamp_to_hub(void)
+ 	struct SCP_sensorHub_data *obj = obj_data;
+ 
+ 	if (READ_ONCE(rtc_compensation_suspend)) {
+-		pr_err("rtc_compensation_suspend suspend,drop time sync\n");
++		pr_info("rtc_compensation_suspend suspend,drop time sync\n");
+ 		return 0;
+ 	}
+ 
+-- 
+2.56.0
+

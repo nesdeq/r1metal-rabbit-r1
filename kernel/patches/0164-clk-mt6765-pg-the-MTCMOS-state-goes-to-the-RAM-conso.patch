@@ -1,0 +1,29 @@
+From 178c7e89d4a44c92101413149efd906c5e9cf98c Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 10:28:45 +0200
+Subject: [PATCH] clk: mt6765-pg: the MTCMOS state goes to the RAM console
+ whole
+
+ram_console_update's loop runs over the eight words of data, so the RAM
+console records the power domain flow and bus protect state. Upstream's
+condition, ARRAY_SIZE(data) < 8, never holds.
+---
+ drivers/clk/mediatek/clk-mt6765-pg.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/clk/mediatek/clk-mt6765-pg.c b/drivers/clk/mediatek/clk-mt6765-pg.c
+index 82f9a1120..f39ae3150 100644
+--- a/drivers/clk/mediatek/clk-mt6765-pg.c
++++ b/drivers/clk/mediatek/clk-mt6765-pg.c
+@@ -681,7 +681,7 @@ static void ram_console_update(void)
+ 	}
+ 
+ #ifdef CONFIG_MTK_RAM_CONSOLE
+-	for (i = 0; ARRAY_SIZE(data) < 8; i++)
++	for (i = 0; i < ARRAY_SIZE(data); i++)
+ 		aee_rr_rec_clk(i, data[i]);
+ 	/*todo: add each domain's debug register to ram console*/
+ #endif
+-- 
+2.56.0
+

@@ -1,0 +1,55 @@
+From 62a7b4522ce89944556ec2d12243eaef468d626f Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 16:59:13 +0200
+Subject: [PATCH] cfg80211: regulatory.db is optional
+
+Without regulatory.db the core keeps its built-in world domain, so the
+file is requested with firmware_request_nowait_nowarn and its absence
+is told at info. query_regdb_file frees its copy of alpha2 when the
+request fails.
+---
+ net/wireless/reg.c | 14 ++++++++++----
+ 1 file changed, 10 insertions(+), 4 deletions(-)
+
+diff --git a/net/wireless/reg.c b/net/wireless/reg.c
+index c7825b951..9edda5b82 100644
+--- a/net/wireless/reg.c
++++ b/net/wireless/reg.c
+@@ -1016,7 +1016,7 @@ static void regdb_fw_cb(const struct firmware *fw, void *context)
+ 	void *db;
+ 
+ 	if (!fw) {
+-		pr_info("failed to load regulatory.db\n");
++		pr_info("no regulatory.db, the built-in world domain stays\n");
+ 		set_error = -ENODATA;
+ 	} else if (!valid_regdb(fw->data, fw->size)) {
+ 		pr_info("loaded regulatory.db is malformed or signature is missing/invalid\n");
+@@ -1050,6 +1050,8 @@ static void regdb_fw_cb(const struct firmware *fw, void *context)
+ 
+ static int query_regdb_file(const char *alpha2)
+ {
++	int err;
++
+ 	ASSERT_RTNL();
+ 
+ 	if (regdb)
+@@ -1059,9 +1061,13 @@ static int query_regdb_file(const char *alpha2)
+ 	if (!alpha2)
+ 		return -ENOMEM;
+ 
+-	return request_firmware_nowait(THIS_MODULE, true, "regulatory.db",
+-				       &reg_pdev->dev, GFP_KERNEL,
+-				       (void *)alpha2, regdb_fw_cb);
++	err = firmware_request_nowait_nowarn(THIS_MODULE, "regulatory.db",
++					     &reg_pdev->dev, GFP_KERNEL,
++					     (void *)alpha2, regdb_fw_cb);
++	if (err)
++		kfree(alpha2);
++
++	return err;
+ }
+ 
+ int reg_reload_regdb(void)
+-- 
+2.56.0
+

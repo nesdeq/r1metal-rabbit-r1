@@ -1,0 +1,35 @@
+From 3e617a99d4ca2b4d81e93869a5b8b38f30949d55 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 16:35:20 +0200
+Subject: [PATCH] aee: mrdump: aee_save_modules is defined only for a kernel
+ with modules
+
+save_modules, which aee_save_modules calls, exists only with
+CONFIG_MODULES, so a kernel without module support fails to link. Its
+one caller, mrdump_modules_info, calls it only under CONFIG_MODULES.
+---
+ drivers/misc/mediatek/aee/mrdump/mrdump_helper.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/misc/mediatek/aee/mrdump/mrdump_helper.c b/drivers/misc/mediatek/aee/mrdump/mrdump_helper.c
+index 3fb62b3a3..e392cf960 100644
+--- a/drivers/misc/mediatek/aee/mrdump/mrdump_helper.c
++++ b/drivers/misc/mediatek/aee/mrdump/mrdump_helper.c
+@@ -618,12 +618,14 @@ void aee_print_modules(void)
+ 	print_modules();
+ }
+ 
++#ifdef CONFIG_MODULES
+ extern int save_modules(char *mbuf, int mbufsize);
+ /* MUST ensure called when preempt disabled already */
+ int aee_save_modules(char *mbuf, int mbufsize)
+ {
+ 	return save_modules(mbuf, mbufsize);
+ }
++#endif
+ 
+ int get_HW_cpuid(void)
+ {
+-- 
+2.56.0
+

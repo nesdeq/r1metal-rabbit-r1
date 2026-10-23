@@ -1,0 +1,30 @@
+From e77527aae03b1cd5d84c22ddbb9a25041668e46d Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 20:03:28 +0200
+Subject: [PATCH] jpeg: the encoder's interrupt starts disabled
+
+The driver enables the encoder's interrupt at power on and disables it
+at power off, so jpeg_probe disables it once requested; left enabled,
+the first encode warns of an unbalanced enable.
+---
+ drivers/misc/mediatek/jpeg/v2/jpeg_drv.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/drivers/misc/mediatek/jpeg/v2/jpeg_drv.c b/drivers/misc/mediatek/jpeg/v2/jpeg_drv.c
+index 49c1f3a13..46846f45f 100644
+--- a/drivers/misc/mediatek/jpeg/v2/jpeg_drv.c
++++ b/drivers/misc/mediatek/jpeg/v2/jpeg_drv.c
+@@ -2381,6 +2381,10 @@ static int jpeg_probe(struct platform_device *pdev)
+ 		 jpeg_drv_enc_isr, IRQF_TRIGGER_LOW,
+ 		 "jpeg_enc_driver", NULL))
+ 		JPEG_ERR("JPEG ENC Driver request irq failed\n");
++	else {
++		/* The encoder's interrupt is enabled only while the encoder is powered. */
++		disable_irq(gJpegqDev.encIrqId);
++	}
+     #endif
+ 	#ifdef JPEG_DEC_DRIVER
+ 		enable_irq(gJpegqDev.decIrqId);
+-- 
+2.56.0
+

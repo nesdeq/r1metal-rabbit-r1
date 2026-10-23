@@ -1,0 +1,75 @@
+From 63e25b46596e08ee24b32e7fd7858a6db20f7139 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 10:40:21 +0200
+Subject: [PATCH] wmt: starting a driver that is not built is no failure
+
+do_bluetooth_drv_init and do_gps_drv_init return 0 when their driver is
+not built, so starting the drivers fails only for a built one, and their
+failure lines name Bluetooth and GPS instead of "common".
+---
+ .../common/common_detect/drv_init/bluetooth_drv_init.c        | 3 ++-
+ connectivity/common/common_detect/drv_init/conn_drv_init.c    | 4 ++--
+ connectivity/common/common_detect/drv_init/gps_drv_init.c     | 3 ++-
+ 3 files changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/connectivity/common/common_detect/drv_init/bluetooth_drv_init.c b/connectivity/common/common_detect/drv_init/bluetooth_drv_init.c
+index d89d5da..559d158 100644
+--- a/connectivity/common/common_detect/drv_init/bluetooth_drv_init.c
++++ b/connectivity/common/common_detect/drv_init/bluetooth_drv_init.c
+@@ -30,13 +30,14 @@ int __attribute__((weak)) mtk_wcn_stpbt_drv_init()
+ 
+ int do_bluetooth_drv_init(int chip_id)
+ {
+-	int i_ret = -1;
++	int i_ret = 0;
+ 
+ #ifdef CONFIG_MTK_COMBO_BT
+ 	WMT_DETECT_PR_INFO("start to do bluetooth driver init\n");
+ 	i_ret = mtk_wcn_stpbt_drv_init();
+ 	WMT_DETECT_PR_INFO("finish bluetooth driver init, i_ret:%d\n", i_ret);
+ #else
++	/* Not built: nothing to start, no failure. */
+ 	WMT_DETECT_PR_INFO("CONFIG_MTK_COMBO_BT is not defined\n");
+ #endif
+ 	return i_ret;
+diff --git a/connectivity/common/common_detect/drv_init/conn_drv_init.c b/connectivity/common/common_detect/drv_init/conn_drv_init.c
+index ab03a5b..b2c1f9f 100644
+--- a/connectivity/common/common_detect/drv_init/conn_drv_init.c
++++ b/connectivity/common/common_detect/drv_init/conn_drv_init.c
+@@ -47,12 +47,12 @@ int do_connectivity_driver_init(int chip_id)
+ 	tmp_ret = do_bluetooth_drv_init(chip_id);
+ 	i_ret += tmp_ret;
+ 	if (tmp_ret)
+-		WMT_DETECT_PR_ERR("do common driver init failed, ret:%d\n", tmp_ret);
++		WMT_DETECT_PR_ERR("do bluetooth driver init failed, ret:%d\n", tmp_ret);
+ 
+ 	tmp_ret = do_gps_drv_init(chip_id);
+ 	i_ret += tmp_ret;
+ 	if (tmp_ret)
+-		WMT_DETECT_PR_ERR("do common driver init failed, ret:%d\n", tmp_ret);
++		WMT_DETECT_PR_ERR("do gps driver init failed, ret:%d\n", tmp_ret);
+ 
+ 	tmp_ret = do_fm_drv_init(chip_id);
+ 	i_ret += tmp_ret;
+diff --git a/connectivity/common/common_detect/drv_init/gps_drv_init.c b/connectivity/common/common_detect/drv_init/gps_drv_init.c
+index ac48b23..298e4bb 100644
+--- a/connectivity/common/common_detect/drv_init/gps_drv_init.c
++++ b/connectivity/common/common_detect/drv_init/gps_drv_init.c
+@@ -30,12 +30,13 @@ int __attribute__((weak)) mtk_wcn_stpgps_drv_init()
+ 
+ int do_gps_drv_init(int chip_id)
+ {
+-	int i_ret = -1;
++	int i_ret = 0;
+ #ifdef CONFIG_MTK_COMBO_GPS
+ 	WMT_DETECT_PR_INFO("start to do gps driver init\n");
+ 	i_ret = mtk_wcn_stpgps_drv_init();
+ 	WMT_DETECT_PR_INFO("finish gps driver init, i_ret:%d\n", i_ret);
+ #else
++	/* Not built: nothing to start, no failure. */
+ 	WMT_DETECT_PR_INFO("CONFIG_MTK_COMBO_GPS is not defined\n");
+ #endif
+ 	return i_ret;
+-- 
+2.56.0
+

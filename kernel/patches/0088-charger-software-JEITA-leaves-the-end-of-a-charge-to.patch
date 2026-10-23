@@ -1,0 +1,45 @@
+From cb6b8386933166ee388456a874798f32ed896979 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 16:03:46 +0200
+Subject: [PATCH] charger: software JEITA leaves the end of a charge to the
+ charger
+
+Software JEITA sets only its range's charging voltage and current, and
+termination stays as the device tree sets it at probe (enable_te off).
+Upstream JEITA switches termination on at 100 mA, where the chip ends a
+charge early and restarts it every few seconds on a cable.
+---
+ drivers/power/supply/mtk_charger.c | 10 ----------
+ 1 file changed, 10 deletions(-)
+
+diff --git a/drivers/power/supply/mtk_charger.c b/drivers/power/supply/mtk_charger.c
+index a45619b67..f6c0c10f3 100644
+--- a/drivers/power/supply/mtk_charger.c
++++ b/drivers/power/supply/mtk_charger.c
+@@ -708,12 +708,6 @@ void do_sw_jeita_state_machine(struct mtk_charger *info)
+ 			if (sw_jeita->cv > info->data.jeita_temp_t3_to_t4_cv) {
+ 				sw_jeita->cv = info->data.jeita_temp_t3_to_t4_cv;
+ 			}
+-			if (sw_jeita->cv != info->data.jeita_temp_t3_to_t4_cv) {
+-				charger_dev_enable_termination(info->chg1_dev, false);
+-			} else {
+-				charger_dev_enable_termination(info->chg1_dev, true);
+-				charger_dev_set_eoc_current(info->chg1_dev, 100000);
+-			}
+ 			chr_debug("[SW_JEITA] dynamic cv: %d->%d, vbat: %d, ibat: %d\n",
+ 					sw_jeita->pre_cv, sw_jeita->cv, vbat, ibat);
+ 			sw_jeita->cc = info->data.jeita_temp_t3_to_t4_cc;
+@@ -737,10 +731,6 @@ void do_sw_jeita_state_machine(struct mtk_charger *info)
+ 		sw_jeita->cv = 0;
+ 		sw_jeita->cc = info->data.jeita_temp_t2_to_t3_cc;
+ 	}
+-	if (sw_jeita->sm != TEMP_T3_TO_T4) {
+-		charger_dev_enable_termination(info->chg1_dev, true);
+-		charger_dev_set_eoc_current(info->chg1_dev, 100000);
+-	}
+ 
+ 	if (sw_jeita->sm != sw_jeita->pre_sm)
+ 		chr_err("[SW_JEITA]preState:%d newState:%d tmp:%d cv:%d cc:%d\n",
+-- 
+2.56.0
+

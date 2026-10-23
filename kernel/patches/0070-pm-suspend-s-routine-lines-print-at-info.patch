@@ -1,0 +1,244 @@
+From dcde40e02765cf8df161d378b4d9562b53e5e46b Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 20:03:27 +0200
+Subject: [PATCH] pm: suspend's routine lines print at info
+
+Each suspend's and resume's routine lines print at KERN_INFO in place
+of warnings: SPM's entry, exit and sleep figures, Chip_pm_begin, the
+SCP's state, the waking IRQ and an IRQ moved off an offline CPU. A
+freeze a wakeup aborts is info, not an error, as it is no fault.
+mtk_spm.c's second PM notifier, which repeats the suspend entry and
+exit lines, is removed.
+---
+ drivers/base/power/wakeup.c                   |  2 +-
+ .../base/power/spm/common/mtk_sleep.c         |  6 +--
+ .../mediatek/base/power/spm/mt6765/mtk_spm.c  | 46 -------------------
+ .../base/power/spm/mt6765/mtk_spm_suspend.c   |  8 ++--
+ .../spm/mt6765/mtk_spm_suspend_process.c      |  4 +-
+ .../base/power/spm/mt6765/mtk_spm_utils.c     |  2 +-
+ drivers/misc/mediatek/scp/cm4/scp_dvfs.c      |  2 +-
+ kernel/irq/cpuhotplug.c                       |  2 +-
+ kernel/power/process.c                        |  2 +-
+ 9 files changed, 14 insertions(+), 60 deletions(-)
+
+diff --git a/drivers/base/power/wakeup.c b/drivers/base/power/wakeup.c
+index 07762edad..c7eee03ab 100644
+--- a/drivers/base/power/wakeup.c
++++ b/drivers/base/power/wakeup.c
+@@ -941,7 +941,7 @@ void pm_system_irq_wakeup(unsigned int irq_number)
+ 			name = desc->action->name;
+ 
+ 		log_irq_wakeup_reason(irq_number);
+-		pr_warn("%s: %d triggered %s\n", __func__, irq_number, name);
++		pr_info("%s: %d triggered %s\n", __func__, irq_number, name);
+ 
+ 		pm_wakeup_irq = irq_number;
+ 		pm_system_wakeup();
+diff --git a/drivers/misc/mediatek/base/power/spm/common/mtk_sleep.c b/drivers/misc/mediatek/base/power/spm/common/mtk_sleep.c
+index 945d55675..bf75a36a0 100644
+--- a/drivers/misc/mediatek/base/power/spm/common/mtk_sleep.c
++++ b/drivers/misc/mediatek/base/power/spm/common/mtk_sleep.c
+@@ -52,7 +52,7 @@ static int slp_suspend_ops_valid(suspend_state_t state)
+ static int slp_suspend_ops_begin(suspend_state_t state)
+ {
+ 	/* legacy log */
+-	printk_deferred("[name:spm&][SLP] @@@@@@@@@@@@\tChip_pm_begin(%u)(%u)\t@@@@@@@@@@@@@\n",
++	printk_deferred(KERN_INFO "[name:spm&][SLP] @@@@@@@@@@@@\tChip_pm_begin(%u)(%u)\t@@@@@@@@@@@@@\n",
+ 			spm_get_is_cpu_pdn(), spm_get_is_infra_pdn());
+ 
+ 	slp_wake_reason = WR_NONE;
+@@ -90,12 +90,12 @@ void __attribute__ ((weak)) bus_tracer_enable(void)
+ 
+ void __attribute__((weak)) subsys_if_on(void)
+ {
+-	printk_deferred("[name:spm&]NO %s !!!\n", __func__);
++	printk_deferred(KERN_INFO "[name:spm&]NO %s !!!\n", __func__);
+ }
+ 
+ void __attribute__((weak)) pll_if_on(void)
+ {
+-	printk_deferred("[name:spm&]NO %s !!!\n", __func__);
++	printk_deferred(KERN_INFO "[name:spm&]NO %s !!!\n", __func__);
+ }
+ 
+ void __attribute__((weak))
+diff --git a/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm.c b/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm.c
+index fcb784cd4..544dcb448 100644
+--- a/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm.c
++++ b/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm.c
+@@ -181,46 +181,6 @@ static struct platform_driver spm_dev_drv = {
+ 	},
+ };
+ 
+-static int spm_pm_event(struct notifier_block *notifier, unsigned long pm_event,
+-			void *unused)
+-{
+-	struct timespec ts;
+-	struct rtc_time tm;
+-
+-	getnstimeofday(&ts);
+-	rtc_time_to_tm(ts.tv_sec, &tm);
+-
+-	switch (pm_event) {
+-	case PM_HIBERNATION_PREPARE:
+-		return NOTIFY_DONE;
+-	case PM_RESTORE_PREPARE:
+-		return NOTIFY_DONE;
+-	case PM_POST_HIBERNATION:
+-		return NOTIFY_DONE;
+-	case PM_SUSPEND_PREPARE:
+-		printk_deferred(
+-		"[name:spm&][SPM] PM: suspend entry %d-%02d-%02d %02d:%02d:%02d.%09lu UTC\n",
+-			tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+-			tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec);
+-
+-		return NOTIFY_DONE;
+-	case PM_POST_SUSPEND:
+-		printk_deferred(
+-		"[name:spm&][SPM] PM: suspend exit %d-%02d-%02d %02d:%02d:%02d.%09lu UTC\n",
+-			tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+-			tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec);
+-
+-		return NOTIFY_DONE;
+-	}
+-	return NOTIFY_OK;
+-}
+-
+-static struct notifier_block spm_pm_notifier_func = {
+-	.notifier_call = spm_pm_event,
+-	.priority = 0,
+-};
+-
+-
+ static const struct mtk_idle_sysfs_op spm_last_wakeup_src_fops = {
+ 	.fs_read = get_spm_last_wakeup_src,
+ };
+@@ -289,12 +249,6 @@ static int spm_module_init(void)
+ 			, &spm_spmfw_version_fops, &pParent2ND, NULL);
+ 	}
+ 
+-	ret = register_pm_notifier(&spm_pm_notifier_func);
+-	if (ret) {
+-		pr_debug("Failed to register PM notifier.\n");
+-		return ret;
+-	}
+-
+ 	SMC_CALL(ARGS, SPM_ARGS_SPMFW_IDX, spm_get_spmfw_idx(), 0);
+ 
+ 	return 0;
+diff --git a/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm_suspend.c b/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm_suspend.c
+index 76ebc574f..8953d7228 100644
+--- a/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm_suspend.c
++++ b/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm_suspend.c
+@@ -157,14 +157,14 @@ static int spm_suspend_pm_event(struct notifier_block *notifier,
+ 	case PM_POST_HIBERNATION:
+ 		return NOTIFY_DONE;
+ 	case PM_SUSPEND_PREPARE:
+-		printk_deferred(
++		printk_deferred(KERN_INFO
+ 		"[name:spm&][SPM] PM: suspend entry %d-%02d-%02d %02d:%02d:%02d.%09lu UTC\n",
+ 			tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+ 			tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec);
+ 
+ 		return NOTIFY_DONE;
+ 	case PM_POST_SUSPEND:
+-		printk_deferred(
++		printk_deferred(KERN_INFO
+ 		"[name:spm&][SPM] PM: suspend exit %d-%02d-%02d %02d:%02d:%02d.%09lu UTC\n",
+ 			tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+ 			tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec);
+@@ -281,7 +281,7 @@ static unsigned int spm_output_wake_reason(struct wake_status *wakesta)
+ 		log_wakesta_index = 0;
+ 
+ 	aee_sram_printk("sleep_count = %d\n", spm_sleep_count);
+-	printk_deferred("[name:spm&][SPM] sleep_count = %d\n", spm_sleep_count);
++	printk_deferred(KERN_INFO "[name:spm&][SPM] sleep_count = %d\n", spm_sleep_count);
+ 	if (spm_ap_mdsrc_req_cnt != 0) {
+ 		aee_sram_printk("warning: spm_ap_mdsrc_req_cnt = %d, ",
+ 			spm_ap_mdsrc_req_cnt);
+@@ -468,7 +468,7 @@ unsigned int spm_go_to_sleep(void)
+ 	aee_sram_printk("sec = %u, wakesrc = 0x%x (%u)(%u)\n",
+ 		  sec, pwrctrl->wake_src, is_cpu_pdn(pwrctrl->pcm_flags),
+ 		  is_infra_pdn(pwrctrl->pcm_flags));
+-	printk_deferred("[name:spm&][SPM] sec = %u, wakesrc = 0x%x (%u)(%u)\n",
++	printk_deferred(KERN_INFO "[name:spm&][SPM] sec = %u, wakesrc = 0x%x (%u)(%u)\n",
+ 		  sec, pwrctrl->wake_src, is_cpu_pdn(pwrctrl->pcm_flags),
+ 		  is_infra_pdn(pwrctrl->pcm_flags));
+ 
+diff --git a/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm_suspend_process.c b/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm_suspend_process.c
+index 651b5a074..d58540313 100644
+--- a/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm_suspend_process.c
++++ b/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm_suspend_process.c
+@@ -35,7 +35,7 @@ void spm_dump_world_clk_cntcv(void)
+ 	wlk_cntcv_l = _golden_read_reg(WORLD_CLK_CNTCV_L);
+ 	wlk_cntcv_h = _golden_read_reg(WORLD_CLK_CNTCV_H);
+ 
+-	printk_deferred("[name:spm&][SPM] wlk_cntcv_l = 0x%x, wlk_cntcv_h = 0x%x\n",
++	printk_deferred(KERN_INFO "[name:spm&][SPM] wlk_cntcv_l = 0x%x, wlk_cntcv_h = 0x%x\n",
+ 		wlk_cntcv_l, wlk_cntcv_h);
+ }
+ 
+@@ -49,7 +49,7 @@ void spm_set_sysclk_settle(void)
+ 	/* md_settle is keyword for suspend status */
+ 	aee_sram_printk("md_settle = %u, settle = %u\n",
+ 		SPM_SYSCLK_SETTLE, settle);
+-	printk_deferred("[name:spm&][SPM] md_settle = %u, settle = %u\n",
++	printk_deferred(KERN_INFO "[name:spm&][SPM] md_settle = %u, settle = %u\n",
+ 		SPM_SYSCLK_SETTLE, settle);
+ }
+ 
+diff --git a/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm_utils.c b/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm_utils.c
+index a7757ed59..ce195abc9 100644
+--- a/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm_utils.c
++++ b/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm_utils.c
+@@ -177,7 +177,7 @@ EXPORT_SYMBOL(get_spmfw_version);
+ 
+ void spm_output_sleep_option(void)
+ {
+-	printk_deferred("[name:spm&][SPM] PWAKE_EN:%d, PCMWDT_EN:%d, BYPASS_SYSPWREQ:%d\n",
++	printk_deferred(KERN_INFO "[name:spm&][SPM] PWAKE_EN:%d, PCMWDT_EN:%d, BYPASS_SYSPWREQ:%d\n",
+ 		   SPM_PWAKE_EN, SPM_PCMWDT_EN, SPM_BYPASS_SYSPWREQ);
+ }
+ EXPORT_SYMBOL(spm_output_sleep_option);
+diff --git a/drivers/misc/mediatek/scp/cm4/scp_dvfs.c b/drivers/misc/mediatek/scp/cm4/scp_dvfs.c
+index 18d2f233d..d558ac66d 100644
+--- a/drivers/misc/mediatek/scp/cm4/scp_dvfs.c
++++ b/drivers/misc/mediatek/scp/cm4/scp_dvfs.c
+@@ -683,7 +683,7 @@ void mt_scp_dvfs_state_dump(void)
+ 	unsigned int scp_state;
+ 
+ 	scp_state = readl(SCP_A_SLEEP_DEBUG_REG);
+-	printk_deferred("scp status: %s\n",
++	printk_deferred(KERN_INFO "scp status: %s\n",
+ 		((scp_state & IN_DEBUG_IDLE) == IN_DEBUG_IDLE) ? "idle mode"
+ 		: ((scp_state & ENTERING_SLEEP) == ENTERING_SLEEP) ?
+ 			"enter sleep"
+diff --git a/kernel/irq/cpuhotplug.c b/kernel/irq/cpuhotplug.c
+index 6c7ca2e98..0242564b0 100644
+--- a/kernel/irq/cpuhotplug.c
++++ b/kernel/irq/cpuhotplug.c
+@@ -165,7 +165,7 @@ void irq_migrate_all_off_this_cpu(void)
+ 		raw_spin_unlock(&desc->lock);
+ 
+ 		if (affinity_broken) {
+-			pr_warn_ratelimited("IRQ %u: no longer affine to CPU%u\n",
++			pr_info_ratelimited("IRQ %u: no longer affine to CPU%u\n",
+ 					    irq, smp_processor_id());
+ 		}
+ 	}
+diff --git a/kernel/power/process.c b/kernel/power/process.c
+index d76e61606..098bdf52d 100644
+--- a/kernel/power/process.c
++++ b/kernel/power/process.c
+@@ -87,7 +87,7 @@ static int try_to_freeze_tasks(bool user_only)
+ 
+ 	if (wakeup) {
+ 		pr_cont("\n");
+-		pr_err("Freezing of tasks aborted after %d.%03d seconds",
++		pr_info("Freezing of tasks aborted after %d.%03d seconds",
+ 		       elapsed_msecs / 1000, elapsed_msecs % 1000);
+ 	} else if (todo) {
+ 		pr_cont("\n");
+-- 
+2.56.0
+

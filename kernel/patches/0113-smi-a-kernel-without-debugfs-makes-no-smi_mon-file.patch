@@ -1,0 +1,28 @@
+From 2fc3cf141163ce098bc54a6fc13eb05ba4e04471 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 19:32:44 +0200
+Subject: [PATCH] smi: a kernel without debugfs makes no smi_mon file
+
+smi_dram_init creates the smi_mon debugfs file only with
+CONFIG_DEBUG_FS; without it, debugfs_create_file returns -ENODEV, which
+upstream prints as an error.
+---
+ drivers/misc/mediatek/smi/smi_drv.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/misc/mediatek/smi/smi_drv.c b/drivers/misc/mediatek/smi/smi_drv.c
+index 88eb7226b..349e53868 100644
+--- a/drivers/misc/mediatek/smi/smi_drv.c
++++ b/drivers/misc/mediatek/smi/smi_drv.c
+@@ -1507,6 +1507,8 @@ static inline void smi_dram_init(void)
+ 		sizeof(ipi_data) / MBOX_SLOT_SIZE, &smi_dram.ackdata, 1);
+ #endif
+ #endif
++	if (!IS_ENABLED(CONFIG_DEBUG_FS))
++		return;
+ 	smi_dram.node = debugfs_create_file(
+ 		"smi_mon", 0444, NULL, (void *)0, &smi_dram_file_opers);
+ 	if (IS_ERR(smi_dram.node))
+-- 
+2.56.0
+

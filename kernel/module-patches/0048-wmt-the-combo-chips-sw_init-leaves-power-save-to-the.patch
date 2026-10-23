@@ -1,0 +1,110 @@
+From e145758c9e8265739a701aa266d9ae7d482cc64b Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 11:40:37 +0200
+Subject: [PATCH] wmt: the combo chips' sw_init leaves power save to the
+ caller, as the SoC's does
+
+The MT6620, MT6628, MT6630 and MT6632 sw_init do not enable or disable
+power save: STP is not ready yet, so the call does nothing, and the
+caller's ENABLE_PSM_MONITOR starts it. MT6628's wmt_lib_ps_ctrl(0) for
+SDIO is kept.
+---
+ connectivity/common/common_main/core/wmt_ic_6620.c | 11 +----------
+ connectivity/common/common_main/core/wmt_ic_6628.c | 11 ++---------
+ connectivity/common/common_main/core/wmt_ic_6630.c | 12 +-----------
+ connectivity/common/common_main/core/wmt_ic_6632.c | 12 +-----------
+ 4 files changed, 5 insertions(+), 41 deletions(-)
+
+diff --git a/connectivity/common/common_main/core/wmt_ic_6620.c b/connectivity/common/common_main/core/wmt_ic_6620.c
+index 9b033ad..8b40ceb 100644
+--- a/connectivity/common/common_main/core/wmt_ic_6620.c
++++ b/connectivity/common/common_main/core/wmt_ic_6620.c
+@@ -1006,16 +1006,7 @@ static INT32 mt6620_sw_init(P_WMT_HIF_CONF pWmtHifConf)
+ 	}
+ #endif
+ 
+-#if CFG_WMT_PS_SUPPORT
+-	osal_assert(gp_mt6620_info != NULL);
+-	if (gp_mt6620_info != NULL) {
+-		if (gp_mt6620_info->bPsmSupport != MTK_WCN_BOOL_FALSE)
+-			wmt_lib_ps_enable();
+-		else
+-			wmt_lib_ps_disable();
+-	}
+-#endif
+-
++	/* STP is not ready here; the caller's ENABLE_PSM_MONITOR starts PSM. */
+ 	return 0;
+ }
+ 
+diff --git a/connectivity/common/common_main/core/wmt_ic_6628.c b/connectivity/common/common_main/core/wmt_ic_6628.c
+index 68b5336..1080979 100644
+--- a/connectivity/common/common_main/core/wmt_ic_6628.c
++++ b/connectivity/common/common_main/core/wmt_ic_6628.c
+@@ -921,15 +921,8 @@ static INT32 mt6628_sw_init(P_WMT_HIF_CONF pWmtHifConf)
+ #endif
+ 
+ #if CFG_WMT_PS_SUPPORT
+-	if (pWmtHifConf->hifType == WMT_HIF_UART) {
+-		osal_assert(gp_mt6628_info != NULL);
+-		if (gp_mt6628_info != NULL) {
+-			if (gp_mt6628_info->bPsmSupport != MTK_WCN_BOOL_FALSE)
+-				wmt_lib_ps_enable();
+-			else
+-				wmt_lib_ps_disable();
+-		}
+-	} else if (pWmtHifConf->hifType == WMT_HIF_SDIO) {
++	/* UART: the caller's ENABLE_PSM_MONITOR starts PSM once STP is ready. */
++	if (pWmtHifConf->hifType == WMT_HIF_SDIO) {
+ 		/* COMMON SDIO is used different PS from UART, so disable current ps support
+ 		 *  Note: using wmt_lib_ps_ctrl() due to wmt_lib_ps_disable() cannot clear gPsEnable setting
+ 		 */
+diff --git a/connectivity/common/common_main/core/wmt_ic_6630.c b/connectivity/common/common_main/core/wmt_ic_6630.c
+index 31974df..e68608f 100644
+--- a/connectivity/common/common_main/core/wmt_ic_6630.c
++++ b/connectivity/common/common_main/core/wmt_ic_6630.c
+@@ -899,17 +899,7 @@ static INT32 mt6630_sw_init(P_WMT_HIF_CONF pWmtHifConf)
+ 	wmt_stp_wifi_lte_coex();
+ #endif
+ 
+-#if CFG_WMT_PS_SUPPORT
+-	osal_assert(gp_mt6630_info != NULL);
+-
+-	if (gp_mt6630_info != NULL) {
+-		if (gp_mt6630_info->bPsmSupport != MTK_WCN_BOOL_FALSE)
+-			wmt_lib_ps_enable();
+-		else
+-			wmt_lib_ps_disable();
+-	}
+-#endif
+-
++	/* STP is not ready here; the caller's ENABLE_PSM_MONITOR starts PSM. */
+ 	return 0;
+ }
+ 
+diff --git a/connectivity/common/common_main/core/wmt_ic_6632.c b/connectivity/common/common_main/core/wmt_ic_6632.c
+index 20847f0..a461b50 100644
+--- a/connectivity/common/common_main/core/wmt_ic_6632.c
++++ b/connectivity/common/common_main/core/wmt_ic_6632.c
+@@ -968,17 +968,7 @@ static INT32 mt6632_sw_init(P_WMT_HIF_CONF pWmtHifConf)
+ 	wmt_stp_wifi_lte_coex();
+ #endif
+ 
+-#if CFG_WMT_PS_SUPPORT
+-	osal_assert(gp_mt6632_info != NULL);
+-
+-	if (gp_mt6632_info != NULL) {
+-		if (gp_mt6632_info->bPsmSupport != MTK_WCN_BOOL_FALSE)
+-			wmt_lib_ps_enable();
+-		else
+-			wmt_lib_ps_disable();
+-	}
+-#endif
+-
++	/* STP is not ready here; the caller's ENABLE_PSM_MONITOR starts PSM. */
+ 	return 0;
+ }
+ 
+-- 
+2.56.0
+

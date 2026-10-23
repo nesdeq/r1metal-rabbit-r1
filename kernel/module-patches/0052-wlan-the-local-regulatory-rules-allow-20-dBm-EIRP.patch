@@ -1,0 +1,30 @@
+From adb09adc991985b9fa3e47e3436353f2ef0f072f Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 12:26:09 +0200
+Subject: [PATCH] wlan: the local regulatory rules allow 20 dBm EIRP
+
+REG_RULE_LIGHT gives its rules 20 dBm EIRP, as the kernel's world domain
+does, instead of 0, which nl80211 reports as every channel's maximum
+power.
+---
+ connectivity/wlan/core/gen4m/include/mgmt/rlm_domain.h | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/connectivity/wlan/core/gen4m/include/mgmt/rlm_domain.h b/connectivity/wlan/core/gen4m/include/mgmt/rlm_domain.h
+index ef4d8a8..96cca69 100644
+--- a/connectivity/wlan/core/gen4m/include/mgmt/rlm_domain.h
++++ b/connectivity/wlan/core/gen4m/include/mgmt/rlm_domain.h
+@@ -608,8 +608,9 @@
+ #if (CFG_SUPPORT_SINGLE_SKU == 1)
+ /* ARRAY_SIZE(mtk_2ghz_channels) + ARRAY_SIZE(mtk_5ghz_channels) */
+ #define MAX_SUPPORTED_CH_COUNT (MAX_CHN_NUM)
++/* 20 dBm EIRP, as the kernel's world domain allows */
+ #define REG_RULE_LIGHT(start, end, bw, reg_flags)	\
+-		REG_RULE(start, end, bw, 0, 0, reg_flags)
++		REG_RULE(start, end, bw, 0, 20, reg_flags)
+ #endif
+ 
+ /*******************************************************************************
+-- 
+2.56.0
+

@@ -1,0 +1,127 @@
+From 0ff5527fa1503c691ec8214a377ab47c80ea881c Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 15:30:57 +0200
+Subject: [PATCH] ion: a registered blank notifier is no failure, and progress
+ is info
+
+- ion_init() reports fb_register_client() as failed only when it fails;
+  the test is inverted upstream.
+- ION's progress lines and the carveout's address print at info, not
+  at error level.
+- ion_sec_heap_allocate() frees and clears what it set when a heap has
+  no trusted memory type, as its other failures do.
+---
+ .../staging/android/mtk_ion/ion_carveout_heap.c    |  2 +-
+ drivers/staging/android/mtk_ion/mtk/ion_drv.c      | 14 +++++++-------
+ drivers/staging/android/mtk_ion/mtk/ion_sec_heap.c |  7 +++++--
+ 3 files changed, 13 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/staging/android/mtk_ion/ion_carveout_heap.c b/drivers/staging/android/mtk_ion/ion_carveout_heap.c
+index 622e272c9..daea52801 100644
+--- a/drivers/staging/android/mtk_ion/ion_carveout_heap.c
++++ b/drivers/staging/android/mtk_ion/ion_carveout_heap.c
+@@ -140,7 +140,7 @@ static void print_phys_addr_bit32(char *caller_name,
+ 			(unsigned int)(((addr + size) & (3LL << 32)) >> 32);
+ 
+ 	if (bit32_max == bit32)
+-		IONMSG("%s: addr 0x%lx, size %zu, bit32: %d\n",
++		ion_info("%s: addr 0x%lx, size %zu, bit32: %d\n",
+ 		       caller_name, addr, size, bit32);
+ 	else
+ 		IONMSG("%s: error! addr 0x%lx, size %zu, bit32: %d ~ %d\n",
+diff --git a/drivers/staging/android/mtk_ion/mtk/ion_drv.c b/drivers/staging/android/mtk_ion/mtk/ion_drv.c
+index fbdfb0b41..b41e3e098 100644
+--- a/drivers/staging/android/mtk_ion/mtk/ion_drv.c
++++ b/drivers/staging/android/mtk_ion/mtk/ion_drv.c
+@@ -754,9 +754,9 @@ static int ion_fb_event(struct notifier_block *notifier, unsigned long event,
+ 	case FB_BLANK_VSYNC_SUSPEND:
+ 	case FB_BLANK_HSYNC_SUSPEND:
+ 	case FB_BLANK_POWERDOWN:
+-		IONMSG("%s: + screen-off +\n", __func__);
++		ion_info("%s: + screen-off +\n", __func__);
+ 		shrink_ion_by_scenario(1);
+-		IONMSG("%s: - screen-off -\n", __func__);
++		ion_info("%s: - screen-off -\n", __func__);
+ 		break;
+ 	default:
+ 		return -EINVAL;
+@@ -835,7 +835,7 @@ int ion_drv_create_heap(struct ion_platform_heap *heap_data)
+ 	heap->id = heap_data->id;
+ 	ion_device_add_heap(g_ion_device, heap);
+ 
+-	IONMSG("%s: create heap: %s\n", __func__, heap->name);
++	ion_info("%s: create heap: %s\n", __func__, heap->name);
+ 	return 0;
+ }
+ 
+@@ -1016,7 +1016,7 @@ static int ion_drv_probe(struct platform_device *pdev)
+ 	ion_profile_init();
+ 	ion_dmabuf_init();
+ 
+-	IONMSG("%s, done\n", __func__);
++	ion_info("%s, done\n", __func__);
+ 	return 0;
+ }
+ 
+@@ -1203,7 +1203,7 @@ RESERVEDMEM_OF_DECLARE(ion_camera_reserve,
+ 
+ static int __init ion_init(void)
+ {
+-	IONMSG("%s()\n", __func__);
++	ion_info("%s()\n", __func__);
+ #ifndef CONFIG_MTK_IOMMU_V2
+ 	if (platform_device_register(&ion_device)) {
+ 		IONMSG("%s platform device register failed.\n", __func__);
+@@ -1219,7 +1219,7 @@ static int __init ion_init(void)
+ 	}
+ 
+ #ifdef CONFIG_PM
+-	if (!fb_register_client(&ion_fb_notifier_block))
++	if (fb_register_client(&ion_fb_notifier_block))
+ 		IONMSG("%s fd register notifer fail\n", __func__);
+ #endif
+ 	return 0;
+@@ -1227,7 +1227,7 @@ static int __init ion_init(void)
+ 
+ static void __exit ion_exit(void)
+ {
+-	IONMSG("%s()\n", __func__);
++	ion_info("%s()\n", __func__);
+ 	platform_driver_unregister(&ion_driver);
+ #ifndef CONFIG_MTK_IOMMU_V2
+ 	platform_device_unregister(&ion_device);
+diff --git a/drivers/staging/android/mtk_ion/mtk/ion_sec_heap.c b/drivers/staging/android/mtk_ion/mtk/ion_sec_heap.c
+index be08dfe87..7d049bda9 100644
+--- a/drivers/staging/android/mtk_ion/mtk/ion_sec_heap.c
++++ b/drivers/staging/android/mtk_ion/mtk/ion_sec_heap.c
+@@ -373,6 +373,9 @@ static int ion_sec_heap_allocate(struct ion_heap *heap,
+ 
+ 	if (tmem_type < 0) {
+ 		IONMSG("invalid heap:%d\n", heap->id);
++		kfree(pbufferinfo);
++		caller_pid = 0;
++		caller_tid = 0;
+ 		return -EINVAL;
+ 	}
+ 	if (flags & ION_FLAG_MM_HEAP_INIT_ZERO)
+@@ -945,7 +948,7 @@ struct ion_heap *ion_sec_heap_create(struct ion_platform_heap *heap_data)
+ 
+ 	struct ion_sec_heap *heap;
+ 
+-	IONMSG("%s enter:%s\n", __func__, heap_data->name);
++	ion_info("%s enter:%s\n", __func__, heap_data->name);
+ 
+ 	heap = kzalloc(sizeof(*heap), GFP_KERNEL);
+ 	if (!heap) {
+@@ -977,7 +980,7 @@ void ion_sec_heap_destroy(struct ion_heap *heap)
+ 
+ 		struct ion_sec_heap *sec_heap;
+ 
+-		IONMSG("%s enter\n", __func__);
++		ion_info("%s enter\n", __func__);
+ 		sec_heap = container_of(heap, struct ion_sec_heap, heap);
+ 		kfree(sec_heap);
+ #else
+-- 
+2.56.0
+

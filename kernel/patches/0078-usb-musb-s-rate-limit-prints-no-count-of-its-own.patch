@@ -1,0 +1,35 @@
+From 6a28c41a29b62f47af1371605ec642ae2a60c47a Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 20:48:24 +0200
+Subject: [PATCH] usb: musb's rate limit prints no count of its own
+
+DBG_LIMIT counts the lines its rate limit drops and prints the count
+with the next line, so its state carries RATELIMIT_MSG_ON_RELEASE: a
+static state is never released, and the kernel prints no "callbacks
+suppressed" warning of its own.
+---
+ drivers/misc/mediatek/usb20/musb_debug.h | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/usb20/musb_debug.h b/drivers/misc/mediatek/usb20/musb_debug.h
+index d057cd16e..c29ae958e 100644
+--- a/drivers/misc/mediatek/usb20/musb_debug.h
++++ b/drivers/misc/mediatek/usb20/musb_debug.h
+@@ -56,7 +56,13 @@ static inline int _dbg_level(unsigned int level)
+ #define DBG(level, fmt, args...) xprintk(level, fmt, ## args)
+ 
+ #define DBG_LIMIT(FREQ, fmt, args...) do {\
+-	static DEFINE_RATELIMIT_STATE(ratelimit, HZ, FREQ);\
++	/* skip_cnt reports the dropped lines, so the limit prints none */\
++	static struct ratelimit_state ratelimit = {\
++		.lock = __RAW_SPIN_LOCK_UNLOCKED(ratelimit.lock),\
++		.interval = HZ,\
++		.burst = FREQ,\
++		.flags = RATELIMIT_MSG_ON_RELEASE,\
++	};\
+ 	static int skip_cnt;\
+ 	\
+ 	if (unlikely(!musb_debug_limit))\
+-- 
+2.56.0
+

@@ -1,0 +1,53 @@
+From 372ea4e7e31a216bdf852f820b9e9eded358f8bb Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Thu, 15 Oct 2026 13:11:37 +0200
+Subject: [PATCH] devapc: a violation's times are printed in milliseconds and
+ kept in nanoseconds
+
+evaluate_aee_exception keeps a violation's times in nanoseconds and
+prints them with div_u64. do_div divides them in place and returns the
+remainder, so upstream prints the remainder and its test of ten
+violations within a second passes for any interval under 11 days.
+---
+ drivers/soc/mediatek/devapc/mt6765/devapc.c | 11 ++++++-----
+ 1 file changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/soc/mediatek/devapc/mt6765/devapc.c b/drivers/soc/mediatek/devapc/mt6765/devapc.c
+index 33148e640..df9deaa93 100644
+--- a/drivers/soc/mediatek/devapc/mt6765/devapc.c
++++ b/drivers/soc/mediatek/devapc/mt6765/devapc.c
+@@ -24,6 +24,7 @@
+ #include <linux/of_irq.h>
+ #include <linux/of_address.h>
+ #include <linux/types.h>
++#include <linux/math64.h>
+ #include <linux/soc/mediatek/mtk_sip_svc.h>
+ #ifdef DBG_ENABLE
+ #include <linux/arm-smccc.h>
+@@ -648,18 +649,18 @@ static void evaluate_aee_exception(unsigned int i, unsigned int dbg0,
+ 		/* get current time from start-up in ns */
+ 				devapc_vio_first_trigger_time[i] =
+ 					sched_clock();
+-				DEVAPC_VIO_MSG("%s %s %u\n",
++				DEVAPC_VIO_MSG("%s %s %llu\n",
+ 					"[DEVAPC]",
+ 					"devapc_vio_first_trigger_time:",
+-					do_div(devapc_vio_first_trigger_time[i],
+-						1000000)); /* ms */
++					div_u64(devapc_vio_first_trigger_time[i],
++						NSEC_PER_MSEC)); /* ms */
+ 			}
+ 		}
+ 		if (devapc_vio_count[i] >= DEVAPC_VIO_AEE_TRIGGER_TIMES) {
+ 			/* get current time from start-up in ns */
+ 			current_time = sched_clock();
+-			DEVAPC_VIO_MSG("[DEVAPC] current_time: %u\n",
+-					do_div(current_time, 1000000)); /* ms */
++			DEVAPC_VIO_MSG("[DEVAPC] current_time: %llu\n",
++					div_u64(current_time, NSEC_PER_MSEC)); /* ms */
+ 			DEVAPC_VIO_MSG("[DEVAPC] devapc_vio_count[%d]: %d\n",
+ 					i, devapc_vio_count[i]);
+ 			if (((current_time - devapc_vio_first_trigger_time[i])
+-- 
+2.56.0
+

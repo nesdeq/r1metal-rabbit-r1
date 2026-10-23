@@ -1,0 +1,52 @@
+From 7e342b825c280e23d276f7a0ad486e414f823479 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 10:35:56 +0200
+Subject: [PATCH] auxadc: a battery temperature reading calibrates under the
+ ADC's lock
+
+mt635x_auxadc_read_raw holds adc_dev->lock until the result is
+converted: BAT_TEMP's calibration converts channels of its own on the
+registers every reader shares. None of its paths takes the lock.
+---
+ drivers/iio/adc/mt635x-auxadc.c | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/iio/adc/mt635x-auxadc.c b/drivers/iio/adc/mt635x-auxadc.c
+index 467761100..ae15756a9 100644
+--- a/drivers/iio/adc/mt635x-auxadc.c
++++ b/drivers/iio/adc/mt635x-auxadc.c
+@@ -856,11 +856,10 @@ static int mt635x_auxadc_read_raw(struct iio_dev *indio_dev,
+ 		break;
+ 	}
+ 
+-	pm_relax(adc_dev->dev);
+-	mutex_unlock(&adc_dev->lock);
+ 	if (ret != -ETIMEDOUT && ret < 0)
+ 		goto err;
+ 
++	/* the calibration converts channels of its own, so it runs under the lock too */
+ 	switch (mask) {
+ 	case IIO_CHAN_INFO_PROCESSED:
+ 		*val = auxadc_out * auxadc_chan->r_ratio[0] * VOLT_FULL;
+@@ -876,7 +875,8 @@ static int mt635x_auxadc_read_raw(struct iio_dev *indio_dev,
+ 		ret = IIO_VAL_INT;
+ 		break;
+ 	default:
+-		return -EINVAL;
++		ret = -EINVAL;
++		goto err;
+ 	}
+ 	if (chan->channel == AUXADC_IMP)
+ 		ret = IIO_VAL_INT_MULTIPLE;
+@@ -884,6 +884,8 @@ static int mt635x_auxadc_read_raw(struct iio_dev *indio_dev,
+ 		"name:%s, channel=%d, adc_out=0x%x, adc_result=%d\n",
+ 		auxadc_chan->ch_name, auxadc_chan->ch_num, auxadc_out, *val);
+ err:
++	pm_relax(adc_dev->dev);
++	mutex_unlock(&adc_dev->lock);
+ 	return ret;
+ }
+ 
+-- 
+2.56.0
+

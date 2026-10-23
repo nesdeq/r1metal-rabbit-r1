@@ -1,0 +1,82 @@
+From 8b82a71ff7daf1581267fd31929c21ee3cf6cb36 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 20:00:28 +0200
+Subject: [PATCH] sound: aw87xxx: a property the tree leaves out takes its
+ default plainly
+
+An optional amplifier property the tree leaves out (-EINVAL) is told as
+its default, not as a failed parse: aw-voltage-min and esd-enable print
+the default, aw-rx-topo-id and aw-rx-port-id only their value. A
+property that is there and unreadable is an error with its code.
+---
+ sound/soc/mediatek/aw87xxx/aw87xxx.c         | 9 +++++++--
+ sound/soc/mediatek/aw87xxx/aw87xxx_dsp.c     | 8 ++++++--
+ sound/soc/mediatek/aw87xxx/aw87xxx_monitor.c | 6 +++++-
+ 3 files changed, 18 insertions(+), 5 deletions(-)
+
+diff --git a/sound/soc/mediatek/aw87xxx/aw87xxx.c b/sound/soc/mediatek/aw87xxx/aw87xxx.c
+index 016c65749..fb0442c1a 100755
+--- a/sound/soc/mediatek/aw87xxx/aw87xxx.c
++++ b/sound/soc/mediatek/aw87xxx/aw87xxx.c
+@@ -1461,8 +1461,13 @@ static int aw87xxx_dtsi_parse(struct aw87xxx *aw87xxx,
+ 
+ 	ret = of_property_read_u32(dev_node, "aw-voltage-min", &voltage_min);
+ 	if (ret < 0) {
+-		AW_DEV_LOGI(aw87xxx->dev, "voltage_min parse failed, user default[0x%02x]",
+-				AW_BOOST_VOLTAGE_MIN);
++		/* -EINVAL: the tree gives none, and the default stands */
++		if (ret == -EINVAL)
++			AW_DEV_LOGI(aw87xxx->dev, "aw_voltage_min=[0x%02x], the default",
++					AW_BOOST_VOLTAGE_MIN);
++		else
++			AW_DEV_LOGE(aw87xxx->dev, "aw-voltage-min unreadable (%d), default [0x%02x]",
++					ret, AW_BOOST_VOLTAGE_MIN);
+ 		vol_desc->vol_min = AW_BOOST_VOLTAGE_MIN;
+ 	} else {
+ 		vol_desc->vol_min = voltage_min;
+diff --git a/sound/soc/mediatek/aw87xxx/aw87xxx_dsp.c b/sound/soc/mediatek/aw87xxx/aw87xxx_dsp.c
+index 9965b752b..215b8e480 100755
+--- a/sound/soc/mediatek/aw87xxx/aw87xxx_dsp.c
++++ b/sound/soc/mediatek/aw87xxx/aw87xxx_dsp.c
+@@ -333,7 +333,9 @@ void aw87xxx_device_parse_topo_id_dt(struct aw_device *aw_dev)
+ 	ret = of_property_read_u32(aw_dev->dev->of_node, "aw-rx-topo-id", &g_rx_topo_id);
+ 	if (ret < 0) {
+ 		g_rx_topo_id = AW_RX_DEFAULT_TOPO_ID;
+-		AW_DEV_LOGI(aw_dev->dev, "read aw-rx-topo-id failed,use default");
++		/* -EINVAL: the tree gives none, and the default printed below stands */
++		if (ret != -EINVAL)
++			AW_DEV_LOGE(aw_dev->dev, "aw-rx-topo-id unreadable (%d), use default", ret);
+ 	}
+ 
+ 	AW_DEV_LOGI(aw_dev->dev, "rx-topo-id: 0x%x",  g_rx_topo_id);
+@@ -346,7 +348,9 @@ void aw87xxx_device_parse_port_id_dt(struct aw_device *aw_dev)
+ 	ret = of_property_read_u32(aw_dev->dev->of_node, "aw-rx-port-id", &g_rx_port_id);
+ 	if (ret < 0) {
+ 		g_rx_port_id = AW_RX_DEFAULT_PORT_ID;
+-		AW_DEV_LOGI(aw_dev->dev, "read aw-rx-port-id failed,use default");
++		/* -EINVAL: the tree gives none, and the default printed below stands */
++		if (ret != -EINVAL)
++			AW_DEV_LOGE(aw_dev->dev, "aw-rx-port-id unreadable (%d), use default", ret);
+ 	}
+ 
+ 	aw_set_port_id(g_rx_port_id);
+diff --git a/sound/soc/mediatek/aw87xxx/aw87xxx_monitor.c b/sound/soc/mediatek/aw87xxx/aw87xxx_monitor.c
+index 4234f0810..97a7be8f5 100755
+--- a/sound/soc/mediatek/aw87xxx/aw87xxx_monitor.c
++++ b/sound/soc/mediatek/aw87xxx/aw87xxx_monitor.c
+@@ -1151,7 +1151,11 @@ static void aw_monitor_dtsi_parse(struct device *dev,
+ 
+ 	ret = of_property_read_string(dev_node, "esd-enable", &esd_enable);
+ 	if (ret < 0) {
+-		AW_DEV_LOGI(dev, "esd_enable parse failed, user default[enable]");
++		/* -EINVAL: the tree gives none, and the default stands */
++		if (ret == -EINVAL)
++			AW_DEV_LOGI(dev, "esd-enable=[true], the default");
++		else
++			AW_DEV_LOGE(dev, "esd-enable unreadable (%d), default [true]", ret);
+ 		monitor->esd_enable = AW_ESD_ENABLE;
+ 	} else {
+ 		if (!strcmp(esd_enable, "false"))
+-- 
+2.56.0
+

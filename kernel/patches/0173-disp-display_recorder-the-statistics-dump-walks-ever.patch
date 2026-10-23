@@ -1,0 +1,29 @@
+From 0f5cdcd716f60d7a19e2d2428450fc1f0fa83539 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 10:45:58 +0200
+Subject: [PATCH] disp: display_recorder: the statistics dump walks every
+ logger
+
+dprec_logger_get_result_string_all walks every logger. Upstream divides
+ARRAY_SIZE(logger) by sizeof(logger[0]) again, which gives 0, so the
+display debug file's statistics table has no rows.
+---
+ drivers/misc/mediatek/video/mt6765/dispsys/display_recorder.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/video/mt6765/dispsys/display_recorder.c b/drivers/misc/mediatek/video/mt6765/dispsys/display_recorder.c
+index 5b414cd3a..53dcbedc5 100644
+--- a/drivers/misc/mediatek/video/mt6765/dispsys/display_recorder.c
++++ b/drivers/misc/mediatek/video/mt6765/dispsys/display_recorder.c
+@@ -875,7 +875,7 @@ int dprec_logger_get_result_string_all(char *stringbuf, int strlen)
+ 		"|Event                   | count   | fps        |average(ms) | max(ms)    | min(ms)    |\n");
+ 	n += scnprintf(stringbuf + n, strlen - n,
+ 		"|------------------------+---------+------------+------------+------------+------------|\n");
+-	for (i = 0; i < ARRAY_SIZE(logger) / sizeof(logger[0]); i++)
++	for (i = 0; i < ARRAY_SIZE(logger); i++)
+ 		n += dprec_logger_get_result_string(i,
+ 			stringbuf + n, strlen - n);
+ 
+-- 
+2.56.0
+

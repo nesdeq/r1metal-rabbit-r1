@@ -1,0 +1,46 @@
+From 65868f58018863e69401659b3e0591551a702664 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 19:21:04 +0200
+Subject: [PATCH] power: the gauge and the charger type register after the
+ drivers they read
+
+mt6357-gauge and mt6357-charger-type register at late_initcall instead
+of deferring at device level, since drivers/iio, whose PMIC ADC both
+read at probe, links after drivers/power. The gauge still registers
+ahead of mtk_charger and mtk_pd, which look it up at late_initcall.
+---
+ drivers/power/supply/mt6357-charger-type.c | 3 ++-
+ drivers/power/supply/mt6357-gauge.c        | 3 ++-
+ 2 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/power/supply/mt6357-charger-type.c b/drivers/power/supply/mt6357-charger-type.c
+index 246afb292..dd9ce5b33 100644
+--- a/drivers/power/supply/mt6357-charger-type.c
++++ b/drivers/power/supply/mt6357-charger-type.c
+@@ -935,7 +935,8 @@ static int __init mt6357_charger_type_init(void)
+ {
+ 	return platform_driver_register(&mt6357_charger_type_driver);
+ }
+-module_init(mt6357_charger_type_init);
++/* drivers/iio, whose PMIC ADC this driver reads at probe, links after drivers/power */
++late_initcall(mt6357_charger_type_init);
+ 
+ static void __exit mt6357_charger_type_exit(void)
+ {
+diff --git a/drivers/power/supply/mt6357-gauge.c b/drivers/power/supply/mt6357-gauge.c
+index 6d6ed14e3..ac9eb0622 100644
+--- a/drivers/power/supply/mt6357-gauge.c
++++ b/drivers/power/supply/mt6357-gauge.c
+@@ -3284,7 +3284,8 @@ static int __init mt6357_gauge_init(void)
+ {
+ 	return platform_driver_register(&mt6357_gauge_driver);
+ }
+-module_init(mt6357_gauge_init);
++/* the PMIC ADC and the MT6370 charger this driver needs at probe register at device level */
++late_initcall(mt6357_gauge_init);
+ 
+ static void __exit mt6357_gauge_exit(void)
+ {
+-- 
+2.56.0
+

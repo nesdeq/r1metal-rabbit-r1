@@ -1,0 +1,40 @@
+From fa15a0f3c32cbe4a20a4086c7afd5d33876deaf2 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 18:56:35 +0200
+Subject: [PATCH] ccci swtp: a board without SWTP pins has no node for them
+
+swtp_init_delayed_work passes over an SWTP pin whose node the tree lacks
+without an error and without setting ret to -4, as on the R1, which has
+no RF cable detection pins. A node that is there and cannot be set up is
+still an error.
+---
+ drivers/misc/mediatek/eccci/port/ccci_swtp.c | 6 +-----
+ 1 file changed, 1 insertion(+), 5 deletions(-)
+
+diff --git a/drivers/misc/mediatek/eccci/port/ccci_swtp.c b/drivers/misc/mediatek/eccci/port/ccci_swtp.c
+index 0c79608f7..df75f9ca5 100644
+--- a/drivers/misc/mediatek/eccci/port/ccci_swtp.c
++++ b/drivers/misc/mediatek/eccci/port/ccci_swtp.c
+@@ -234,6 +234,7 @@ static void swtp_init_delayed_work(struct work_struct *work)
+ 
+ 	for (i = 0; i < MAX_PIN_NUM; i++) {
+ 		node = of_find_matching_node(NULL, &swtp_of_match[i]);
++		/* a board without this SWTP pin has no node for it */
+ 		if (node) {
+ 			ret = of_property_read_u32_array(node, "debounce",
+ 				ints, ARRAY_SIZE(ints));
+@@ -274,11 +275,6 @@ static void swtp_init_delayed_work(struct work_struct *work)
+ 					i);
+ 				break;
+ 			}
+-		} else {
+-			CCCI_LEGACY_ERR_LOG(md_id, SYS,
+-				"%s:can't find swtp%d compatible node\n",
+-				__func__, i);
+-			ret = -4;
+ 		}
+ 	}
+ 	register_ccci_sys_call_back(md_id, MD_SW_MD1_TX_POWER_REQ,
+-- 
+2.56.0
+

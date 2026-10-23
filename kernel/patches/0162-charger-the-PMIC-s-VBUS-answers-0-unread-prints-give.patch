@@ -1,0 +1,78 @@
+From 6973caf82e6863a8cc9e6be18377ec61d2c8b478 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 10:24:30 +0200
+Subject: [PATCH] charger: the PMIC's VBUS answers 0 unread, prints give values
+ their types
+
+- get_pmic_vbus starts prop at 0, so get_vbus answers 0, not stack
+  contents, where the charger type supply gives no voltage.
+- Four prints pass values of the types their formats name: an
+  iio_channel's error as PTR_ERR with %ld, an int with %d.
+---
+ drivers/power/supply/mt6357-charger-type.c | 8 ++++----
+ drivers/power/supply/mtk_charger.c         | 2 +-
+ drivers/power/supply/mtk_charger_intf.c    | 2 +-
+ 3 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/power/supply/mt6357-charger-type.c b/drivers/power/supply/mt6357-charger-type.c
+index dd9ce5b33..e18351f4f 100644
+--- a/drivers/power/supply/mt6357-charger-type.c
++++ b/drivers/power/supply/mt6357-charger-type.c
+@@ -521,7 +521,7 @@ static int get_vbus_voltage(struct mtk_charger_type *info,
+ 		if (ret < 0)
+ 			pr_notice("[%s]read fail,ret=%d\n", __func__, ret);
+ 	} else {
+-		pr_notice("[%s]chan error %d\n", __func__, info->chan_vbus);
++		pr_notice("[%s]chan error %ld\n", __func__, PTR_ERR(info->chan_vbus));
+ 		ret = -ENOTSUPP;
+ 	}
+ 
+@@ -797,8 +797,8 @@ static int mt6357_charger_type_probe(struct platform_device *pdev)
+ 	chan_vbus = devm_iio_channel_get(
+ 		&pdev->dev, "pmic_vbus");
+ 	if (IS_ERR(chan_vbus)) {
+-		pr_notice("mt6357 charger type requests probe deferral ret:%d\n",
+-			chan_vbus);
++		pr_notice("mt6357 charger type requests probe deferral ret:%ld\n",
++			PTR_ERR(chan_vbus));
+ 		return -EPROBE_DEFER;
+ 	}
+ 
+@@ -860,7 +860,7 @@ static int mt6357_charger_type_probe(struct platform_device *pdev)
+ 	info->chan_vbus = devm_iio_channel_get(
+ 		&pdev->dev, "pmic_vbus");
+ 	if (IS_ERR(info->chan_vbus)) {
+-		pr_notice("chan_vbus auxadc get fail, ret=%d\n",
++		pr_notice("chan_vbus auxadc get fail, ret=%ld\n",
+ 			PTR_ERR(info->chan_vbus));
+ 	}
+ 
+diff --git a/drivers/power/supply/mtk_charger.c b/drivers/power/supply/mtk_charger.c
+index 70588ead1..5fb51dca2 100644
+--- a/drivers/power/supply/mtk_charger.c
++++ b/drivers/power/supply/mtk_charger.c
+@@ -917,7 +917,7 @@ static ssize_t charger_log_level_store(struct device *dev,
+ 
+ 	if (kstrtoint(buf, 10, &temp) == 0) {
+ 		if (temp < 0) {
+-			chr_err("%s: val is invalid: %ld\n", __func__, temp);
++			chr_err("%s: val is invalid: %d\n", __func__, temp);
+ 			temp = 0;
+ 		}
+ 		pinfo->log_level = temp;
+diff --git a/drivers/power/supply/mtk_charger_intf.c b/drivers/power/supply/mtk_charger_intf.c
+index 7f8dc8fe5..7b4987db6 100644
+--- a/drivers/power/supply/mtk_charger_intf.c
++++ b/drivers/power/supply/mtk_charger_intf.c
+@@ -176,7 +176,7 @@ int get_battery_current(struct mtk_charger *info)
+ 
+ static int get_pmic_vbus(struct mtk_charger *info, int *vchr)
+ {
+-	union power_supply_propval prop;
++	union power_supply_propval prop = { .intval = 0 };
+ 	static struct power_supply *chg_psy;
+ 	int ret;
+ 
+-- 
+2.56.0
+

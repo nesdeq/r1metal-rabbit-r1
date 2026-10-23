@@ -1,0 +1,85 @@
+From 54d8059e1f1559f2f4c80740a429576941c2bc75 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 19:42:17 +0200
+Subject: [PATCH] i2c-mtk: the PLL mux and the clock gate block are optional
+
+- mt_i2c_probe gets the mux, p_main and p_univ clocks as optional ones,
+  NULL without a line where the tree has none; other failures print.
+- mt_i2c_parse_comp_data prints nothing for an absent clk_compatible and
+  copies it only where it fits its 128 bytes with the terminator.
+---
+ drivers/i2c/busses/i2c-mtk.c | 30 +++++++++++++++++++-----------
+ 1 file changed, 19 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/i2c/busses/i2c-mtk.c b/drivers/i2c/busses/i2c-mtk.c
+index 3cb071c53..8a4604b00 100644
+--- a/drivers/i2c/busses/i2c-mtk.c
++++ b/drivers/i2c/busses/i2c-mtk.c
+@@ -1719,10 +1719,13 @@ int mt_i2c_parse_comp_data(void)
+ 	of_property_read_u16(comp_node, "ext_time_config",
+ 		(u16 *)&i2c_common_compat.ext_time_config);
+ 	ret = of_property_count_u8_elems(comp_node, "clk_compatible");
+-	if (ret > 0)
++	if (ret > 0 && ret < sizeof(i2c_common_compat.clk_compatible))
+ 		of_property_read_u8_array(comp_node, "clk_compatible",
+ 			(u8 *)i2c_common_compat.clk_compatible, ret);
+-	else
++	else if (ret > 0)
++		pr_info("[I2C]clk_compatible too long(%d)\n", ret);
++	/* -EINVAL: a tree without the property names no clock gate block to dump at a timeout */
++	else if (ret != -EINVAL)
+ 		pr_info("[I2C]No clk_compatible(%d)\n", ret);
+ 	of_property_read_u32(comp_node, "clk_sel_offset",
+ 		(u32 *)&i2c_common_compat.clk_sel_offset);
+@@ -1845,34 +1848,39 @@ static int mt_i2c_probe(struct platform_device *pdev)
+ 	else
+ 		dev_dbg(&pdev->dev, "i2c%d has the relevant pal clk.\n",
+ 			i2c->id);
++	/* a tree without the PLL mux and its parents leaves the top PLL unswitched across suspend */
+ 	if (i2c->i2c_pll_info->clk_mux == NULL) {
+-		i2c->i2c_pll_info->clk_mux = devm_clk_get(&pdev->dev, "mux");
++		i2c->i2c_pll_info->clk_mux =
++			devm_clk_get_optional(&pdev->dev, "mux");
+ 		if (IS_ERR(i2c->i2c_pll_info->clk_mux)) {
++			dev_info(&pdev->dev, "cannot get mux clock: %ld\n",
++				PTR_ERR(i2c->i2c_pll_info->clk_mux));
+ 			i2c->i2c_pll_info->clk_mux = NULL;
+-			dev_info(&pdev->dev, "cannot get mux clock\n");
+-		} else
++		} else if (i2c->i2c_pll_info->clk_mux)
+ 			dev_info(&pdev->dev,
+ 				"i2c%d has the relevant clk_mux clk.\n",
+ 				i2c->id);
+ 	}
+ 	if (i2c->i2c_pll_info->clk_p_main == NULL) {
+ 		i2c->i2c_pll_info->clk_p_main =
+-			devm_clk_get(&pdev->dev, "p_main");
++			devm_clk_get_optional(&pdev->dev, "p_main");
+ 		if (IS_ERR(i2c->i2c_pll_info->clk_p_main)) {
++			dev_info(&pdev->dev, "cannot get p_main clock: %ld\n",
++				PTR_ERR(i2c->i2c_pll_info->clk_p_main));
+ 			i2c->i2c_pll_info->clk_p_main = NULL;
+-			dev_info(&pdev->dev, "cannot get p_main clock\n");
+-		} else
++		} else if (i2c->i2c_pll_info->clk_p_main)
+ 			dev_info(&pdev->dev,
+ 				"i2c%d has the relevant clk_p_main clk.\n",
+ 				i2c->id);
+ 	}
+ 	if (i2c->i2c_pll_info->clk_p_univ == NULL) {
+ 		i2c->i2c_pll_info->clk_p_univ =
+-			devm_clk_get(&pdev->dev, "p_univ");
++			devm_clk_get_optional(&pdev->dev, "p_univ");
+ 		if (IS_ERR(i2c->i2c_pll_info->clk_p_univ)) {
++			dev_info(&pdev->dev, "cannot get p_univ clock: %ld\n",
++				PTR_ERR(i2c->i2c_pll_info->clk_p_univ));
+ 			i2c->i2c_pll_info->clk_p_univ = NULL;
+-			dev_info(&pdev->dev, "cannot get p_univ clock\n");
+-		} else
++		} else if (i2c->i2c_pll_info->clk_p_univ)
+ 			dev_info(&pdev->dev,
+ 				"i2c%d has the relevant clk_p_univ clk.\n",
+ 				i2c->id);
+-- 
+2.56.0
+

@@ -1,0 +1,28 @@
+From 3036193480863d8ea6951c1b1cb6064284da05a3 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 00:14:12 +0200
+Subject: [PATCH] tcpc: the Try.SNK timer line is told at info
+
+The printk that reports a Try.SNK timeout stretched tenfold takes
+KERN_INFO. Without a level it prints as a warning
+(MESSAGE_LOGLEVEL_DEFAULT 4) at every timer started in Try.SNK.
+---
+ drivers/misc/mediatek/typec/tcpc/tcpci_timer.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/typec/tcpc/tcpci_timer.c b/drivers/misc/mediatek/typec/tcpc/tcpci_timer.c
+index 5eedf3195..34320bd3c 100644
+--- a/drivers/misc/mediatek/typec/tcpc/tcpci_timer.c
++++ b/drivers/misc/mediatek/typec/tcpc/tcpci_timer.c
+@@ -1238,7 +1238,7 @@ void tcpc_enable_timer(struct tcpc_device *tcpc, uint32_t timer_id)
+ 	tout = tcpc_timer_timeout[timer_id];
+ 
+ 	if (tcpc->typec_state == /*typec_try_snk*/11) {
+-		printk("mt6370 pd_dbg_info [%s] state match delaytime fixed from %d\n", __func__, tout);
++		printk(KERN_INFO "mt6370 pd_dbg_info [%s] state match delaytime fixed from %d\n", __func__, tout);
+ 		tout *= 10;
+ 	}
+ #ifdef CONFIG_USB_PD_RANDOM_FLOW_DELAY
+-- 
+2.56.0
+

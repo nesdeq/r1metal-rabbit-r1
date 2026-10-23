@@ -1,0 +1,118 @@
+From 31525938061102246caa28e7570d0371ab6e9554 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Sat, 10 Oct 2026 17:14:56 +0200
+Subject: [PATCH] wlan: a scan asks for networks only where the radio may send
+ first
+
+An active scan goes to the chip as passive unless it names its channels
+and the kernel's rules let the radio send first on each of them. This
+covers the scans the driver starts itself, to join, after a link loss
+and to roam; the scheduled scan keeps its type.
+---
+ .../wlan/core/gen4m/include/mgmt/rlm_domain.h |  2 ++
+ .../wlan/core/gen4m/mgmt/rlm_domain.c         | 27 +++++++++++++++++
+ connectivity/wlan/core/gen4m/mgmt/scan_fsm.c  | 30 +++++++++++++++++++
+ 3 files changed, 59 insertions(+)
+
+diff --git a/connectivity/wlan/core/gen4m/include/mgmt/rlm_domain.h b/connectivity/wlan/core/gen4m/include/mgmt/rlm_domain.h
+index 6d794da..ef4d8a8 100644
+--- a/connectivity/wlan/core/gen4m/include/mgmt/rlm_domain.h
++++ b/connectivity/wlan/core/gen4m/include/mgmt/rlm_domain.h
+@@ -1149,6 +1149,8 @@ struct DOMAIN_INFO_ENTRY *rlmDomainGetDomainInfo(
+ u_int8_t rlmIsValidChnl(struct ADAPTER *prAdapter, uint8_t ucNumOfChannel,
+ 			enum ENUM_BAND eBand);
+ 
++u_int8_t rlmIsListenOnlyChnl(uint8_t ucNumOfChannel, enum ENUM_BAND eBand);
++
+ void
+ rlmDomainGetChnlList(struct ADAPTER *prAdapter,
+ 		     enum ENUM_BAND eSpecificBand, u_int8_t fgNoDfs,
+diff --git a/connectivity/wlan/core/gen4m/mgmt/rlm_domain.c b/connectivity/wlan/core/gen4m/mgmt/rlm_domain.c
+index 9830884..47674e9 100644
+--- a/connectivity/wlan/core/gen4m/mgmt/rlm_domain.c
++++ b/connectivity/wlan/core/gen4m/mgmt/rlm_domain.c
+@@ -1430,6 +1430,33 @@ u_int8_t rlmIsValidChnl(struct ADAPTER *prAdapter, uint8_t ucNumOfChannel,
+ 	return FALSE;
+ }
+ 
++/* TRUE unless the kernel's rules let the radio send first on the channel */
++u_int8_t rlmIsListenOnlyChnl(uint8_t ucNumOfChannel, enum ENUM_BAND eBand)
++{
++	struct ieee80211_supported_band *channelList = NULL;
++	struct wiphy *prWiphy = wlanGetWiphy();
++	int i;
++
++	if (!prWiphy)
++		return TRUE;
++
++	if (eBand == BAND_2G4)
++		channelList = prWiphy->bands[KAL_BAND_2GHZ];
++	else if (eBand == BAND_5G)
++		channelList = prWiphy->bands[KAL_BAND_5GHZ];
++
++	if (!channelList)
++		return TRUE;
++
++	for (i = 0; i < channelList->n_channels; i++) {
++		if ((channelList->channels[i]).hw_value == ucNumOfChannel)
++			return ((channelList->channels[i]).flags &
++				(IEEE80211_CHAN_DISABLED |
++				 IEEE80211_CHAN_PASSIVE_FLAG)) != 0;
++	}
++	return TRUE;
++}
++
+ /*----------------------------------------------------------------------------*/
+ /*!
+  * \brief Retrieve the supported channel list of specified band
+diff --git a/connectivity/wlan/core/gen4m/mgmt/scan_fsm.c b/connectivity/wlan/core/gen4m/mgmt/scan_fsm.c
+index 14798af..dc7f4d6 100644
+--- a/connectivity/wlan/core/gen4m/mgmt/scan_fsm.c
++++ b/connectivity/wlan/core/gen4m/mgmt/scan_fsm.c
+@@ -237,6 +237,31 @@ void scnSendScanReq(IN struct ADAPTER *prAdapter)
+ 	scnSendScanReqV2(prAdapter);
+ }
+ 
++/* TRUE unless the scan names only channels the radio may send first on */
++static u_int8_t scnTouchesListenOnlyChnl(IN struct CMD_SCAN_REQ_V2 *prCmdScanReq)
++{
++	struct CHANNEL_INFO *prCnlInfo;
++	uint32_t i;
++
++	if (prCmdScanReq->ucChannelType != SCAN_CHANNEL_SPECIFIED ||
++	    prCmdScanReq->ucChannelListNum == 0)
++		return TRUE;
++
++	for (i = 0; i < prCmdScanReq->ucChannelListNum; i++) {
++		prCnlInfo = &(prCmdScanReq->arChannelList[i]);
++		if (rlmIsListenOnlyChnl(prCnlInfo->ucChannelNum,
++					(enum ENUM_BAND) prCnlInfo->ucBand))
++			return TRUE;
++	}
++	for (i = 0; i < prCmdScanReq->ucChannelListExtNum; i++) {
++		prCnlInfo = &(prCmdScanReq->arChannelListExtend[i]);
++		if (rlmIsListenOnlyChnl(prCnlInfo->ucChannelNum,
++					(enum ENUM_BAND) prCnlInfo->ucBand))
++			return TRUE;
++	}
++	return FALSE;
++}
++
+ /*----------------------------------------------------------------------------*/
+ /*!
+  * \brief        Generate CMD_ID_SCAN_REQ_V2 command
+@@ -384,6 +409,11 @@ void scnSendScanReqV2(IN struct ADAPTER *prAdapter)
+ 		}
+ 	}
+ 
++	/* a scan asks for networks only where the radio may send first */
++	if (prCmdScanReq->ucScanType == SCAN_TYPE_ACTIVE_SCAN &&
++	    scnTouchesListenOnlyChnl(prCmdScanReq))
++		prCmdScanReq->ucScanType = SCAN_TYPE_PASSIVE_SCAN;
++
+ 	prCmdScanReq->u2ChannelDwellTime = prScanParam->u2ChannelDwellTime;
+ 	prCmdScanReq->u2ChannelMinDwellTime =
+ 		prScanParam->u2ChannelMinDwellTime;
+-- 
+2.56.0
+

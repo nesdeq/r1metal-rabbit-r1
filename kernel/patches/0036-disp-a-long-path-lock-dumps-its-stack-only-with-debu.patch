@@ -1,0 +1,73 @@
+From 96a73aafc2128d20c1524718e8bfc5860b818fe5 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 16:09:09 +0200
+Subject: [PATCH] disp: a long path lock dumps its stack only with debug on,
+ and two lock pairs are whole
+
+- A path lock held over 300 ms dumps its stack only with the debug log
+  level set: the panel's sequences hold it about 0.5 s by design.
+- An absent gamma table, the normal case, is a debug line.
+- primary_display_setlcm_cmd() and primary_display_mipi_clk_change()
+  release the locks they hold.
+---
+ drivers/misc/mediatek/video/common/corr10/ddp_gamma.c    | 2 +-
+ .../misc/mediatek/video/mt6765/videox/primary_display.c  | 9 ++++++---
+ 2 files changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/misc/mediatek/video/common/corr10/ddp_gamma.c b/drivers/misc/mediatek/video/common/corr10/ddp_gamma.c
+index cf9347ee2..dd5c827c9 100644
+--- a/drivers/misc/mediatek/video/common/corr10/ddp_gamma.c
++++ b/drivers/misc/mediatek/video/common/corr10/ddp_gamma.c
+@@ -219,7 +219,7 @@ static int disp_gamma_write_lut_reg(struct cmdqRecStruct *cmdq,
+ 
+ 	gamma_lut = g_disp_gamma_lut[id];
+ 	if (gamma_lut == NULL) {
+-		GAMMA_ERR("table [%d] not initialized\n", id);
++		GAMMA_DBG("table [%d] not initialized\n", id);
+ 		ret = -EFAULT;
+ 		goto gamma_write_lut_unlock;
+ 	}
+diff --git a/drivers/misc/mediatek/video/mt6765/videox/primary_display.c b/drivers/misc/mediatek/video/mt6765/videox/primary_display.c
+index 2c53b9cc3..d2564bf4e 100644
+--- a/drivers/misc/mediatek/video/mt6765/videox/primary_display.c
++++ b/drivers/misc/mediatek/video/mt6765/videox/primary_display.c
+@@ -252,7 +252,8 @@ void _primary_path_unlock(const char *caller)
+ 	if (mutex_time_period > 300000000) {
+ 		DISPCHECK("mutex_release_timeout1 <%lld ns>\n",
+ 			mutex_time_period);
+-		dump_stack();
++		if (ddp_debug_dbg_log_level())
++			dump_stack();
+ 	}
+ 
+ 	disp_sw_mutex_unlock(&(pgc->lock));
+@@ -263,7 +264,8 @@ void _primary_path_unlock(const char *caller)
+ 	   (mutex_time_period < 300000000 && mutex_time_period1 < 0)) {
+ 		DISPCHECK("mutex_release_timeout2 <%lld ns>,<%lld ns>\n",
+ 			mutex_time_period1, mutex_time_period);
+-		dump_stack();
++		if (ddp_debug_dbg_log_level())
++			dump_stack();
+ 	}
+ 
+ 	dprec_logger_done(DPREC_LOGGER_PRIMARY_MUTEX, 0, 0);
+@@ -8186,7 +8188,7 @@ int primary_display_setlcm_cmd(unsigned int *lcm_cmd, unsigned int *lcm_count,
+ 	}
+ 
+ 	_primary_path_unlock(__func__);
+-	_primary_path_switch_dst_lock();
++	_primary_path_switch_dst_unlock();
+ 
+ 	mmprofile_log_ex(ddp_mmp_get_events()->primary_set_cmd,
+ 		MMPROFILE_FLAG_END, 0, 0);
+@@ -8207,6 +8209,7 @@ int primary_display_mipi_clk_change(unsigned int clk_value)
+ 
+ 	if (!primary_display_is_video_mode()) {
+ 		DISPCHECK("clk change CMD Mode return\n");
++		_primary_path_unlock(__func__);
+ 		return 0;
+ 	}
+ 
+-- 
+2.56.0
+

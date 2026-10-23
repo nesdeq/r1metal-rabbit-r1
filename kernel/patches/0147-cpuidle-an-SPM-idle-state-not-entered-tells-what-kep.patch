@@ -1,0 +1,106 @@
+From 2af54582320ebdfb2e1fa1b0bece18619c48349b Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Tue, 20 Oct 2026 15:28:26 +0200
+Subject: [PATCH] cpuidle: an SPM idle state not entered tells what kept the
+ core up
+
+mtk_enter_idle_state() tells a SODI, SODI3 or deep idle state not
+entered by its cause: at info, naming the pending interrupt, where the
+firmware kept the core up for it (-EOPNOTSUPP, ISR_EL1.I set), else as a
+warning with the call, its code and ISR_EL1. mtk_idle_trigger_wfi()
+prints no line of its own for it.
+---
+ .../base/power/cpuidle_v3/mtk_cpuidle.c       | 42 ++++++++++++++++++-
+ .../base/power/spm/mt6765/mtk_spm_idle.c      |  4 --
+ 2 files changed, 41 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/misc/mediatek/base/power/cpuidle_v3/mtk_cpuidle.c b/drivers/misc/mediatek/base/power/cpuidle_v3/mtk_cpuidle.c
+index df84e725d..dd9b52fc3 100644
+--- a/drivers/misc/mediatek/base/power/cpuidle_v3/mtk_cpuidle.c
++++ b/drivers/misc/mediatek/base/power/cpuidle_v3/mtk_cpuidle.c
+@@ -312,12 +312,48 @@ static void mtk_platform_restore(int cpu)
+ 	mt_restore_dbg_regs(dbg_data, cpu);
+ }
+ 
++/* ISR_EL1.I: an IRQ is pending at the core */
++#define ISR_EL1_I	BIT(7)
++
++static bool is_spm_idle(int mode)
++{
++	return mode == MTK_SODI_MODE || mode == MTK_SODI3_MODE ||
++		mode == MTK_DPIDLE_MODE;
++}
++
++static const char *spm_idle_name(int mode)
++{
++	return mode == MTK_SODI_MODE ? "SODI" :
++		mode == MTK_SODI3_MODE ? "SODI3" : "deep idle";
++}
++
++/* Tells an SPM idle state not entered by what kept the core up */
++static void spm_idle_not_entered(int mode, int cpu, bool suspended, int ret)
++{
++	u64 isr = read_sysreg(isr_el1);
++
++	if (suspended && ret == -EOPNOTSUPP && (isr & ISR_EL1_I))
++		pr_info("%s on CPU%d not entered: the firmware kept the core up, GIC interrupt %llu pending\n",
++			spm_idle_name(mode), cpu,
++			read_sysreg_s(SYS_ICC_HPPIR1_EL1));
++	else
++		pr_warn("%s on CPU%d not entered: %s returned %d, ISR_EL1 0x%llx\n",
++			spm_idle_name(mode), cpu,
++			suspended ? "arm_cpuidle_suspend" : "cpu_pm_enter",
++			ret, isr);
++}
++
+ int mtk_enter_idle_state(int mode)
+ {
+ 	int cpu, ret;
++	bool suspended = false;
+ 
+-	if (!mtk_cpuidle_initialized)
++	if (!mtk_cpuidle_initialized) {
++		if (is_spm_idle(mode))
++			pr_warn("%s not entered: the MTK cpuidle driver is not initialized\n",
++				spm_idle_name(mode));
+ 		return -EOPNOTSUPP;
++	}
+ 
+ 	cpu = smp_processor_id();
+ 
+@@ -337,6 +373,7 @@ int mtk_enter_idle_state(int mode)
+ 		 * parameter.
+ 		 */
+ 		ret = arm_cpuidle_suspend(mode);
++		suspended = true;
+ 
+ 		cpuidle_fp(cpu, CPUIDLE_FP_AFTER_ATF);
+ 		cpuidle_ts(cpu, CPUIDLE_TS_AFTER_ATF);
+@@ -351,6 +388,9 @@ int mtk_enter_idle_state(int mode)
+ 		cpuidle_perf_print(cpu, mode);
+ 	}
+ 
++	if (ret && is_spm_idle(mode))
++		spm_idle_not_entered(mode, cpu, suspended, ret);
++
+ 	return ret ? -1 : mode;
+ }
+ 
+diff --git a/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm_idle.c b/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm_idle.c
+index d57a4ed8d..db8b5b85f 100644
+--- a/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm_idle.c
++++ b/drivers/misc/mediatek/base/power/spm/mt6765/mtk_spm_idle.c
+@@ -186,10 +186,6 @@ int mtk_idle_trigger_wfi(int idle_type, unsigned int idle_flag, int cpu)
+ 
+ 	print_ftrace_tag(idle_type, cpu, 0);
+ 
+-	if (spm_dormant_sta < 0)
+-		pr_info("mtk_enter_idle_state(%d) ret %d\n",
+-			cpuidle_mode[idle_type], spm_dormant_sta);
+-
+ 	return spm_dormant_sta;
+ }
+ 
+-- 
+2.56.0
+

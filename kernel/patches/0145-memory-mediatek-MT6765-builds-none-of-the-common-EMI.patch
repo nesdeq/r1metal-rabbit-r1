@@ -1,0 +1,39 @@
+From d7cf73b140d6c94c460db154ea2faf697ba359e3 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Tue, 20 Oct 2026 14:42:31 +0200
+Subject: [PATCH] memory: mediatek: MT6765 builds none of the common EMI and
+ DRAMC drivers
+
+drivers/memory/mediatek builds none of the common EMI and DRAMC objects
+for mt6765, as for mt6768 and mt6785: MT6765 runs the legacy drivers,
+and the common ones bind only mediatek,common-* nodes the R1's tree
+lacks, with every call into them compiled out.
+---
+ drivers/memory/mediatek/Makefile | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/memory/mediatek/Makefile b/drivers/memory/mediatek/Makefile
+index 13ba5464a..421bb9626 100644
+--- a/drivers/memory/mediatek/Makefile
++++ b/drivers/memory/mediatek/Makefile
+@@ -3,7 +3,7 @@ ccflags-y += -I$(srctree)/drivers/misc/mediatek/include
+ 
+ obj-$(CONFIG_MEDIATEK_DRAMC)	+= dramc_old.o
+ obj-$(CONFIG_MEDIATEK_DRAMC)	+= dramc_bin_old.o
+-ifeq (,$(filter $(CONFIG_MTK_PLATFORM), "mt6768" "mt6739" "mt6785"))
++ifeq (,$(filter $(CONFIG_MTK_PLATFORM), "mt6765" "mt6768" "mt6739" "mt6785"))
+ obj-$(CONFIG_MTK_DRAMC)	+= dramc.o
+ obj-$(CONFIG_MTK_DRAMC)	+= dramc_bin.o
+ endif
+@@ -12,7 +12,7 @@ obj-$(CONFIG_MEDIATEK_EMI)	+= emicen_old.o
+ obj-$(CONFIG_MEDIATEK_EMI)	+= emimpu_old.o
+ obj-$(CONFIG_MEDIATEK_EMI)	+= emiisu_old.o
+ 
+-ifeq (,$(filter $(CONFIG_MTK_PLATFORM), "mt6768" "mt6785"))
++ifeq (,$(filter $(CONFIG_MTK_PLATFORM), "mt6765" "mt6768" "mt6785"))
+ obj-$(CONFIG_MTK_EMI)	+= emicen.o
+ obj-$(CONFIG_MTK_EMI)	+= emimpu.o
+ obj-$(CONFIG_MTK_EMI)	+= emiisu.o
+-- 
+2.56.0
+

@@ -1,0 +1,203 @@
+From b37afd1982164b0ddd40c4a6fd1c423212da5bcc Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 16:33:18 +0200
+Subject: [PATCH] scp: init failures unwind what was done, and the crash log
+ stays in its buffer
+
+- scp_init() stops when the dvfs driver never finished its init, and its
+  error labels unregister what was registered, in reverse order.
+- mt_scp_dvfs_pdrv_probe() tests the opp table it allocates.
+- mt_scp_sub_feature_init() frees the tables of a failed init and leaves
+  the feature names, which point into the device tree.
+- scp_crash_log_move_to_buf() copies the banner whole, stays inside its
+  buffer and releases its locks on the overflow path.
+---
+ drivers/misc/mediatek/scp/cm4/scp_dvfs.c      | 22 ++++++++++---------
+ drivers/misc/mediatek/scp/cm4/scp_dvfs.h      |  2 +-
+ .../misc/mediatek/scp/cm4/v01/scp_helper.c    | 15 ++++++++-----
+ .../misc/mediatek/scp/cm4/v01/scp_logger.c    | 10 ++++-----
+ 4 files changed, 27 insertions(+), 22 deletions(-)
+
+diff --git a/drivers/misc/mediatek/scp/cm4/scp_dvfs.c b/drivers/misc/mediatek/scp/cm4/scp_dvfs.c
+index bac377504..18d2f233d 100644
+--- a/drivers/misc/mediatek/scp/cm4/scp_dvfs.c
++++ b/drivers/misc/mediatek/scp/cm4/scp_dvfs.c
+@@ -580,7 +580,7 @@ int scp_request_freq(void)
+ 	return 0;
+ }
+ 
+-void wait_scp_dvfs_init_done(void)
++int wait_scp_dvfs_init_done(void)
+ {
+ 	int count = 0;
+ 
+@@ -590,8 +590,11 @@ void wait_scp_dvfs_init_done(void)
+ 		if (count > 3000) {
+ 			pr_err("SCP dvfs driver init fail\n");
+ 			WARN_ON(1);
++			return -ETIMEDOUT;
+ 		}
+ 	}
++
++	return 0;
+ }
+ 
+ int scp_pll_ctrl_set(unsigned int pll_ctrl_flag, unsigned int pll_sel)
+@@ -1186,6 +1189,7 @@ static  int __init mt_scp_sub_feature_init_internal(struct device_node *node,
+ 	kfree(cfg);
+ fail_2:
+ 	kfree(reg);
++	fd->reg = NULL;
+ fail_1:
+ 	kfree(buf);
+ 
+@@ -1229,10 +1233,8 @@ static int __init mt_scp_sub_feature_init(struct device_node *node,
+ 
+ 		fd[i].name = name;
+ 		ret = mt_scp_sub_feature_init_internal(node, &fd[i]);
+-		if (ret) {
+-			kfree(name);
++		if (ret)
+ 			goto fail_2;
+-		}
+ 
+ 		/* init feature cfg */
+ 		ret = snprintf(buf, 25, "%s-cfg", str);
+@@ -1241,10 +1243,8 @@ static int __init mt_scp_sub_feature_init(struct device_node *node,
+ 
+ 		ret = of_property_read_u32_index(node, buf, i,
+ 				&fd[i].onoff);
+-		if (ret) {
+-			kfree(name);
++		if (ret)
+ 			goto fail_2;
+-		}
+ 	}
+ 
+ 	sys->fd = fd;
+@@ -1253,8 +1253,10 @@ static int __init mt_scp_sub_feature_init(struct device_node *node,
+ pass:
+ 	return 0;
+ fail_2:
+-	for (j = i - 1; j >= 0; j--)
+-		kfree(fd[j].name);
++	for (j = i; j >= 0; j--) {
++		kfree(fd[j].reg);
++		kfree(fd[j].cfg);
++	}
+ fail:
+ 	kfree(buf);
+ 	kfree(fd);
+@@ -1537,7 +1539,7 @@ static int __init mt_scp_dvfs_pdrv_probe(struct platform_device *pdev)
+ 	dvfs->scp_opp_num = ret;
+ 	/* init opp data structure */
+ 	opp = kcalloc(dvfs->scp_opp_num, sizeof(*opp), GFP_KERNEL);
+-	if (!dvfs) {
++	if (!opp) {
+ 		kfree(dvfs);
+ 		kfree(buf);
+ 		kfree(sd);
+diff --git a/drivers/misc/mediatek/scp/cm4/scp_dvfs.h b/drivers/misc/mediatek/scp/cm4/scp_dvfs.h
+index 233d0462b..e3f20c88d 100644
+--- a/drivers/misc/mediatek/scp/cm4/scp_dvfs.h
++++ b/drivers/misc/mediatek/scp/cm4/scp_dvfs.h
+@@ -176,7 +176,7 @@ extern unsigned int scp_get_dvfs_opp(void);
+ extern uint32_t scp_get_freq(void);
+ extern int scp_request_freq(void);
+ extern void scp_pll_mux_set(unsigned int pll_ctrl_flag);
+-extern void wait_scp_dvfs_init_done(void);
++extern int wait_scp_dvfs_init_done(void);
+ extern int __init scp_dvfs_init(void);
+ extern void __exit scp_dvfs_exit(void);
+ 
+diff --git a/drivers/misc/mediatek/scp/cm4/v01/scp_helper.c b/drivers/misc/mediatek/scp/cm4/v01/scp_helper.c
+index 8d43754dd..ae894b1b3 100644
+--- a/drivers/misc/mediatek/scp/cm4/v01/scp_helper.c
++++ b/drivers/misc/mediatek/scp/cm4/v01/scp_helper.c
+@@ -1946,7 +1946,10 @@ static int __init scp_init(void)
+ 
+ #if SCP_DVFS_INIT_ENABLE
+ 	scp_dvfs_init();
+-	wait_scp_dvfs_init_done();
++	ret = wait_scp_dvfs_init_done();
++	/* no dvfs driver, no pll to request, nothing to undo */
++	if (ret)
++		return ret;
+ 
+ 	/* pll maybe gate, request pll before access any scp reg/sram */
+ 	scp_pll_ctrl_set(PLL_ENABLE, CLK_26M);
+@@ -1963,7 +1966,7 @@ static int __init scp_init(void)
+ 
+ 	if (platform_driver_register(&mtk_scpsys_device)) {
+ 		pr_err("[SCP] scpsys probe fail\n");
+-		goto err_1;
++		goto err;
+ 	}
+ 
+ 	if(scpreg.scpsys == 0) {
+@@ -1973,12 +1976,12 @@ static int __init scp_init(void)
+ 
+ 	if (platform_driver_register(&mtk_scp_device)) {
+ 		pr_err("[SCP] scp probe fail\n");
+-		goto err;
++		goto err_1;
+ 	}
+ 
+ 	if(scpreg.sram == 0) {
+ 		pr_err("[SCP] skip the scp probe\n");
+-		goto err;
++		goto err_2;
+ 	}
+ 
+ 	/* skip initial if dts status = "disable" */
+@@ -2078,9 +2081,9 @@ static int __init scp_init(void)
+ err_3:
+ 	scp_excep_cleanup();
+ err_2:
+-	platform_driver_register(&mtk_scpsys_device);
+-err_1:
+ 	platform_driver_unregister(&mtk_scp_device);
++err_1:
++	platform_driver_unregister(&mtk_scpsys_device);
+ err:
+ #if SCP_DVFS_INIT_ENABLE
+ 	/* remember to release pll */
+diff --git a/drivers/misc/mediatek/scp/cm4/v01/scp_logger.c b/drivers/misc/mediatek/scp/cm4/v01/scp_logger.c
+index a5be682a2..7f5363984 100644
+--- a/drivers/misc/mediatek/scp/cm4/v01/scp_logger.c
++++ b/drivers/misc/mediatek/scp/cm4/v01/scp_logger.c
+@@ -743,11 +743,10 @@ void scp_crash_log_move_to_buf(enum scp_core_id scp_id)
+ 	/* read log from scp buffer */
+ 	ret = 0;
+ 	if (scp_last_logger) {
+-		ret += snprintf(scp_last_logger, strlen(crash_message),
+-			crash_message);
+-		ret--;
++		ret += scnprintf(scp_last_logger, strlen(crash_message) + 1,
++			"%s", crash_message);
+ 		while ((log_start_idx != log_end_idx) &&
+-			ret <= (length + strlen(crash_message))) {
++			ret < (length + strlen(crash_message))) {
+ 			scp_last_logger[ret] = scp_logger_buf[log_start_idx];
+ 			log_start_idx++;
+ 			ret++;
+@@ -769,7 +768,7 @@ void scp_crash_log_move_to_buf(enum scp_core_id scp_id)
+ 		if (w_pos >= DRAM_BUF_LEN) {
+ 			pr_err("[SCP] %s(): w_pos >= DRAM_BUF_LEN, w_pos=%u",
+ 				__func__, w_pos);
+-			return;
++			goto release;
+ 		}
+ 
+ 		/* copy to dram buffer */
+@@ -796,6 +795,7 @@ void scp_crash_log_move_to_buf(enum scp_core_id scp_id)
+ 		SCP_A_buf_info->w_pos = w_pos;
+ 	}
+ 
++release:
+ 	/* SCP release awake */
+ 	if (scp_awake_unlock(scp_id) == -1)
+ 		pr_debug("[SCP] %s: awake unlock fail\n", __func__);
+-- 
+2.56.0
+

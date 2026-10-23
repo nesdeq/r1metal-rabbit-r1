@@ -1,0 +1,55 @@
+From 49ed5cba24ab0e89def06633427d770fda722682 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 15:45:32 +0200
+Subject: [PATCH] musbhsdma: a channel left unprogrammed is reported as such
+
+For a channel that is not free and for a mode 1 transfer shorter than
+a packet, dma_channel_program logs an error and returns false, "not
+programmed, use PIO", before it touches the channel. Upstream returns
+-1, which callers take as a transfer under way, or leaves the channel
+busy and unprogrammed; the caller waits for a completion that never
+comes.
+---
+ drivers/misc/mediatek/usb20/musbhsdma.c | 18 ++++++++++--------
+ 1 file changed, 10 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/misc/mediatek/usb20/musbhsdma.c b/drivers/misc/mediatek/usb20/musbhsdma.c
+index 04a2d48cb..1257e73f1 100644
+--- a/drivers/misc/mediatek/usb20/musbhsdma.c
++++ b/drivers/misc/mediatek/usb20/musbhsdma.c
+@@ -155,13 +155,8 @@ static void configure_channel(struct dma_channel *channel,
+ 	DBG(4, "%p, pkt_sz %d, addr 0x%x, len %d, mode %d\n",
+ 	    channel, packet_sz, (unsigned int)dma_addr, len, mode);
+ 
+-	if (mode) {
++	if (mode)
+ 		csr |= 1 << MUSB_HSDMA_MODE1_SHIFT;
+-		if (len < packet_sz) {
+-			DBG(0, "%s:%d Error Here\n", __func__, __LINE__);
+-			return;
+-		}
+-	}
+ 	csr |= MUSB_HSDMA_BURSTMODE_INCR16 << MUSB_HSDMA_BURSTMODE_SHIFT;
+ 
+ 	csr |= (musb_channel->epnum << MUSB_HSDMA_ENDPOINT_SHIFT)
+@@ -215,8 +210,15 @@ static int dma_channel_program(struct dma_channel *channel,
+ 
+ 	if (channel->status == MUSB_DMA_STATUS_UNKNOWN ||
+ 	       channel->status == MUSB_DMA_STATUS_BUSY) {
+-		DBG(0, "%s:%d Error Here\n", __func__, __LINE__);
+-		return -1;
++		dev_err(musb->controller, "DMA channel %d not free\n",
++			musb_channel->idx);
++		return false;
++	}
++	/* mode 1 moves whole packets */
++	if (mode && len < packet_sz) {
++		dev_err(musb->controller, "DMA mode 1 for %u bytes, packet %u\n",
++			len, packet_sz);
++		return false;
+ 	}
+ 	/* Let targets check/tweak the arguments */
+ 	if (musb->ops->adjust_channel_params) {
+-- 
+2.56.0
+

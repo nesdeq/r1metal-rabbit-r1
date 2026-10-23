@@ -1,0 +1,47 @@
+From 930e9a6b6b3b708ea665d5db3e18c20857b25a0a Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 16:09:09 +0200
+Subject: [PATCH] cmdq: the mailbox channels are the ones the tree lists
+
+cmdq_helper_mbox_register() creates as many channels as the mboxes
+property lists, at most CMDQ_MAX_THREAD_COUNT, instead of trying them
+all, which fails with a stack dump at the first one the tree lacks.
+---
+ drivers/misc/mediatek/cmdq/v3/cmdq_helper_ext.c | 13 ++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/cmdq/v3/cmdq_helper_ext.c b/drivers/misc/mediatek/cmdq/v3/cmdq_helper_ext.c
+index f6237da29..590d6de65 100644
+--- a/drivers/misc/mediatek/cmdq/v3/cmdq_helper_ext.c
++++ b/drivers/misc/mediatek/cmdq/v3/cmdq_helper_ext.c
+@@ -5347,6 +5347,7 @@ s32 cmdq_helper_mbox_register(struct device *dev)
+ {
+ 	u32 i;
+ 	s32 chan_id;
++	s32 mbox_count;
+ 	struct cmdq_client *clt;
+ #if defined(CONFIG_MTK_MT6382_BDG)
+ 	struct device_node *node;
+@@ -5367,8 +5368,18 @@ s32 cmdq_helper_mbox_register(struct device *dev)
+ 	CMDQ_LOG("sec thread index %u to %u\n", sec_thread[0], sec_thread[1]);
+ #endif
+ 
++	/* the channels are the mboxes the dts lists */
++	mbox_count = of_count_phandle_with_args(dev->of_node, "mboxes",
++		"#mbox-cells");
++	if (mbox_count < 0) {
++		CMDQ_ERR("no mailbox channel in dts:%d\n", mbox_count);
++		mbox_count = 0;
++	} else if (mbox_count > CMDQ_MAX_THREAD_COUNT) {
++		mbox_count = CMDQ_MAX_THREAD_COUNT;
++	}
++
+ 	/* for display we start from thread 0 */
+-	for (i = 0; i < CMDQ_MAX_THREAD_COUNT; i++) {
++	for (i = 0; i < mbox_count; i++) {
+ 		clt = cmdq_mbox_create(dev, i);
+ 		if (!clt || IS_ERR(clt)) {
+ 			CMDQ_LOG("register mbox stop:0x%p idx:%u\n", clt, i);
+-- 
+2.56.0
+

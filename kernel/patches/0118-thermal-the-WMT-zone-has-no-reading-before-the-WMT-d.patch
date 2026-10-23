@@ -1,0 +1,83 @@
+From 9430614d50b15eaefd8e7dec00e725ffb12b1de5 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 19:56:45 +0200
+Subject: [PATCH] thermal: the WMT zone has no reading before the WMT driver
+ registers
+
+The mtktswmt zone reads -127000, no reading, until the WMT driver
+registers its temperature query with the connectivity stub
+(mtk_wcn_cmb_stub_query_registered), instead of asking the stub, which
+until then prints an error and answers -1 C.
+---
+ .../connectivity/common/wmt_build_in_adapter.c   |  5 +++++
+ .../mediatek/include/mt-plat/mtk_wcn_cmb_stub.h  |  2 ++
+ .../thermal/common/thermal_zones/mtk_ts_wmt.c    | 16 +++++++++++++++-
+ 3 files changed, 22 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/connectivity/common/wmt_build_in_adapter.c b/drivers/misc/mediatek/connectivity/common/wmt_build_in_adapter.c
+index 8a7fb4049..b9946034b 100644
+--- a/drivers/misc/mediatek/connectivity/common/wmt_build_in_adapter.c
++++ b/drivers/misc/mediatek/connectivity/common/wmt_build_in_adapter.c
+@@ -212,6 +212,11 @@ int mtk_wcn_cmb_stub_query_ctrl(void)
+ 		return bridge.thermal_query_cb();
+ }
+ 
++int mtk_wcn_cmb_stub_query_registered(void)
++{
++	return bridge.thermal_query_cb != NULL;
++}
++
+ int mtk_wcn_cmb_stub_trigger_assert(void)
+ {
+ 	CONNADP_DBG_FUNC("\n");
+diff --git a/drivers/misc/mediatek/include/mt-plat/mtk_wcn_cmb_stub.h b/drivers/misc/mediatek/include/mt-plat/mtk_wcn_cmb_stub.h
+index 2c4e2d7fe..c2461b140 100644
+--- a/drivers/misc/mediatek/include/mt-plat/mtk_wcn_cmb_stub.h
++++ b/drivers/misc/mediatek/include/mt-plat/mtk_wcn_cmb_stub.h
+@@ -161,6 +161,8 @@ extern int mt_combo_plt_exit_deep_idle(enum COMBO_IF src);
+  */
+ extern void mtk_wcn_cmb_stub_func_ctrl(unsigned int type, unsigned int on);
+ extern int mtk_wcn_cmb_stub_query_ctrl(void);
++/* whether the WMT driver has registered the temperature query, which it does when it is loaded */
++extern int mtk_wcn_cmb_stub_query_registered(void);
+ extern int mtk_wcn_cmb_stub_trigger_assert(void);
+ extern void mtk_wcn_cmb_stub_clock_fail_dump(void);
+ extern int board_sdio_ctrl(unsigned int sdio_port_num, unsigned int on);
+diff --git a/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_wmt.c b/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_wmt.c
+index c1748c283..e10ec798f 100644
+--- a/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_wmt.c
++++ b/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_wmt.c
+@@ -34,7 +34,21 @@ mtk_wcn_cmb_stub_query_ctrl(void)
+ 	pr_notice("E_WF: %s doesn't exist\n", __func__);
+ 	return 0;
+ }
++
++int __attribute__ ((weak))
++mtk_wcn_cmb_stub_query_registered(void)
++{
++	return 1;
++}
+ /*=============================================================*/
++
++/* The WMT sensor in degrees, or the zone's -127 for no reading while no WMT driver has registered the query. */
++static int wmt_sensor_temp(void)
++{
++	if (!mtk_wcn_cmb_stub_query_registered())
++		return -127;
++	return mtk_wcn_cmb_stub_query_ctrl();
++}
+ static kuid_t uid = KUIDT_INIT(0);
+ static kgid_t gid = KGIDT_INIT(1000);
+ static DEFINE_SEMAPHORE(sem_mutex);
+@@ -77,7 +91,7 @@ struct wmt_stats {
+ 
+ #define NR_TS_SENSORS	(4)
+ static int (*ts_get_temp_wrap[4]) (void) = {
+-	mtk_wcn_cmb_stub_query_ctrl /* 0 is for WMT sensor */
++	wmt_sensor_temp /* 0 is for WMT sensor */
+ 	, get_immediate_ts1_wrap
+ 	, get_immediate_ts2_wrap
+ 	, get_immediate_ts3_wrap};
+-- 
+2.56.0
+

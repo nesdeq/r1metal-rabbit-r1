@@ -1,0 +1,84 @@
+From 729d8d4bf89fa68b9e6f117435ac777a80955a08 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 11:19:37 +0200
+Subject: [PATCH] wmt: a full BTIF ring is polled every 1 ms, not slept on for
+ 5
+
+While the BTIF TX ring is full, mtk_wcn_consys_stp_btif_tx retries every
+1 to 2 ms within the bound of its ten 5 ms sleeps, instead of sleeping 8
+to 12 ms (msleep(5) at HZ=250) between tries; its log lines count polls
+instead of retries left.
+---
+ .../common/common_main/linux/stp_btif.c       | 33 ++++++++++++-------
+ 1 file changed, 22 insertions(+), 11 deletions(-)
+
+diff --git a/connectivity/common/common_main/linux/stp_btif.c b/connectivity/common/common_main/linux/stp_btif.c
+index 3d26156..b75f5bd 100644
+--- a/connectivity/common/common_main/linux/stp_btif.c
++++ b/connectivity/common/common_main/linux/stp_btif.c
+@@ -47,6 +47,9 @@
+ 
+ #define STP_BTIF_TX_RTY_LMT (10)
+ #define STP_BTIF_TX_RTY_DLY (5)
++
++/* Retry interval while the TX vFIFO has no room. */
++#define STP_BTIF_TX_POLL_US (1000)
+ /*******************************************************************************
+ *                             D A T A   T Y P E S
+ ********************************************************************************
+@@ -144,7 +147,7 @@ INT32 mtk_wcn_consys_stp_btif_rx_cb_register(MTK_WCN_BTIF_RX_CB rx_cb)
+ 
+ INT32 mtk_wcn_consys_stp_btif_tx(const PUINT8 pBuf, const UINT32 len, PUINT32 written_len)
+ {
+-	INT32 retry_left = STP_BTIF_TX_RTY_LMT;
++	INT32 polls = 0;
+ 	INT32 wr_count = 0;
+ 	INT32 written = 0;
+ 
+@@ -178,25 +181,33 @@ INT32 mtk_wcn_consys_stp_btif_tx(const PUINT8 pBuf, const UINT32 len, PUINT32 wr
+ 		return wr_count;
+ 	}
+ 
+-	while ((retry_left--) && (wr_count < len)) {
+-		osal_sleep_ms(STP_BTIF_TX_RTY_DLY);
+-		written = mtk_wcn_btif_write(g_stp_btif.stpBtifId, pBuf + wr_count, len - wr_count);
+-		if (written < 0) {
+-			WMT_ERR_FUNC("mtk_wcn_btif_write err(%d)when do recovered\n", written);
+-			break;
++	if (wr_count < len) {
++		ktime_t start = ktime_get();
++		unsigned long limit = jiffies + STP_BTIF_TX_RTY_LMT * OSAL_MSLEEP_JIFFIES(STP_BTIF_TX_RTY_DLY);
++
++		/* Ring full: retry for as long as the retry sleeps would last. */
++		while (wr_count < len && time_before(jiffies, limit)) {
++			usleep_range(STP_BTIF_TX_POLL_US, 2 * STP_BTIF_TX_POLL_US);
++			polls++;
++			written = mtk_wcn_btif_write(g_stp_btif.stpBtifId, pBuf + wr_count, len - wr_count);
++			if (written < 0) {
++				WMT_ERR_FUNC("mtk_wcn_btif_write err(%d)when do recovered\n", written);
++				break;
++			}
++			wr_count += written;
+ 		}
+-		wr_count += written;
++		OSAL_WAIT_LOG("ring room", start);
+ 	}
+ 
+ 	if (wr_count == len) {
+-		WMT_INFO_FUNC("recovered,len(%d),retry_left(%d)\n", len, retry_left);
++		WMT_INFO_FUNC("recovered,len(%d),polls(%d)\n", len, polls);
+ 		/*recovered case */
+ 		*written_len = wr_count;
+ 		return wr_count;
+ 	}
+ 
+-	WMT_ERR_FUNC("stp btif write fail,len(%d),written(%d),retry_left(%d),pid[%d/%s]\n",
+-		     len, wr_count, retry_left, current->pid, current->comm);
++	WMT_ERR_FUNC("stp btif write fail,len(%d),written(%d),polls(%d),pid[%d/%s]\n",
++		     len, wr_count, polls, current->pid, current->comm);
+ 	*written_len = 0;
+ 
+ 	return -wr_count;
+-- 
+2.56.0
+

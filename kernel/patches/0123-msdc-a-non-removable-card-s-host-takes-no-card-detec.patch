@@ -1,0 +1,38 @@
+From bf4d2ada1982abba220b59d294d84612a660a4c6 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 20:08:50 +0200
+Subject: [PATCH] msdc: a non-removable card's host takes no card detection
+
+msdc_of_parse reads cd-gpios and cd_level only for a removable card's
+host, as mmc_of_parse does, so the eMMC's host prints no missing
+cd_level and leaves the global cd_gpio to the SD card's host.
+---
+ drivers/mmc/host/mediatek/ComboA/mt6765/msdc_cust.c | 12 +++++++-----
+ 1 file changed, 7 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/mmc/host/mediatek/ComboA/mt6765/msdc_cust.c b/drivers/mmc/host/mediatek/ComboA/mt6765/msdc_cust.c
+index 90959d78a..e72d63d33 100644
+--- a/drivers/mmc/host/mediatek/ComboA/mt6765/msdc_cust.c
++++ b/drivers/mmc/host/mediatek/ComboA/mt6765/msdc_cust.c
+@@ -1253,11 +1253,13 @@ int msdc_of_parse(struct platform_device *pdev, struct mmc_host *mmc)
+ 		pr_notice("[msdc%d] host_function isn't found in device tree\n",
+ 			host->id);
+ 
+-	/* get cd_gpio and cd_level */
+-	cd_gpio = of_get_named_gpio(np, "cd-gpios", 0);
+-	if (of_property_read_u8(np, "cd_level", &host->hw->cd_level))
+-		pr_notice("[msdc%d] cd_level isn't found in device tree\n",
+-			host->id);
++	/* get cd_gpio and cd_level; a non-removable card's host has no card detection, as in mmc_of_parse() */
++	if (!(mmc->caps & MMC_CAP_NONREMOVABLE)) {
++		cd_gpio = of_get_named_gpio(np, "cd-gpios", 0);
++		if (of_property_read_u8(np, "cd_level", &host->hw->cd_level))
++			pr_notice("[msdc%d] cd_level isn't found in device tree\n",
++				host->id);
++	}
+ 
+ 	msdc_get_register_settings(host, np);
+ 
+-- 
+2.56.0
+

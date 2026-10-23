@@ -1,0 +1,64 @@
+From 23b249cbfad3003a44b0bdd8a2ed2cf41bec78b0 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 11:18:44 +0200
+Subject: [PATCH] wmt: the chip id is polled until it is there, not every 20 ms
+
+After a read without the chip id, polling_consys_chipid reads it every 1
+to 2 ms for up to a retry's 20 ms and loads the ROM patches once the id
+is there, instead of sleeping 20 ms, 24 at HZ=250, before the next read.
+---
+ .../common/common_main/platform/mt6765.c      | 23 +++++++++++++++----
+ 1 file changed, 19 insertions(+), 4 deletions(-)
+
+diff --git a/connectivity/common/common_main/platform/mt6765.c b/connectivity/common/common_main/platform/mt6765.c
+index f5bd0ce..2ee1381 100644
+--- a/connectivity/common/common_main/platform/mt6765.c
++++ b/connectivity/common/common_main/platform/mt6765.c
+@@ -97,6 +97,12 @@
+ ********************************************************************************
+ */
+ 
++/* Poll interval while the chip comes up, as in MediaTek's sequences. */
++#define CONSYS_POLL_INTERVAL_US	1000
++
++/* Bound of a chip id poll, and the pause after a failed ROM patch. */
++#define CONSYS_CHIPID_RETRY_MS	20
++
+ /*******************************************************************************
+ *                             D A T A   T Y P E S
+ ********************************************************************************
+@@ -877,6 +883,18 @@ static INT32 polling_consys_chipid(VOID)
+ 	/*12.poll CONNSYS CHIP ID until chipid is returned  0x18070008 */
+ 	while (retry-- > 0) {
+ 		consys_ver_id = CONSYS_REG_READ(conn_reg.mcu_top_misc_off_base + CONSYS_IP_VER_OFFSET);
++		if (consys_ver_id != 0x10020300) {
++			ktime_t start = ktime_get();
++			unsigned long limit = jiffies + OSAL_MSLEEP_JIFFIES(CONSYS_CHIPID_RETRY_MS);
++
++			/* Not up yet: poll the id for up to one retry's time. */
++			WMT_PLAT_PR_INFO("CONSYS version id(0x%08x) not there yet, retry(%d)\n", consys_ver_id, retry);
++			while (consys_ver_id != 0x10020300 && time_before(jiffies, limit)) {
++				usleep_range(CONSYS_POLL_INTERVAL_US, 2 * CONSYS_POLL_INTERVAL_US);
++				consys_ver_id = CONSYS_REG_READ(conn_reg.mcu_top_misc_off_base + CONSYS_IP_VER_OFFSET);
++			}
++			OSAL_WAIT_LOG("chip id", start);
++		}
+ 		if (consys_ver_id == 0x10020300) {
+ 			WMT_PLAT_PR_INFO("retry(%d)consys version id(0x%08x)\n", retry, consys_ver_id);
+ 			consys_hw_ver = CONSYS_REG_READ(conn_reg.mcu_base + CONSYS_HW_ID_OFFSET);
+@@ -887,11 +905,8 @@ static INT32 polling_consys_chipid(VOID)
+ 			if (consys_dl_rom_patch(consys_ver_id, consys_fw_ver) == 0)
+ 				break;
+ 			WMT_PLAT_PR_ERR("ROM patch download failed after version id(0x%08x)\n", consys_ver_id);
+-		} else {
+-			/* The id reads 0 for a while after power-on: no fault. */
+-			WMT_PLAT_PR_INFO("CONSYS version id(0x%08x) not there yet, retry(%d)\n", consys_ver_id, retry);
++			msleep(CONSYS_CHIPID_RETRY_MS);
+ 		}
+-		msleep(20);
+ 	}
+ 
+ 	/* a break on the last try leaves retry at 0, running out -1 */
+-- 
+2.56.0
+

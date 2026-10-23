@@ -1,0 +1,276 @@
+From 8d5e05e2891e4ccc593ea40e0198216d17f4ba0d Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 20:03:27 +0200
+Subject: [PATCH] Kconfig: a symbol defined twice has one type
+
+MTK_QOS_FRAMEWORK, CHARGER_BQ25890, MTK_CMDQ and TOUCHSCREEN_GOODIX_BRL
+take the type of their other definition, as Kconfig warns of a symbol
+of two types. The hx83102p Himax Kconfig, which redefines every symbol
+of the 8789p1/8185p3 one, is removed, and TOUCHSCREEN_HIMAX_COMMON
+depends on either chipset switch.
+---
+ drivers/input/touchscreen/mediatek/Kconfig    |   1 -
+ .../mediatek/goodix_berlin_driver/Kconfig     |   2 +-
+ .../mediatek/hxchipset_8789p1_8185p3/Kconfig  |   2 +-
+ .../mediatek/hxchipset_hx83102p/Kconfig       | 169 ------------------
+ drivers/misc/mediatek/base/power/Kconfig      |   2 +-
+ drivers/power/supply/mediatek/charger/Kconfig |   2 +-
+ drivers/soc/mediatek/Kconfig                  |   2 +-
+ 7 files changed, 5 insertions(+), 175 deletions(-)
+ delete mode 100644 drivers/input/touchscreen/mediatek/hxchipset_hx83102p/Kconfig
+
+diff --git a/drivers/input/touchscreen/mediatek/Kconfig b/drivers/input/touchscreen/mediatek/Kconfig
+index 1e2c322d9..d86ad6a93 100644
+--- a/drivers/input/touchscreen/mediatek/Kconfig
++++ b/drivers/input/touchscreen/mediatek/Kconfig
+@@ -190,7 +190,6 @@ config TOUCHSCREEN_HIMAX_CHIPSET
+ 	report 10 touches at a time.
+ 
+ 	If unsure, say N.
+-source "drivers/input/touchscreen/mediatek/hxchipset_hx83102p/Kconfig"
+ 
+ config TOUCHSCREEN_GOODIX_BRL
+ 	bool "Goodix berlin touchscreen"
+diff --git a/drivers/input/touchscreen/mediatek/goodix_berlin_driver/Kconfig b/drivers/input/touchscreen/mediatek/goodix_berlin_driver/Kconfig
+index b921d37c4..778496801 100644
+--- a/drivers/input/touchscreen/mediatek/goodix_berlin_driver/Kconfig
++++ b/drivers/input/touchscreen/mediatek/goodix_berlin_driver/Kconfig
+@@ -2,7 +2,7 @@
+ # Goodix touchscreen driver configuration
+ #
+ menuconfig TOUCHSCREEN_GOODIX_BRL
+-	tristate "Goodix berlin touchscreen"
++	bool "Goodix berlin touchscreen"
+ 	help
+ 	  Say Y here if you have a Goodix berlin series touch controller
+ 	  to your system
+diff --git a/drivers/input/touchscreen/mediatek/hxchipset_8789p1_8185p3/Kconfig b/drivers/input/touchscreen/mediatek/hxchipset_8789p1_8185p3/Kconfig
+index 5df6333ed..0e38c052d 100644
+--- a/drivers/input/touchscreen/mediatek/hxchipset_8789p1_8185p3/Kconfig
++++ b/drivers/input/touchscreen/mediatek/hxchipset_8789p1_8185p3/Kconfig
+@@ -4,7 +4,7 @@
+ 
+ config TOUCHSCREEN_HIMAX_COMMON
+         tristate "HIMAX common touchscreen"
+-	depends on TOUCHSCREEN_HIMAX_CHIPSET_8789P1_8185P3
++	depends on TOUCHSCREEN_HIMAX_CHIPSET_8789P1_8185P3 || TOUCHSCREEN_HIMAX_CHIPSET
+ 	help
+ 	Say Y here to enable support for I2C based touchscreens.
+ 	To compile this driver as a module, choose M here: the
+diff --git a/drivers/input/touchscreen/mediatek/hxchipset_hx83102p/Kconfig b/drivers/input/touchscreen/mediatek/hxchipset_hx83102p/Kconfig
+deleted file mode 100644
+index feb8ee17f..000000000
+--- a/drivers/input/touchscreen/mediatek/hxchipset_hx83102p/Kconfig
++++ /dev/null
+@@ -1,169 +0,0 @@
+-#
+-# Himax Touchscreen driver configuration
+-#
+-
+-config TOUCHSCREEN_HIMAX_COMMON
+-        tristate "HIMAX common touchscreen"
+-	depends on TOUCHSCREEN_HIMAX_CHIPSET
+-	help
+-	Say Y here to enable support for I2C based touchscreens.
+-	To compile this driver as a module, choose M here: the
+-	module will be called HimaxChipsetTs.
+-
+-choice
+-	prompt "HIMAX touch IC types"
+-	depends on TOUCHSCREEN_HIMAX_COMMON
+-	default TOUCHSCREEN_HIMAX_INCELL
+-
+-config TOUCHSCREEN_HIMAX_ONCELL
+-        bool "HIMAX chipset on-cell function"
+-	depends on TOUCHSCREEN_HIMAX_COMMON
+-	help
+-	  if you want to use on-cell function, you must set the config.
+-	  If unsure, not set it.
+-	  there are some on-cell function in the code of Himax touch.
+-	  choose the config here to support for the on-cell function.
+-
+-config TOUCHSCREEN_HIMAX_INCELL
+-        bool "HIMAX chipset in-cell function"
+-	depends on TOUCHSCREEN_HIMAX_COMMON
+-	help
+-	  if you want to use in-cell function, you must set the config.
+-	  If unsure, not set it.
+-	  there are some in-cell function in the code of Himax touch.
+-	  choose the config here to support for the in-cell function.
+-
+-endchoice
+-
+-# ***************** On-cell Start *****************
+-config TOUCHSCREEN_HIMAX_IC_HX852xH
+-	tristate "HIMAX chipset HX852xH function"
+-	depends on TOUCHSCREEN_HIMAX_ONCELL
+-	help
+-	This enables support for HIMAX CHIPSET of HX852xH.
+-	if you want to use HX852xH, you must set the config.
+-	If unsure, not set it.
+-	there are some chip type in the code of Himax touch.
+-
+-
+-config TOUCHSCREEN_HIMAX_IC_HX852xG
+-	tristate "HIMAX chipset HX852xG function"
+-	depends on TOUCHSCREEN_HIMAX_ONCELL
+-	help
+-	This enables support for HIMAX CHIPSET of HX852xG.
+-	if you want to use HX852xG, you must set the config.
+-	If unsure, not set it.
+-	there are some chip type in the code of Himax touch.
+-
+-# ***************** On-cell End *******************
+-# ***************** In-cell Start *****************
+-config TOUCHSCREEN_HIMAX_IC_HX83192
+-        tristate "HIMAX chipset HX83192 function"
+-	depends on TOUCHSCREEN_HIMAX_INCELL
+-	help
+-	This enables support for HIMAX CHIPSET of HX83192.
+-	if you want to use HX83192, you must set the config.
+-	If unsure, not set it.
+-	there are some chip type in the code of Himax touch.
+-
+-config TOUCHSCREEN_HIMAX_IC_HX83191
+-        tristate "HIMAX chipset HX83191 function"
+-	depends on TOUCHSCREEN_HIMAX_INCELL
+-	help
+-	This enables support for HIMAX CHIPSET of HX83191.
+-	if you want to use HX83191, you must set the config.
+-	If unsure, not set it.
+-	there are some chip type in the code of Himax touch.
+-
+-config TOUCHSCREEN_HIMAX_IC_HX83113
+-        tristate "HIMAX chipset HX83113 function"
+-	depends on TOUCHSCREEN_HIMAX_INCELL
+-	help
+-	This enables support for HIMAX CHIPSET of HX83113.
+-	if you want to use HX83113, you must set the config.
+-	If unsure, not set it.
+-	there are some chip type in the code of Himax touch.
+-
+-config TOUCHSCREEN_HIMAX_IC_HX83112
+-        tristate "HIMAX chipset HX83112 function"
+-	depends on TOUCHSCREEN_HIMAX_INCELL
+-	help
+-	This enables support for HIMAX CHIPSET of HX83112.
+-	if you want to use HX83112, you must set the config.
+-	If unsure, not set it.
+-	there are some chip type in the code of Himax touch.
+-
+-config TOUCHSCREEN_HIMAX_IC_HX83111
+-        tristate "HIMAX chipset HX83111 function"
+-	depends on TOUCHSCREEN_HIMAX_INCELL
+-	help
+-	This enables support for HIMAX CHIPSET of HX83111.
+-	if you want to use HX83111, you must set the config.
+-	If unsure, not set it.
+-	there are some chip type in the code of Himax touch.
+-
+-config TOUCHSCREEN_HIMAX_IC_HX83106
+-        tristate "HIMAX chipset HX83106 function"
+-	depends on TOUCHSCREEN_HIMAX_INCELL
+-	help
+-	This enables support for HIMAX CHIPSET of HX83106.
+-	if you want to use HX83106, you must set the config.
+-	If unsure, not set it.
+-	there are some chip type in the code of Himax touch.
+-
+-config TOUCHSCREEN_HIMAX_IC_HX83103
+-        tristate "HIMAX chipset HX83103 function"
+-	depends on TOUCHSCREEN_HIMAX_INCELL
+-	help
+-	This enables support for HIMAX CHIPSET of HX83103.
+-	if you want to use HX83103, you must set the config.
+-	If unsure, not set it.
+-	there are some chip type in the code of Himax touch.
+-
+-config TOUCHSCREEN_HIMAX_IC_HX83102
+-        tristate "HIMAX chipset HX83102 function"
+-	depends on TOUCHSCREEN_HIMAX_INCELL
+-	help
+-	This enables support for HIMAX CHIPSET of HX83102.
+-	if you want to use HX83102, you must set the config.
+-	If unsure, not set it.
+-	there are some chip type in the code of Himax touch.
+-
+-# ***************** In-cell End *******************
+-
+-config TOUCHSCREEN_HIMAX_DEBUG
+-        bool "HIMAX debug function"
+-	depends on TOUCHSCREEN_HIMAX_INCELL || TOUCHSCREEN_HIMAX_ONCELL
+-	help
+-	This enables support for HIMAX debug function of HimaxChipsetTs.
+-	if you want to use debug, you must set the config.
+-	If unsure, not set it.
+-	there are some chip type in the code of Himax touch.
+-
+-config TOUCHSCREEN_HIMAX_INSPECT
+-        bool "HIMAX inspect function"
+-	depends on TOUCHSCREEN_HIMAX_INCELL || TOUCHSCREEN_HIMAX_ONCELL
+-	help
+-	help
+-	This enables support for HIMAX INSPECT function of HimaxChipsetTs.
+-	if you want to use INSPECT, you must set the config.
+-	If unsure, not set it.
+-	there are some chip type in the code of Himax touch.
+-
+-config TOUCHSCREEN_HIMAX_EMBEDDED_FIRMWARE
+-	bool "HIMAX embedded firmware function"
+-	depends on TOUCHSCREEN_HIMAX_INCELL || TOUCHSCREEN_HIMAX_ONCELL
+-	help
+-	This enables support for HIMAX FIRMWARE function of HimaxChipsetTs.
+-	if you want to use INSPECT, you must set the config.
+-	If unsure, not set it.
+-	there are some chip type in the code of Himax touch.
+-
+-config HMX_DB
+-	bool "HIMAX driver test over Dragon Board"
+-	depends on TOUCHSCREEN_HIMAX_COMMON
+-	help
+-	This enables support for HIMAX COMMON function of HimaxChipsetTs.
+-	if you want to use INSPECT, you must set the config.
+-	If unsure, not set it.
+-	there are some chip type in the code of Himax touch.
+diff --git a/drivers/misc/mediatek/base/power/Kconfig b/drivers/misc/mediatek/base/power/Kconfig
+index 5cf837962..6d2184c9e 100644
+--- a/drivers/misc/mediatek/base/power/Kconfig
++++ b/drivers/misc/mediatek/base/power/Kconfig
+@@ -88,7 +88,7 @@ config MTK_PBM
+ 	  CPU and GPU when battery voltage is low.
+ 
+ config MTK_QOS_FRAMEWORK
+-	bool "MTK QOS FRAMEWORK"
++	tristate "MTK QOS FRAMEWORK"
+ 	help
+ 	  This kernel config can be used to enable MTK QOS FRAMEWORK.
+ 	  When enabling this option, BW Limiter and BW Bound Detector
+diff --git a/drivers/power/supply/mediatek/charger/Kconfig b/drivers/power/supply/mediatek/charger/Kconfig
+index 962c62cf9..df4cd71a3 100644
+--- a/drivers/power/supply/mediatek/charger/Kconfig
++++ b/drivers/power/supply/mediatek/charger/Kconfig
+@@ -197,7 +197,7 @@ config CHARGER_BQ25601
+ 	  Set to Yes if BQ25601 is used.
+ 
+ config CHARGER_BQ25890
+-	bool "CHARGER_BQ25890"
++	tristate "CHARGER_BQ25890"
+ 	help
+ 	  This is to enable MediaTek supports to BQ25890.
+ 	  It depends on config MTK_SMART_BATTERY
+diff --git a/drivers/soc/mediatek/Kconfig b/drivers/soc/mediatek/Kconfig
+index 717528d39..c60d5c65f 100644
+--- a/drivers/soc/mediatek/Kconfig
++++ b/drivers/soc/mediatek/Kconfig
+@@ -5,7 +5,7 @@ menu "MediaTek SoC drivers"
+ 	depends on ARCH_MEDIATEK || COMPILE_TEST
+ 
+ config MTK_CMDQ
+-	tristate "MediaTek CMDQ Support"
++	bool "MediaTek CMDQ Support"
+ 	depends on ARCH_MEDIATEK || COMPILE_TEST
+ 	select MAILBOX
+ 	select MTK_CMDQ_MBOX
+-- 
+2.56.0
+

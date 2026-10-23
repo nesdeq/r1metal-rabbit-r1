@@ -1,0 +1,63 @@
+From 0f921f1a766bdb6b9b6ff160792f9fdca60b3329 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 10:46:40 +0200
+Subject: [PATCH] wlan: the perf monitor follows the screen while the interface
+ is down, too
+
+wlan_fb_notifier_callback sets wlan_fb_power_down before its halt test,
+so the flag follows the screen while the interface is down. A radio
+started in the dark otherwise finds the screen lit, runs the performance
+monitor and skips the dark-screen statistics.
+---
+ .../wlan/core/gen4m/os/linux/gl_kal.c         | 22 +++++++++++++++++--
+ 1 file changed, 20 insertions(+), 2 deletions(-)
+
+diff --git a/connectivity/wlan/core/gen4m/os/linux/gl_kal.c b/connectivity/wlan/core/gen4m/os/linux/gl_kal.c
+index a49aeab..b5a47e2 100644
+--- a/connectivity/wlan/core/gen4m/os/linux/gl_kal.c
++++ b/connectivity/wlan/core/gen4m/os/linux/gl_kal.c
+@@ -8794,6 +8794,26 @@ static int wlan_fb_notifier_callback(struct notifier_block
+ 	DBGLOG(SW4, INFO, "%s: event[%ld], blank[%d]\n", __func__,
+ 			event, blank);
+ 
++	/* Tracks the screen even while halted, for a radio started in the dark. */
++	switch (blank) {
++#if KERNEL_VERSION(5, 4, 0) <= CFG80211_VERSION_CODE
++	case MTK_DISP_BLANK_UNBLANK:
++#else
++	case FB_BLANK_UNBLANK:
++#endif
++		wlan_fb_power_down = FALSE;
++		break;
++#if KERNEL_VERSION(5, 4, 0) <= CFG80211_VERSION_CODE
++	case MTK_DISP_BLANK_POWERDOWN:
++#else
++	case FB_BLANK_POWERDOWN:
++#endif
++		wlan_fb_power_down = TRUE;
++		break;
++	default:
++		break;
++	}
++
+ 	if (kalHaltTryLock())
+ 		goto end;
+ 
+@@ -8809,14 +8829,12 @@ static int wlan_fb_notifier_callback(struct notifier_block
+ 	case FB_BLANK_UNBLANK:
+ #endif
+ 		kalSetPerMonEnable(prGlueInfo);
+-		wlan_fb_power_down = FALSE;
+ 		break;
+ #if KERNEL_VERSION(5, 4, 0) <= CFG80211_VERSION_CODE
+ 	case MTK_DISP_BLANK_POWERDOWN:
+ #else
+ 	case FB_BLANK_POWERDOWN:
+ #endif
+-		wlan_fb_power_down = TRUE;
+ 		if (!wlan_perf_monitor_force_enable)
+ 			kalSetPerMonDisable(prGlueInfo);
+ 		break;
+-- 
+2.56.0
+

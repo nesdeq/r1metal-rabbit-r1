@@ -1,0 +1,117 @@
+From 5ed6a0ee36028ea357ef9bb772e473b9aed42cbe Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 13:33:30 +0200
+Subject: [PATCH] disp: every debug line of the display prints while
+ printk.debug is set
+
+While printk.debug is set the display's debug level answers 2, its IRQ
+log level 1 and its mobile log true, which DISP_LOG_I, DISPINFO,
+DISPPR_FENCE and DISPFUNC ask in place of g_mobilelog, and every MIPI TX
+register write is traced.
+---
+ drivers/misc/mediatek/video/mt6765/dispsys/ddp_debug.c | 10 ++++++++--
+ drivers/misc/mediatek/video/mt6765/dispsys/ddp_debug.h |  1 +
+ drivers/misc/mediatek/video/mt6765/dispsys/ddp_dsi.c   |  2 +-
+ drivers/misc/mediatek/video/mt6765/dispsys/ddp_log.h   |  2 +-
+ .../misc/mediatek/video/mt6765/videox/disp_drv_log.h   |  6 +++---
+ 5 files changed, 14 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/misc/mediatek/video/mt6765/dispsys/ddp_debug.c b/drivers/misc/mediatek/video/mt6765/dispsys/ddp_debug.c
+index ae3a1eecd..68120ab65 100644
+--- a/drivers/misc/mediatek/video/mt6765/dispsys/ddp_debug.c
++++ b/drivers/misc/mediatek/video/mt6765/dispsys/ddp_debug.c
+@@ -848,14 +848,20 @@ unsigned int ddp_debug_analysis_to_buffer(void)
+ 	return dump_to_buffer;
+ }
+ 
++/* While printk.debug is set: debug level 2, IRQ lines and the mobile log on. */
+ unsigned int ddp_debug_dbg_log_level(void)
+ {
+-	return dbg_log_level;
++	return printk_debugging() ? 2 : dbg_log_level;
+ }
+ 
+ unsigned int ddp_debug_irq_log_level(void)
+ {
+-	return irq_log_level;
++	return printk_debugging() ? 1 : irq_log_level;
++}
++
++unsigned int ddp_debug_mobile_log(void)
++{
++	return g_mobilelog || printk_debugging();
+ }
+ 
+ int ddp_debug_force_roi(void)
+diff --git a/drivers/misc/mediatek/video/mt6765/dispsys/ddp_debug.h b/drivers/misc/mediatek/video/mt6765/dispsys/ddp_debug.h
+index 1d8048379..72cc31f7b 100644
+--- a/drivers/misc/mediatek/video/mt6765/dispsys/ddp_debug.h
++++ b/drivers/misc/mediatek/video/mt6765/dispsys/ddp_debug.h
+@@ -33,6 +33,7 @@ void ddp_debug_exit(void);
+ unsigned int  ddp_debug_analysis_to_buffer(void);
+ unsigned int  ddp_debug_dbg_log_level(void);
+ unsigned int  ddp_debug_irq_log_level(void);
++unsigned int  ddp_debug_mobile_log(void);
+ int ddp_debug_force_roi(void);
+ int ddp_debug_force_roi_x(void);
+ int ddp_debug_force_roi_y(void);
+diff --git a/drivers/misc/mediatek/video/mt6765/dispsys/ddp_dsi.c b/drivers/misc/mediatek/video/mt6765/dispsys/ddp_dsi.c
+index df53403d1..3efec40cc 100644
+--- a/drivers/misc/mediatek/video/mt6765/dispsys/ddp_dsi.c
++++ b/drivers/misc/mediatek/video/mt6765/dispsys/ddp_dsi.c
+@@ -117,7 +117,7 @@ do {	\
+ 
+ #define MIPITX_OUTREG32(addr, val) \
+ do {\
+-	if (dsi_reg_op_debug) {	\
++	if (dsi_reg_op_debug || printk_debugging()) {	\
+ 		DDPMSG("[mipitx/wreg]%p=0x%08x\n", (void *)addr, val);\
+ 	} \
+ 	mt_reg_sync_writel(val, addr);\
+diff --git a/drivers/misc/mediatek/video/mt6765/dispsys/ddp_log.h b/drivers/misc/mediatek/video/mt6765/dispsys/ddp_log.h
+index 690d44f5b..7088ff56c 100644
+--- a/drivers/misc/mediatek/video/mt6765/dispsys/ddp_log.h
++++ b/drivers/misc/mediatek/video/mt6765/dispsys/ddp_log.h
+@@ -21,7 +21,7 @@
+ #define DISP_LOG_I(fmt, args...)					\
+ 	do {								\
+ 		dprec_logger_pr(DPREC_LOGGER_DEBUG, fmt, ##args);	\
+-		if (g_mobilelog)					\
++		if (ddp_debug_mobile_log())				\
+ 			pr_debug("[DDP/"LOG_TAG"]"fmt, ##args);		\
+ 	} while (0)
+ 
+diff --git a/drivers/misc/mediatek/video/mt6765/videox/disp_drv_log.h b/drivers/misc/mediatek/video/mt6765/videox/disp_drv_log.h
+index 9cd8580a3..8570ed354 100644
+--- a/drivers/misc/mediatek/video/mt6765/videox/disp_drv_log.h
++++ b/drivers/misc/mediatek/video/mt6765/videox/disp_drv_log.h
+@@ -18,7 +18,7 @@
+ #define DISPINFO(string, args...)					\
+ 	do {								\
+ 		dprec_logger_pr(DPREC_LOGGER_DEBUG, string, ##args);	\
+-		if (g_mobilelog) \
++		if (ddp_debug_mobile_log()) \
+ 			pr_debug("[DISP]"string, ##args);		\
+ 	} while (0)
+ 
+@@ -51,7 +51,7 @@
+ #define DISPPR_FENCE(string, args...)					\
+ 	do {								\
+ 		dprec_logger_pr(DPREC_LOGGER_FENCE, string, ##args);	\
+-		if (g_mobilelog)					\
++		if (ddp_debug_mobile_log())				\
+ 			pr_info("fence/"string, ##args);		\
+ 	} while (0)
+ 
+@@ -65,7 +65,7 @@
+ #define DISPFUNC()							\
+ 	do {								\
+ 		dprec_logger_pr(DPREC_LOGGER_DEBUG, "func|%s\n", __func__); \
+-		if (g_mobilelog)					\
++		if (ddp_debug_mobile_log())				\
+ 			pr_info("[DISP]func|%s\n", __func__);		\
+ 	} while (0)
+ 
+-- 
+2.56.0
+

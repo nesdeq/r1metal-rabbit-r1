@@ -1,0 +1,37 @@
+From aec7ceda2ccbcf23f44653f97e9db0257751719d Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 20:27:43 +0200
+Subject: [PATCH] wmt: the chip's wake interrupt is a debug line
+
+wmt_lib_ps_handler prints the chip's wake interrupt with pr_debug
+instead of a rate-limited pr_info, whose report of suppressed lines
+comes at warning level.
+---
+ connectivity/common/common_main/core/wmt_lib.c | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/connectivity/common/common_main/core/wmt_lib.c b/connectivity/common/common_main/core/wmt_lib.c
+index c536e28..1d5811e 100644
+--- a/connectivity/common/common_main/core/wmt_lib.c
++++ b/connectivity/common/common_main/core/wmt_lib.c
+@@ -910,7 +910,6 @@ static INT32 wmt_lib_ps_handler(MTKSTP_PSM_ACTION_T action)
+ {
+ 	INT32 ret;
+ 	MTK_WCN_BOOL bRet = MTK_WCN_BOOL_FALSE;
+-	static DEFINE_RATELIMIT_STATE(_rs, 2 * HZ, 1);
+ 
+ 	ret = 0;		/* TODO:[FixMe][George] initial value or compile warning? */
+ 	/* if(g_block_tx && (action == SLEEP)) */
+@@ -1031,8 +1030,7 @@ static INT32 wmt_lib_ps_handler(MTKSTP_PSM_ACTION_T action)
+ 		WMT_DBG_FUNC("send op --------------------------------> eirq job\n");
+ 
+ 		if (!mtk_wcn_stp_is_sdio_mode()) {
+-			if (__ratelimit(&_rs))
+-				pr_info("conn2ap_btif0_wakeup_out_b EIRQ handler\n");
++			pr_debug("conn2ap_btif0_wakeup_out_b EIRQ handler\n");
+ 			WMT_DBG_FUNC("disable host eirq\n");
+ 			/* Disable interrupt */
+ 			/*wmt_plat_eirq_ctrl(PIN_BGF_EINT, PIN_STA_EINT_DIS);*/
+-- 
+2.56.0
+

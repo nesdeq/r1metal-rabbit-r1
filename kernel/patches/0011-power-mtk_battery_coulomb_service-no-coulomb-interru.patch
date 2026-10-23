@@ -1,0 +1,139 @@
+From 138c7845a6e82c9d59a363899593caa4bb622d0e Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Tue, 13 Oct 2026 15:04:18 +0200
+Subject: [PATCH] power: mtk_battery_coulomb_service: no coulomb interrupt
+ across a suspend
+
+Both coulomb interrupts stay off from PM_SUSPEND_PREPARE to
+PM_POST_SUSPEND, also against marks armed meanwhile (coulomb_mark()).
+After the suspend the service runs as on an interrupt and handles the
+marks crossed asleep. An armed coulomb interrupt wakes the system at the
+next percent of the kernel's level.
+---
+ .../supply/mtk_battery_coulomb_service.c      | 59 ++++++++++++++++---
+ 1 file changed, 51 insertions(+), 8 deletions(-)
+
+diff --git a/drivers/power/supply/mtk_battery_coulomb_service.c b/drivers/power/supply/mtk_battery_coulomb_service.c
+index 47002c9fd..918764106 100644
+--- a/drivers/power/supply/mtk_battery_coulomb_service.c
++++ b/drivers/power/supply/mtk_battery_coulomb_service.c
+@@ -9,10 +9,20 @@
+ #include <linux/delay.h>
+ #include <linux/kthread.h>
+ #include <linux/platform_device.h>
++#include <linux/suspend.h>
+ #include "mtk_battery.h"
+ 
+ int fix_coverity;
+ 
++/* Set from PM_SUSPEND_PREPARE to PM_POST_SUSPEND; hw_coulomb_lock guards it. */
++static bool coulomb_asleep;
++
++/* Arms one side's coulomb interrupt, kept off while coulomb_asleep; hw_coulomb_lock is held. */
++static void coulomb_mark(enum gauge_property side, int car)
++{
++	gauge_set_property(side, coulomb_asleep ? 0 : car);
++}
++
+ static void wake_up_gauge_coulomb(struct mtk_battery *gm)
+ {
+ 	unsigned long flags = 0;
+@@ -29,8 +39,8 @@ static void wake_up_gauge_coulomb(struct mtk_battery *gm)
+ 		cs->coulomb_thread_timeout);
+ 
+ 	mutex_lock(&cs->hw_coulomb_lock);
+-	gauge_set_property(GAUGE_PROP_COULOMB_HT_INTERRUPT, 300);
+-	gauge_set_property(GAUGE_PROP_COULOMB_LT_INTERRUPT, 300);
++	coulomb_mark(GAUGE_PROP_COULOMB_HT_INTERRUPT, 300);
++	coulomb_mark(GAUGE_PROP_COULOMB_LT_INTERRUPT, 300);
+ 	mutex_unlock(&cs->hw_coulomb_lock);
+ 	spin_lock_irqsave(&cs->slock, flags);
+ 	if (cs->wlock->active == 0)
+@@ -242,7 +252,7 @@ void gauge_coulomb_start(struct gauge_consumer *coulomb, int car)
+ 		}
+ 		hw_car = ptr->end - now_car;
+ 		mutex_lock(&cs->hw_coulomb_lock);
+-		gauge_set_property(GAUGE_PROP_COULOMB_HT_INTERRUPT, hw_car);
++		coulomb_mark(GAUGE_PROP_COULOMB_HT_INTERRUPT, hw_car);
+ 		mutex_unlock(&cs->hw_coulomb_lock);
+ 	} else {
+ 		list_for_each(pos, phead) {
+@@ -254,7 +264,7 @@ void gauge_coulomb_start(struct gauge_consumer *coulomb, int car)
+ 		}
+ 		hw_car = now_car - ptr->end;
+ 		mutex_lock(&cs->hw_coulomb_lock);
+-		gauge_set_property(GAUGE_PROP_COULOMB_LT_INTERRUPT, hw_car);
++		coulomb_mark(GAUGE_PROP_COULOMB_LT_INTERRUPT, hw_car);
+ 		mutex_unlock(&cs->hw_coulomb_lock);
+ 	}
+ 	mutex_unlock(&cs->coulomb_lock);
+@@ -346,8 +356,7 @@ static void gauge_coulomb_int_handler(struct mtk_coulomb_service *cs)
+ 					ptr->start, ptr->end,
+ 					ptr->variable, car, hw_car);
+ 			mutex_lock(&cs->hw_coulomb_lock);
+-			gauge_set_property(GAUGE_PROP_COULOMB_HT_INTERRUPT,
+-				hw_car);
++			coulomb_mark(GAUGE_PROP_COULOMB_HT_INTERRUPT, hw_car);
+ 			mutex_unlock(&cs->hw_coulomb_lock);
+ 		} else
+ 			bm_debug("+ list is empty\n");
+@@ -393,8 +402,7 @@ static void gauge_coulomb_int_handler(struct mtk_coulomb_service *cs)
+ 				ptr->start, ptr->end,
+ 				ptr->variable, car, hw_car);
+ 			mutex_lock(&cs->hw_coulomb_lock);
+-			gauge_set_property(GAUGE_PROP_COULOMB_LT_INTERRUPT,
+-				hw_car);
++			coulomb_mark(GAUGE_PROP_COULOMB_LT_INTERRUPT, hw_car);
+ 			mutex_unlock(&cs->hw_coulomb_lock);
+ 		} else
+ 			bm_debug("- list is empty\n");
+@@ -454,6 +462,37 @@ static irqreturn_t coulomb_irq(int irq, void *data)
+ 	return IRQ_HANDLED;
+ }
+ 
++/* Every enabled PMIC interrupt wakes the system: keep the coulomb ones off across a suspend. */
++static int coulomb_pm_event(struct notifier_block *notifier,
++	unsigned long pm_event, void *unused)
++{
++	struct mtk_battery *gm = get_mtk_battery();
++
++	if (gm == NULL)
++		return NOTIFY_DONE;
++
++	switch (pm_event) {
++	case PM_SUSPEND_PREPARE:
++		mutex_lock(&gm->cs.hw_coulomb_lock);
++		coulomb_asleep = true;
++		gauge_set_property(GAUGE_PROP_COULOMB_HT_INTERRUPT, 0);
++		gauge_set_property(GAUGE_PROP_COULOMB_LT_INTERRUPT, 0);
++		mutex_unlock(&gm->cs.hw_coulomb_lock);
++		break;
++	case PM_POST_SUSPEND:
++		mutex_lock(&gm->cs.hw_coulomb_lock);
++		coulomb_asleep = false;
++		mutex_unlock(&gm->cs.hw_coulomb_lock);
++		wake_up_gauge_coulomb(gm);
++		break;
++	}
++	return NOTIFY_DONE;
++}
++
++static struct notifier_block coulomb_pm_notifier = {
++	.notifier_call = coulomb_pm_event,
++};
++
+ void gauge_coulomb_service_init(struct mtk_battery *gm)
+ {
+ 	int val;
+@@ -494,4 +533,8 @@ void gauge_coulomb_service_init(struct mtk_battery *gm)
+ 	gauge_get_property(GAUGE_PROP_COULOMB, &val);
+ 	cs->pre_coulomb = val;
+ 	cs->init = true;
++
++	ret = register_pm_notifier(&coulomb_pm_notifier);
++	if (ret)
++		bm_err("failed to register the coulomb pm notifier\n");
+ }
+-- 
+2.56.0
+

@@ -1,0 +1,28 @@
+From ba7e64d5664d2d9c1fed5265d44edf2aa3a0f817 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 15:19:31 +0200
+Subject: [PATCH] mcdi: governor: get_cluster_off_token names the type of its
+ cpu
+
+The parameter is int cpu, as the header declares it; clang 23 refuses
+the implicit int, which C99 removed.
+---
+ drivers/misc/mediatek/base/power/mcdi/mtk_mcdi_governor.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/base/power/mcdi/mtk_mcdi_governor.c b/drivers/misc/mediatek/base/power/mcdi/mtk_mcdi_governor.c
+index dedfd1482..4644d04be 100644
+--- a/drivers/misc/mediatek/base/power/mcdi/mtk_mcdi_governor.c
++++ b/drivers/misc/mediatek/base/power/mcdi/mtk_mcdi_governor.c
+@@ -177,7 +177,7 @@ void set_mcdi_idle_state(int cpu, int state)
+ 	mcdi_prof_set_idle_state(cpu, state);
+ }
+ 
+-int get_cluster_off_token(cpu)
++int get_cluster_off_token(int cpu)
+ {
+ 	unsigned long flags;
+ 	int cluster;
+-- 
+2.56.0
+

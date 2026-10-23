@@ -1,0 +1,32 @@
+From 3aa19b4406c55396e135652b7a1263f20f8b5b72 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 18:43:17 +0200
+Subject: [PATCH] mt6370 charger: no charger type is known before BC1.2 has
+ detected one
+
+The MT6370 charger's power supply registers as
+POWER_SUPPLY_TYPE_UNKNOWN until BC1.2 detects a type. As
+POWER_SUPPLY_TYPE_USB it reads as a USB host at a Type-C attach at
+boot, and the extcon connects the gadget before BC1.2, whose PHY switch
+then breaks the host's enumeration.
+---
+ drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_charger.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_charger.c b/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_charger.c
+index 821d57c7f..cc6900ddb 100755
+--- a/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_charger.c
++++ b/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_charger.c
+@@ -4414,7 +4414,8 @@ static enum power_supply_property mt6370_pmu_chg_properties[] = {
+ };
+ 
+ static const struct power_supply_desc mt6370_pmu_chg_desc = {
+-	.type			= POWER_SUPPLY_TYPE_USB,
++	/* no charger type is known before BC1.2 has detected one */
++	.type			= POWER_SUPPLY_TYPE_UNKNOWN,
+ 	.properties		= mt6370_pmu_chg_properties,
+ 	.num_properties		= ARRAY_SIZE(mt6370_pmu_chg_properties),
+ 	.get_property		= mt6370_pmu_chg_get_property,
+-- 
+2.56.0
+

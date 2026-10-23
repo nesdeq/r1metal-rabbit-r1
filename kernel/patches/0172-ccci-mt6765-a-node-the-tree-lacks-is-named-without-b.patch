@@ -1,0 +1,58 @@
+From ee1aa812d338584b121473771d98440566c35960 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 10:45:06 +0200
+Subject: [PATCH] ccci mt6765: a node the tree lacks is named without being
+ read
+
+md_cd_get_modem_hw_info and ccci_platform_init name a node whose
+of_iomap failed with %pOF, which prints "(null)" for a missing node
+where node->full_name dereferences it. md_cd_get_modem_hw_info also
+fails where the INFRACFG_AO map fails, as its other maps do.
+---
+ drivers/misc/mediatek/eccci/mt6765/ccci_platform.c    | 2 +-
+ drivers/misc/mediatek/eccci/mt6765/md_sys1_platform.c | 9 +++++++--
+ 2 files changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/misc/mediatek/eccci/mt6765/ccci_platform.c b/drivers/misc/mediatek/eccci/mt6765/ccci_platform.c
+index 10eedec37..471e0448b 100644
+--- a/drivers/misc/mediatek/eccci/mt6765/ccci_platform.c
++++ b/drivers/misc/mediatek/eccci/mt6765/ccci_platform.c
+@@ -105,7 +105,7 @@ int ccci_platform_init(struct ccci_modem *md)
+ 	md_cd_plat_val_ptr.infra_ao_base = of_iomap(node, 0);
+ 	if (!md_cd_plat_val_ptr.infra_ao_base) {
+ 		CCCI_ERROR_LOG(md->index, TAG,
+-			"%s: infra_ao_base of_iomap failed\n", node->full_name);
++			"%pOF: infra_ao_base of_iomap failed\n", node);
+ 		return -1;
+ 	}
+ 	CCCI_INIT_LOG(-1, TAG, "infra_ao_base:0x%p\n",
+diff --git a/drivers/misc/mediatek/eccci/mt6765/md_sys1_platform.c b/drivers/misc/mediatek/eccci/mt6765/md_sys1_platform.c
+index 7678170a2..3245b6a3b 100644
+--- a/drivers/misc/mediatek/eccci/mt6765/md_sys1_platform.c
++++ b/drivers/misc/mediatek/eccci/mt6765/md_sys1_platform.c
+@@ -181,6 +181,11 @@ int md_cd_get_modem_hw_info(struct platform_device *dev_ptr,
+ 		node_infrao = of_find_compatible_node(NULL, NULL,
+ 			"mediatek,mt6765-infracfg");
+ 		md_cd_plat_val_ptr.infra_ao_base = of_iomap(node_infrao, 0);
++		if (!md_cd_plat_val_ptr.infra_ao_base) {
++			CCCI_ERROR_LOG(-1, TAG,
++				"%pOF: infra_ao_base of_iomap failed\n", node_infrao);
++			return -1;
++		}
+ 
+ 		hw_info->plat_ptr = &md_cd_plat_ptr;
+ 		hw_info->plat_val = &md_cd_plat_val_ptr;
+@@ -203,8 +208,8 @@ int md_cd_get_modem_hw_info(struct platform_device *dev_ptr,
+ 		hw_info->ap_mixed_base = (unsigned long)of_iomap(node, 0);
+ 		if (!hw_info->ap_mixed_base) {
+ 			CCCI_ERROR_LOG(-1, TAG,
+-				"%s: hw_info->ap_mixed_base of_iomap failed\n",
+-				node->full_name);
++				"%pOF: hw_info->ap_mixed_base of_iomap failed\n",
++				node);
+ 			return -1;
+ 		}
+ 		node = of_find_compatible_node(NULL, NULL, "mediatek,topckgen");
+-- 
+2.56.0
+

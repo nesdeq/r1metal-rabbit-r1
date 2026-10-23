@@ -1,0 +1,33 @@
+From 75a719ae8fd78f7541439290cfec6dbe7cbc6ee8 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 18:47:23 +0200
+Subject: [PATCH] cm_mgr: a tree without the CPU to DRAM map has no entries in
+ it
+
+cm_mgr_check_dts_setting counts an absent cm_mgr_cpu_opp_to_dram as 0
+entries, not -ENOENT, as the map is optional; a malformed one keeps its
+error.
+---
+ drivers/misc/mediatek/cm_mgr/mtk_cm_mgr_common.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/cm_mgr/mtk_cm_mgr_common.c b/drivers/misc/mediatek/cm_mgr/mtk_cm_mgr_common.c
+index 39efa66f7..cd6a79d35 100644
+--- a/drivers/misc/mediatek/cm_mgr/mtk_cm_mgr_common.c
++++ b/drivers/misc/mediatek/cm_mgr/mtk_cm_mgr_common.c
+@@ -600,9 +600,11 @@ int cm_mgr_check_dts_setting(struct platform_device *pdev)
+ 	pr_info("[CM_MGR] platform-cm_mgr cm_mgr_base=%p\n",
+ 			cm_mgr_base);
+ 
+-	/* cm_mgr_cpu_opp_to_dram */
++	/* cm_mgr_cpu_opp_to_dram is optional: a tree without it has no entries */
+ 	opp_count = of_count_phandle_with_args(node,
+ 			"cm_mgr_cpu_opp_to_dram", NULL);
++	if (opp_count == -ENOENT)
++		opp_count = 0;
+ 	pr_info("#@# %s(%d) opp_count %d\n",
+ 			__func__, __LINE__, opp_count);
+ 
+-- 
+2.56.0
+

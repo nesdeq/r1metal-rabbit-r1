@@ -1,0 +1,352 @@
+# The release is named after r1metal instead of the commit the tree stands at.
+CONFIG_LOCALVERSION="-r1metal"
+# CONFIG_LOCALVERSION_AUTO is not set
+
+# These two select about 440 Android options; off, so the lines below can take effect.
+# CONFIG_ANDROID_DEFAULT_SETTING is not set
+# CONFIG_MTK_ANDROID_DEFAULT_SETTING is not set
+
+# Optimise for speed, and no tracer call at the start of every function.
+# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
+CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y
+# CONFIG_FUNCTION_TRACER is not set
+CONFIG_ENABLE_DEFAULT_TRACERS=y
+
+# The kernel is optimised as one program at link time, by ThinLTO.
+# CONFIG_LTO_NONE is not set
+CONFIG_LTO_CLANG=y
+CONFIG_THINLTO=y
+
+# The boot image's ramdisk is LZ4, as Rabbit's is; stock unpacked it only because incremental fs selected the decompressor.
+CONFIG_RD_LZ4=y
+
+# All eight Cortex-A53 cores report REVIDR_EL1 bit 8, erratum 843419 fixed in silicon, so the linker leaves ADRP alone.
+# CONFIG_ARM64_ERRATUM_843419 is not set
+
+# Static keys are patched into the code instead of tested at run time.
+CONFIG_JUMP_LABEL=y
+
+# The SoC has 8 cores.
+CONFIG_NR_CPUS=8
+
+# Bookkeeping and probes nothing here reads.
+# CONFIG_SCHEDSTATS is not set
+# CONFIG_PSI is not set
+# CONFIG_PROFILING is not set
+# CONFIG_KPROBES is not set
+# CONFIG_UPROBES is not set
+# CONFIG_UPROBE_EVENTS is not set
+# CONFIG_BPF_EVENTS is not set
+
+# Packet filtering and connection tracking, whose collector runs twice a second.
+# CONFIG_NETFILTER is not set
+
+# Android's interprocess plumbing.
+# CONFIG_ANDROID_BINDER_IPC is not set
+# CONFIG_ANDROID_BINDERFS is not set
+# CONFIG_ASHMEM is not set
+
+# 32 bit programs.
+# CONFIG_COMPAT is not set
+
+# The filesystem of the data partition, without transparent compression.
+CONFIG_F2FS_FS=y
+# CONFIG_F2FS_FS_COMPRESSION is not set
+
+# Devices that exist only inside virtual machines.
+# CONFIG_VIRTIO_BLK is not set
+# CONFIG_VIRTIO_NET is not set
+# CONFIG_VIRTIO_CONSOLE is not set
+# CONFIG_VIRTIO_INPUT is not set
+# CONFIG_VIRTIO_MMIO is not set
+# CONFIG_HW_RANDOM_VIRTIO is not set
+# CONFIG_DRM_VIRTIO_GPU is not set
+# CONFIG_CRYPTO_DEV_VIRTIO is not set
+# CONFIG_VSOCKETS is not set
+# CONFIG_VIRT_WIFI is not set
+
+# Everything is built in; the module symbols are set off one by one, since without modules Kconfig would build them in.
+# CONFIG_MODULES is not set
+# CONFIG_IKHEADERS is not set
+# CONFIG_TCP_CONG_WESTWOOD is not set
+# CONFIG_TCP_CONG_HTCP is not set
+# CONFIG_SERIAL_OF_PLATFORM is not set
+# CONFIG_BATTERY_MT6359 is not set
+# CONFIG_SND_SOC_MT6357_ACCDET is not set
+# CONFIG_SND_SOC_MT6359_ACCDET is not set
+# CONFIG_USB_DUMMY_HCD is not set
+# CONFIG_MMC_SDHCI is not set
+# CONFIG_MMC_SDHCI_PLTFM is not set
+# CONFIG_MMSTAT_TRACER is not set
+
+# Hardening, mitigations and access control r1metal does not run on.
+# CONFIG_AUDIT is not set
+# CONFIG_SECCOMP is not set
+# CONFIG_SECCOMP_FILTER is not set
+# CONFIG_UNMAP_KERNEL_AT_EL0 is not set
+# CONFIG_HARDEN_BRANCH_PREDICTOR is not set
+# CONFIG_HARDEN_EL2_VECTORS is not set
+# CONFIG_ARM64_SSBD is not set
+# CONFIG_ARM64_SW_TTBR0_PAN is not set
+# CONFIG_RANDOMIZE_BASE is not set
+# CONFIG_STACKPROTECTOR is not set
+# CONFIG_STACKPROTECTOR_STRONG is not set
+# CONFIG_VMAP_STACK is not set
+# CONFIG_DEBUG_LIST is not set
+# CONFIG_HARDENED_USERCOPY is not set
+# CONFIG_SECURITY is not set
+# CONFIG_SECURITY_SELINUX is not set
+# CONFIG_SECURITY_NETWORK is not set
+# CONFIG_SECURITY_PERF_EVENTS_RESTRICT is not set
+# CONFIG_INTEGRITY is not set
+# CONFIG_NETWORK_SECMARK is not set
+# CONFIG_KEYS is not set
+# CONFIG_SYSTEM_TRUSTED_KEYRING is not set
+# CONFIG_SYSTEM_DATA_VERIFICATION is not set
+# CONFIG_ASYMMETRIC_KEY_TYPE is not set
+# CONFIG_X509_CERTIFICATE_PARSER is not set
+# CONFIG_PKCS7_MESSAGE_PARSER is not set
+CONFIG_CFG80211_CERTIFICATION_ONUS=y
+# CONFIG_CFG80211_REQUIRE_SIGNED_REGDB is not set
+# CONFIG_CFG80211_USE_KERNEL_REGDB_KEYS is not set
+
+# /dev/mem, to read the GIC's trigger setup and the SPM's power status, which no driver shows.
+CONFIG_DEVMEM=y
+# CONFIG_STRICT_DEVMEM is not set
+
+# Device mapper, verity, encryption, overlays and quotas; r1metal mounts f2fs, fuse, tmpfs, configfs, pstore and tracefs only.
+# CONFIG_MD is not set
+# CONFIG_BLK_DEV_DM is not set
+# CONFIG_DM_CRYPT is not set
+# CONFIG_DM_DEFAULT_KEY is not set
+# CONFIG_DM_SNAPSHOT is not set
+# CONFIG_DM_VERITY is not set
+# CONFIG_DM_BOW is not set
+# CONFIG_DM_USER is not set
+# CONFIG_FS_VERITY is not set
+# CONFIG_FS_ENCRYPTION is not set
+# CONFIG_BLK_INLINE_ENCRYPTION is not set
+# CONFIG_OVERLAY_FS is not set
+# CONFIG_INCREMENTAL_FS is not set
+# CONFIG_EXT4_FS is not set
+# CONFIG_F2FS_FS_POSIX_ACL is not set
+# CONFIG_QUOTA is not set
+# CONFIG_QUOTACTL is not set
+# CONFIG_QFMT_V2 is not set
+# CONFIG_UNICODE is not set
+# CONFIG_BLK_DEV_LOOP is not set
+# CONFIG_BLK_DEV_RAM is not set
+# CONFIG_NLS_CODEPAGE_737 is not set
+# CONFIG_NLS_CODEPAGE_775 is not set
+# CONFIG_NLS_CODEPAGE_850 is not set
+# CONFIG_NLS_CODEPAGE_852 is not set
+# CONFIG_NLS_CODEPAGE_855 is not set
+# CONFIG_NLS_CODEPAGE_857 is not set
+# CONFIG_NLS_CODEPAGE_860 is not set
+# CONFIG_NLS_CODEPAGE_861 is not set
+# CONFIG_NLS_CODEPAGE_862 is not set
+# CONFIG_NLS_CODEPAGE_863 is not set
+# CONFIG_NLS_CODEPAGE_864 is not set
+# CONFIG_NLS_CODEPAGE_865 is not set
+# CONFIG_NLS_CODEPAGE_866 is not set
+# CONFIG_NLS_CODEPAGE_869 is not set
+# CONFIG_NLS_CODEPAGE_874 is not set
+# CONFIG_NLS_CODEPAGE_932 is not set
+# CONFIG_NLS_CODEPAGE_936 is not set
+# CONFIG_NLS_CODEPAGE_949 is not set
+# CONFIG_NLS_CODEPAGE_950 is not set
+# CONFIG_NLS_CODEPAGE_1250 is not set
+# CONFIG_NLS_CODEPAGE_1251 is not set
+# CONFIG_NLS_ISO8859_2 is not set
+# CONFIG_NLS_ISO8859_3 is not set
+# CONFIG_NLS_ISO8859_4 is not set
+# CONFIG_NLS_ISO8859_5 is not set
+# CONFIG_NLS_ISO8859_6 is not set
+# CONFIG_NLS_ISO8859_7 is not set
+# CONFIG_NLS_ISO8859_8 is not set
+# CONFIG_NLS_ISO8859_9 is not set
+# CONFIG_NLS_ISO8859_13 is not set
+# CONFIG_NLS_ISO8859_14 is not set
+# CONFIG_NLS_ISO8859_15 is not set
+# CONFIG_NLS_KOI8_R is not set
+# CONFIG_NLS_KOI8_U is not set
+# CONFIG_NLS_MAC_ROMAN is not set
+# CONFIG_NLS_MAC_CELTIC is not set
+# CONFIG_NLS_MAC_CENTEURO is not set
+# CONFIG_NLS_MAC_CROATIAN is not set
+# CONFIG_NLS_MAC_CYRILLIC is not set
+# CONFIG_NLS_MAC_GAELIC is not set
+# CONFIG_NLS_MAC_GREEK is not set
+# CONFIG_NLS_MAC_ICELAND is not set
+# CONFIG_NLS_MAC_INUIT is not set
+# CONFIG_NLS_MAC_ROMANIAN is not set
+# CONFIG_NLS_MAC_TURKISH is not set
+
+# Memory features nothing here uses: compressed RAM and per process reclaim; swap stays, since MediaTek's fault path calls into it.
+# CONFIG_ZRAM is not set
+# CONFIG_ZSMALLOC is not set
+# CONFIG_PGTABLE_MAPPING is not set
+# CONFIG_PROCESS_RECLAIM is not set
+
+# Memory, freezer and accounting controllers, namespaces, BPF and per task accounting; MediaTek's scheduler keeps the CPU controllers, schedtune and cpusets it is built on.
+# CONFIG_SCHED_AUTOGROUP is not set
+# CONFIG_MEMCG is not set
+# CONFIG_CGROUP_FREEZER is not set
+# CONFIG_CGROUP_CPUACCT is not set
+# CONFIG_NAMESPACES is not set
+# CONFIG_PID_NS is not set
+# CONFIG_NET_NS is not set
+# CONFIG_UTS_NS is not set
+# CONFIG_IPC_NS is not set
+# CONFIG_BPF_SYSCALL is not set
+# CONFIG_BPF_JIT is not set
+# CONFIG_CGROUP_BPF is not set
+# CONFIG_TASKSTATS is not set
+# CONFIG_TASK_IO_ACCOUNTING is not set
+# CONFIG_TASK_XACCT is not set
+# CONFIG_CPU_FREQ_TIMES is not set
+# CONFIG_CROSS_MEMORY_ATTACH is not set
+# CONFIG_MEMBARRIER is not set
+# CONFIG_BINFMT_SCRIPT is not set
+# CONFIG_MAGIC_SYSRQ is not set
+# CONFIG_IKCONFIG is not set
+
+# Networking beyond plain IPv4 and IPv6 sockets, netlink and packet sockets: routing policy, tunnels, IPsec, bridges, PPP, shaping, SCTP, TIPC, mac80211.
+# CONFIG_IP_MULTIPLE_TABLES is not set
+# CONFIG_IPV6_MULTIPLE_TABLES is not set
+# CONFIG_IPV6_SUBTREES is not set
+# CONFIG_IP_PNP is not set
+# CONFIG_IP_MROUTE is not set
+# CONFIG_IPV6_MROUTE is not set
+# CONFIG_NET_IPIP is not set
+# CONFIG_NET_IPVTI is not set
+# CONFIG_NET_IPGRE_DEMUX is not set
+# CONFIG_IPV6_SIT is not set
+# CONFIG_IPV6_TUNNEL is not set
+# CONFIG_IPV6_VTI is not set
+# CONFIG_IPV6_MIP6 is not set
+# CONFIG_INET_AH is not set
+# CONFIG_INET_ESP is not set
+# CONFIG_INET_IPCOMP is not set
+# CONFIG_INET_XFRM_MODE_TRANSPORT is not set
+# CONFIG_INET_XFRM_MODE_TUNNEL is not set
+# CONFIG_INET_XFRM_MODE_BEET is not set
+# CONFIG_INET6_AH is not set
+# CONFIG_INET6_ESP is not set
+# CONFIG_INET6_IPCOMP is not set
+# CONFIG_INET6_XFRM_MODE_TRANSPORT is not set
+# CONFIG_INET6_XFRM_MODE_TUNNEL is not set
+# CONFIG_INET6_XFRM_MODE_BEET is not set
+# CONFIG_INET6_XFRM_MODE_ROUTEOPTIMIZATION is not set
+# CONFIG_XFRM_USER is not set
+# CONFIG_XFRM_INTERFACE is not set
+# CONFIG_XFRM_SUB_POLICY is not set
+# CONFIG_XFRM_STATISTICS is not set
+# CONFIG_NET_KEY is not set
+# CONFIG_INET_DIAG is not set
+# CONFIG_BRIDGE is not set
+# CONFIG_L2TP is not set
+# CONFIG_PPP is not set
+# CONFIG_TUN is not set
+# CONFIG_VETH is not set
+# CONFIG_DUMMY is not set
+# CONFIG_NET_SCHED is not set
+# CONFIG_IP_SCTP is not set
+# CONFIG_TIPC is not set
+# CONFIG_MAC80211 is not set
+
+# nl80211's test mode, through which Android's supplicant sent MediaTek's driver commands; r1metal sends none.
+# CONFIG_NL80211_TESTMODE is not set
+
+# Crypto nothing kept asks for by name; what Bluetooth, pstore, TCP Fast Open and the RPMB bridge need stays selected or set.
+# CONFIG_CRYPTO_USER is not set
+# CONFIG_CRYPTO_ARC4 is not set
+# CONFIG_CRYPTO_AUTHENC is not set
+# CONFIG_CRYPTO_BLOWFISH is not set
+# CONFIG_CRYPTO_CBC is not set
+# CONFIG_CRYPTO_CCM is not set
+# CONFIG_CRYPTO_CHACHA20POLY1305 is not set
+# CONFIG_CRYPTO_CTR is not set
+# CONFIG_CRYPTO_DES is not set
+# CONFIG_CRYPTO_ECHAINIV is not set
+# CONFIG_CRYPTO_GCM is not set
+# CONFIG_CRYPTO_LZ4 is not set
+# CONFIG_CRYPTO_LZO is not set
+# CONFIG_CRYPTO_MD5 is not set
+# CONFIG_CRYPTO_SEQIV is not set
+# CONFIG_CRYPTO_SHA1 is not set
+# CONFIG_CRYPTO_XCBC is not set
+# CONFIG_CRYPTO_ZSTD is not set
+# CONFIG_CRYPTO_CRC32C is not set
+# CONFIG_LIBCRC32C is not set
+
+# USB as a host: the R1 is only ever a gadget; its gadget keeps the console, the drive and FunctionFS.
+# CONFIG_USB_STORAGE is not set
+# CONFIG_SND_USB is not set
+# CONFIG_USB_HID is not set
+# CONFIG_HID is not set
+# CONFIG_INPUT_JOYSTICK is not set
+# CONFIG_USB_CONFIGFS_SERIAL is not set
+# CONFIG_USB_CONFIGFS_RNDIS is not set
+# CONFIG_USB_CONFIGFS_MTK_FASTMETA is not set
+# CONFIG_USB_CONFIGFS_F_ACC is not set
+# CONFIG_USB_CONFIGFS_F_AUDIO_SRC is not set
+# CONFIG_USB_CONFIGFS_F_MIDI is not set
+# CONFIG_USB_CONFIGFS_F_HID is not set
+# CONFIG_USB_CONFIGFS_F_UVC is not set
+# CONFIG_MEDIA_SUPPORT is not set
+
+# The debug UARTs, whose console is off, and the drivers of devices this board does not have.
+# CONFIG_SERIAL_8250 is not set
+# CONFIG_MTK_UART_APDMA is not set
+# CONFIG_PRINTK_MTK_UART_CONSOLE is not set
+# CONFIG_SERIAL_AMBA_PL011 is not set
+# CONFIG_ARM_SCPI_PROTOCOL is not set
+# CONFIG_ARM_SCMI_PROTOCOL is not set
+# CONFIG_ARM_SCPI_CPUFREQ is not set
+# CONFIG_ARM_SCMI_CPUFREQ is not set
+# CONFIG_COMMON_CLK_SCPI is not set
+# CONFIG_COMMON_CLK_XGENE is not set
+# CONFIG_PINCTRL_SINGLE is not set
+# CONFIG_PINCTRL_MT6397 is not set
+# CONFIG_MFD_ACT8945A is not set
+# CONFIG_MTK_HSDMA is not set
+# CONFIG_CORESIGHT is not set
+# CONFIG_MTK_LENS is not set
+# CONFIG_MTK_CAMERA_ISP_DPE_SUPPORT is not set
+# CONFIG_MTK_CAMERA_ISP_FD_SUPPORT is not set
+# CONFIG_MTK_COMBO_GPS is not set
+# CONFIG_MTK_GPS_SUPPORT is not set
+
+# Android's generic kernel image selects drivers for modules built elsewhere; the hidden symbols drivers here use stay set.
+# CONFIG_GKI_HACKS_TO_FIX is not set
+# CONFIG_GKI_HIDDEN_DRM_CONFIGS is not set
+# CONFIG_GKI_HIDDEN_CRYPTO_CONFIGS is not set
+# CONFIG_GKI_HIDDEN_GPIO_CONFIGS is not set
+# CONFIG_GKI_HIDDEN_VIRTUAL_CONFIGS is not set
+# CONFIG_GKI_HIDDEN_VIDEOBUF2_CONFIGS is not set
+# CONFIG_GKI_HIDDEN_GPU_CONFIGS is not set
+CONFIG_GKI_HIDDEN_REGMAP_CONFIGS=y
+CONFIG_GKI_HIDDEN_SND_CONFIGS=y
+CONFIG_GKI_HIDDEN_SND_SOC_CONFIGS=y
+CONFIG_GKI_LEGACY_WEXT_ALLCONFIG=y
+CONFIG_GKI_HIDDEN_SOC_PM_CONFIGS=y
+CONFIG_GKI_HIDDEN_USB_CONFIGS=y
+CONFIG_GKI_HIDDEN_SOC_BUS_CONFIGS=y
+CONFIG_GKI_HIDDEN_IRQ_CONFIGS=y
+
+# The GPU, which only closed userspace drives, with the DRM core and the frame pacer that serve it.
+# CONFIG_MTK_GPU_SUPPORT is not set
+# CONFIG_MTK_FPSGO_V3 is not set
+# CONFIG_DRM is not set
+
+# MediaTek's debug and Android services nothing reads: hang detector, eMMC trace, scheduler tracers, ATF log, socinfo, kinfo, the PD log thread.
+# CONFIG_MTK_HANG_DETECT is not set
+# CONFIG_MTK_HANG_DETECT_DB is not set
+# CONFIG_MTK_MMC_DEBUG is not set
+# CONFIG_MTK_SCHED_TRACERS is not set
+# CONFIG_MTK_ATF_LOGGER is not set
+# CONFIG_MTK_SOCINFO is not set
+# CONFIG_DEBUG_KINFO is not set
+# CONFIG_MTK_MM_DEBUG is not set
+# CONFIG_PD_DBG_INFO is not set

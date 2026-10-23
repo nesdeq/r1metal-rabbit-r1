@@ -1,0 +1,61 @@
+From 593f31661b07129275915f42fbe890483d2544d0 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 23:07:05 +0200
+Subject: [PATCH] wlan: the lines a limited print drops are told at info
+
+kalPrintLogLimited keeps the count of the lines its ratelimit drops
+(RATELIMIT_MSG_ON_RELEASE) and prints it at info before the next line it
+lets through, instead of the kernel's warning after a burst of info
+lines.
+---
+ .../wlan/core/gen4m/os/linux/include/gl_kal.h | 30 +++++++++++++++++--
+ 1 file changed, 27 insertions(+), 3 deletions(-)
+
+diff --git a/connectivity/wlan/core/gen4m/os/linux/include/gl_kal.h b/connectivity/wlan/core/gen4m/os/linux/include/gl_kal.h
+index 88d8099..99460fb 100644
+--- a/connectivity/wlan/core/gen4m/os/linux/include/gl_kal.h
++++ b/connectivity/wlan/core/gen4m/os/linux/include/gl_kal.h
+@@ -925,13 +925,37 @@ int8_t atoi(uint8_t ch);
+ 
+ #define kalGetTimeTick()                jiffies_to_msecs(jiffies)
+ 
++/* Takes the count of lines a limited print has dropped since its last line. */
++static inline int kalTakeLogMissed(struct ratelimit_state *rs)
++{
++	unsigned long flags;
++	int missed;
++
++	raw_spin_lock_irqsave(&rs->lock, flags);
++	missed = rs->missed;
++	rs->missed = 0;
++	raw_spin_unlock_irqrestore(&rs->lock, flags);
++	return missed;
++}
++
++/* The lines a limited print drops are told at the level of the lines it prints. */
+ #define kalPrintLogLimited(fmt, ...)					\
+ ({									\
+-	static DEFINE_RATELIMIT_STATE(_rs,				\
+-		DEFAULT_RATELIMIT_INTERVAL, DEFAULT_RATELIMIT_BURST);	\
++	static struct ratelimit_state _rs = {				\
++		.lock = __RAW_SPIN_LOCK_UNLOCKED(_rs.lock),		\
++		.interval = DEFAULT_RATELIMIT_INTERVAL,			\
++		.burst = DEFAULT_RATELIMIT_BURST,			\
++		.flags = RATELIMIT_MSG_ON_RELEASE,			\
++	};								\
++	int _missed;							\
+ 									\
+-	if (__ratelimit(&_rs))						\
++	if (__ratelimit(&_rs)) {					\
++		_missed = kalTakeLogMissed(&_rs);			\
++		if (_missed)						\
++			kalPrintLog("%s: %d callbacks suppressed\n",	\
++				    __func__, _missed);			\
+ 		kalPrintLog(fmt, ##__VA_ARGS__);			\
++	}								\
+ })
+ 
+ #define WLAN_TAG                        "[wlan]"
+-- 
+2.56.0
+

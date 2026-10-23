@@ -1,0 +1,97 @@
+From 80b5bd269bcbbf9424d76208ad4a75e6045a7d5e Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 10:28:24 +0200
+Subject: [PATCH] clk: mt6765: a suspend names the PLLs and power domains it
+ finds on
+
+MT6765 defines pll_if_on and subsys_if_on, which slp_suspend_ops_enter
+calls before a suspend: at notice they name each of MFGPLL, MMPLL,
+MSDCPLL, APLL1, UNIVPLL and the CONN, DIS, ISP, CAM, VCODEC and MFG
+domains still on, MD1 at debug. Without them mtk_sleep.c's weak stubs
+print a "NO ... !!!" line at every suspend and check nothing.
+---
+ drivers/clk/mediatek/clk-mt6765-pg.c | 30 ++++++++++++++++++++++++++++
+ drivers/clk/mediatek/clk-mt6765.c    | 19 ++++++++++++++++++
+ 2 files changed, 49 insertions(+)
+
+diff --git a/drivers/clk/mediatek/clk-mt6765-pg.c b/drivers/clk/mediatek/clk-mt6765-pg.c
+index 138626a7a..82f9a1120 100644
+--- a/drivers/clk/mediatek/clk-mt6765-pg.c
++++ b/drivers/clk/mediatek/clk-mt6765-pg.c
+@@ -2475,6 +2475,36 @@ static int subsys_is_on(enum subsys_id id)
+ 	return r;
+ }
+ 
++/* the power domains a suspend should find off, the ones MT6768's check names */
++void subsys_if_on(void)
++{
++	unsigned int sta, sta_s;
++
++	if (!spm_base)
++		return;
++	sta = spm_read(PWR_STATUS);
++	sta_s = spm_read(PWR_STATUS_2ND);
++
++	if ((sta & MD1_PWR_STA_MASK) && (sta_s & MD1_PWR_STA_MASK))
++		pr_debug("suspend warning: SYS_MD1 is on!!!\n");
++	if ((sta & CONN_PWR_STA_MASK) && (sta_s & CONN_PWR_STA_MASK))
++		pr_notice("suspend warning: SYS_CONN is on!!!\n");
++	if ((sta & DIS_PWR_STA_MASK) && (sta_s & DIS_PWR_STA_MASK))
++		pr_notice("suspend warning: SYS_DIS is on!!!\n");
++	if ((sta & ISP_PWR_STA_MASK) && (sta_s & ISP_PWR_STA_MASK))
++		pr_notice("suspend warning: SYS_ISP is on!!!\n");
++	if ((sta & CAM_PWR_STA_MASK) && (sta_s & CAM_PWR_STA_MASK))
++		pr_notice("suspend warning: SYS_CAM is on!!!\n");
++	if ((sta & VCODEC_PWR_STA_MASK) && (sta_s & VCODEC_PWR_STA_MASK))
++		pr_notice("suspend warning: SYS_VCODEC is on!!!\n");
++	if ((sta & MFG_PWR_STA_MASK) && (sta_s & MFG_PWR_STA_MASK))
++		pr_notice("suspend warning: SYS_MFG is on!!!\n");
++	if ((sta & MFG_CORE0_PWR_STA_MASK) && (sta_s & MFG_CORE0_PWR_STA_MASK))
++		pr_notice("suspend warning: SYS_MFG_CORE0 is on!!!\n");
++	if ((sta & MFG_ASYNC_PWR_STA_MASK) && (sta_s & MFG_ASYNC_PWR_STA_MASK))
++		pr_notice("suspend warning: SYS_MFG_ASYNC is on!!!\n");
++}
++
+ #if CONTROL_LIMIT
+ int allow[NR_SYSS] = {
+ 1, /*SYS_MD1*/
+diff --git a/drivers/clk/mediatek/clk-mt6765.c b/drivers/clk/mediatek/clk-mt6765.c
+index 175351a26..b97a43740 100644
+--- a/drivers/clk/mediatek/clk-mt6765.c
++++ b/drivers/clk/mediatek/clk-mt6765.c
+@@ -215,6 +215,8 @@ void __iomem *mmsys_config_base;
+ #define MFGPLL_CON2		(apmixed_base + 0x254)
+ #define MFGPLL_CON3	(apmixed_base + 0x258)
+ 
++#define MMPLL_CON0		(apmixed_base + 0x25C)
++
+ #define UNIVPLL_CON0		(apmixed_base + 0x26C)
+ #define UNIVPLL_CON1		(apmixed_base + 0x270)
+ #define UNIVPLL_CON2		(apmixed_base + 0x274)
+@@ -314,6 +316,23 @@ void mp_enter_suspend(int id, int suspend)
+ 	}
+ }
+ 
++/* the PLLs a suspend should find off, the ones MT6768's check names */
++void pll_if_on(void)
++{
++	if (!apmixed_base)
++		return;
++	if (readl(MFGPLL_CON0) & PLL_EN)
++		pr_notice("suspend warning: MFGPLL is on!!!\n");
++	if (readl(MMPLL_CON0) & PLL_EN)
++		pr_notice("suspend warning: MMPLL is on!!!\n");
++	if (readl(MSDCPLL_CON0) & PLL_EN)
++		pr_notice("suspend warning: MSDCPLL is on!!!\n");
++	if (readl(APLL1_CON0) & PLL_EN)
++		pr_notice("suspend warning: APLL1 is on!!!\n");
++	if (readl(UNIVPLL_CON0) & PLL_EN)
++		pr_notice("suspend warning: UNIVPLL is on!!!\n");
++}
++
+ void armpll_control(int id, int on)
+ {
+ 	if (id == 1) {
+-- 
+2.56.0
+

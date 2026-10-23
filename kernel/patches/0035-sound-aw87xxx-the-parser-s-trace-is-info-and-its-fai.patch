@@ -1,0 +1,32 @@
+From 9358f40b3e6826d092b3b0fdf26ddbbb7353a1e7 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 16:09:08 +0200
+Subject: [PATCH] sound: aw87xxx: the parser's trace is info and its failures
+ are errors
+
+DBG prints at info and DBG_ERR at error level; as printk without a
+level both print at the default warning level.
+---
+ sound/soc/mediatek/aw87xxx/aw87xxx_bin_parse.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/sound/soc/mediatek/aw87xxx/aw87xxx_bin_parse.c b/sound/soc/mediatek/aw87xxx/aw87xxx_bin_parse.c
+index c40055460..9dcf37dc1 100755
+--- a/sound/soc/mediatek/aw87xxx/aw87xxx_bin_parse.c
++++ b/sound/soc/mediatek/aw87xxx/aw87xxx_bin_parse.c
+@@ -38,10 +38,10 @@
+ #define DEBUG_LOG_LEVEL
+ #ifdef DEBUG_LOG_LEVEL
+ #define DBG(fmt, arg...)   do {\
+-printk("AWINIC_BIN %s,line= %d,"fmt, __func__, __LINE__, ##arg);\
++pr_info("AWINIC_BIN %s,line= %d,"fmt, __func__, __LINE__, ##arg);\
+ } while (0)
+ #define DBG_ERR(fmt, arg...)   do {\
+-printk("AWINIC_BIN_ERR %s,line= %d,"fmt, __func__, __LINE__, ##arg);\
++pr_err("AWINIC_BIN_ERR %s,line= %d,"fmt, __func__, __LINE__, ##arg);\
+ } while (0)
+ #else
+ #define DBG(fmt, arg...) do {} while (0)
+-- 
+2.56.0
+

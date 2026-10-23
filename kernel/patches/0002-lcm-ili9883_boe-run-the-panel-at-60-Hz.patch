@@ -1,0 +1,44 @@
+From b04b87cf533ff83453a6f5703e0f6f113a884d2d Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Thu, 8 Oct 2026 16:22:29 +0200
+Subject: [PATCH] lcm: ili9883_boe: run the panel at 60 Hz
+
+PLL_CLOCK 136 gives a 16.67 ms refresh, 60 Hz, where 130 gives 57.4 Hz.
+LK sets the panel up at its own PLL rate, which ddp_dsi_config() keeps,
+so primary_display_init() moves the PLL to the panel params' rate once
+LK has initialised the panel.
+---
+ .../mediatek/lcm/ili9883_boe_mipi_hd/ili9883_boe_mipi_hd.c     | 2 +-
+ drivers/misc/mediatek/video/mt6765/videox/primary_display.c    | 3 +++
+ 2 files changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/lcm/ili9883_boe_mipi_hd/ili9883_boe_mipi_hd.c b/drivers/misc/mediatek/lcm/ili9883_boe_mipi_hd/ili9883_boe_mipi_hd.c
+index ffa127f7f..1ef22424e 100755
+--- a/drivers/misc/mediatek/lcm/ili9883_boe_mipi_hd/ili9883_boe_mipi_hd.c
++++ b/drivers/misc/mediatek/lcm/ili9883_boe_mipi_hd/ili9883_boe_mipi_hd.c
+@@ -277,7 +277,7 @@ static void lcm_get_params(struct LCM_PARAMS *params)
+ 	params->dsi.horizontal_frontporch = 20;
+ 	params->dsi.horizontal_active_pixel = FRAME_WIDTH;
+ 
+-	params->dsi.PLL_CLOCK = 130; //this value must be in MTK suggested table
++	params->dsi.PLL_CLOCK = 136; /* 60 Hz refresh with the porches above */
+ 
+ 	params->dsi.esd_check_enable = 1;
+ 	params->dsi.customization_esd_check_enable = 0;
+diff --git a/drivers/misc/mediatek/video/mt6765/videox/primary_display.c b/drivers/misc/mediatek/video/mt6765/videox/primary_display.c
+index 88c78398f..2c53b9cc3 100644
+--- a/drivers/misc/mediatek/video/mt6765/videox/primary_display.c
++++ b/drivers/misc/mediatek/video/mt6765/videox/primary_display.c
+@@ -4194,6 +4194,9 @@ int primary_display_init(char *lcm_name, unsigned int lcm_fps,
+ 
+ 	layering_rule_init();
+ 	_primary_path_unlock(__func__);
++	/* LK leaves the DSI PLL at its own rate: set the panel params' rate. */
++	if (!ret && is_lcm_inited)
++		mipi_clk_change_by_data_rate(0, 0);
+ 	return ret;
+ }
+ 
+-- 
+2.56.0
+

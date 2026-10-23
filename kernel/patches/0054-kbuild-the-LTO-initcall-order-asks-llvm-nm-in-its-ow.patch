@@ -1,0 +1,94 @@
+From b06875b6d784f02ca5f7e533d7e419817c48fb2e Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 18:05:50 +0200
+Subject: [PATCH] kbuild: the LTO initcall order asks llvm-nm in its own words
+ and fails loudly
+
+generate_initcall_order.pl calls llvm-nm with --format=just-symbols
+--defined-only --quiet and keeps its stderr; it fails when llvm-nm or a
+child fails or no initcall is found, and the link stops. LLVM 23's
+llvm-nm refuses upstream's -just-symbol-name -defined-only, and the
+empty order leaves every initcall out of the LTO link, so the kernel
+runs none.
+---
+ scripts/generate_initcall_order.pl | 9 ++++-----
+ scripts/link-vmlinux.sh            | 8 ++++++--
+ 2 files changed, 10 insertions(+), 7 deletions(-)
+
+diff --git a/scripts/generate_initcall_order.pl b/scripts/generate_initcall_order.pl
+index f772b4a01..3380d3f16 100755
+--- a/scripts/generate_initcall_order.pl
++++ b/scripts/generate_initcall_order.pl
+@@ -41,7 +41,7 @@ sub find_initcalls {
+ 
+ 	die "$0: object file $object doesn't exist?" if (! -f $object);
+ 
+-	open(my $fh, "\"$nm\" -just-symbol-name -defined-only \"$object\" 2>/dev/null |")
++	open(my $fh, "\"$nm\" --format=just-symbols --defined-only --quiet \"$object\" |")
+ 		or die "$0: failed to execute \"$nm\": $!";
+ 
+ 	my $initcalls = {};
+@@ -68,7 +68,7 @@ sub find_initcalls {
+ 		};
+ 	}
+ 
+-	close($fh);
++	close($fh) or die "$0: \"$nm\" failed on $object\n";
+ 
+ 	# sort initcalls in each object file numerically by the counter value
+ 	# to ensure they are in the order they were defined
+@@ -85,6 +85,7 @@ sub find_initcalls {
+ sub wait_for_results {
+ 	my $pid = wait();
+ 	if ($pid > 0) {
++		die "$0: child $pid failed\n" if $?;
+ 		my $fh = $jobs->{$pid};
+ 
+ 		# the child process prints out results in the following format:
+@@ -219,9 +220,7 @@ foreach my $index (sort { $a <=> $b } keys(%{$results})) {
+ 	}
+ }
+ 
+-if (!keys(%{$sections})) {
+-	exit(0); # no initcalls...?
+-}
++die "$0: no initcalls found\n" if (!keys(%{$sections}));
+ 
+ ## print out a linker script that defines the order of initcalls for each
+ ## level
+diff --git a/scripts/link-vmlinux.sh b/scripts/link-vmlinux.sh
+index c67daa7cc..18e348041 100755
+--- a/scripts/link-vmlinux.sh
++++ b/scripts/link-vmlinux.sh
+@@ -80,7 +80,7 @@ lto_lds()
+ 
+ 	${srctree}/scripts/generate_initcall_order.pl \
+ 		built-in.a ${KBUILD_VMLINUX_LIBS} \
+-		> .tmp_lto.lds
++		> .tmp_lto.lds || return 1
+ 
+ 	if [ -n "${CONFIG_MODVERSIONS}" ]; then
+ 		for a in built-in.a ${KBUILD_VMLINUX_LIBS}; do
+@@ -100,6 +100,10 @@ lto_lds()
+ modpost_link()
+ {
+ 	local objects
++	local lds
++
++	# an assignment, so set -e stops the link when the initcall order fails
++	lds=$(lto_lds)
+ 
+ 	objects="--whole-archive				\
+ 		built-in.a					\
+@@ -114,7 +118,7 @@ modpost_link()
+ 		info LTO vmlinux.o
+ 	fi
+ 
+-	${LD} ${KBUILD_LDFLAGS} -r -o ${1} $(lto_lds) ${objects}
++	${LD} ${KBUILD_LDFLAGS} -r -o ${1} ${lds} ${objects}
+ }
+ 
+ # If CONFIG_LTO_CLANG is selected, we postpone running recordmcount until
+-- 
+2.56.0
+

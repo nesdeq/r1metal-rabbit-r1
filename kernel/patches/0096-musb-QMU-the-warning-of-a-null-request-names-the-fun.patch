@@ -1,0 +1,30 @@
+From a345932ce15afecc7a23dcbaae3ceebb726f044b Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 18:22:14 +0200
+Subject: [PATCH] musb QMU: the warning of a null request names the function it
+ is in
+
+qmu_done_rx's warning for a null request passes __func__ for its %s;
+without it printk reads a string from whatever the next argument
+register holds.
+---
+ drivers/misc/mediatek/usb20/mtk_qmu.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/usb20/mtk_qmu.c b/drivers/misc/mediatek/usb20/mtk_qmu.c
+index 53a8792a3..c3535de73 100644
+--- a/drivers/misc/mediatek/usb20/mtk_qmu.c
++++ b/drivers/misc/mediatek/usb20/mtk_qmu.c
+@@ -1024,7 +1024,8 @@ void qmu_done_rx(struct musb *musb, u8 ep_num)
+ 			 TGPD_GET_DATA_RX(gpd));
+ 
+ 		if (!request) {
+-			QMU_WARN("[RXD]%s the request is null, return.\n");
++			QMU_WARN("[RXD]%s the request is null, return.\n",
++				__func__);
+ 			return;
+ 		}
+ 		request->actual += rcv_len;
+-- 
+2.56.0
+

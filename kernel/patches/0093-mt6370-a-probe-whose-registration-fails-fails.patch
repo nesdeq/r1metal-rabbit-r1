@@ -1,0 +1,40 @@
+From 29894eaf80d0e6c934418c176e4c3f261be517b3 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 16:45:19 +0200
+Subject: [PATCH] mt6370: a probe whose registration fails fails
+
+mt6370_pmu_ldo_probe and mt6370_pmu_bled_probe return the error of a
+failed regulator or flash device registration in place of 0, the ret
+of an earlier call, which reports success.
+---
+ drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_bled.c | 1 +
+ drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_ldo.c  | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_bled.c b/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_bled.c
+index 010112a12..d004b83f0 100644
+--- a/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_bled.c
++++ b/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_bled.c
+@@ -578,6 +578,7 @@ static int mt6370_pmu_bled_probe(struct platform_device *pdev)
+ 
+ 	if (IS_ERR(bled_data->mt_flash_dev)) {
+ 		dev_err(&pdev->dev, "register mt_flash_dev fail\n");
++		ret = PTR_ERR(bled_data->mt_flash_dev);
+ 		goto out_mt_flash_register;
+ 	}
+ 
+diff --git a/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_ldo.c b/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_ldo.c
+index d338abade..72161c9af 100644
+--- a/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_ldo.c
++++ b/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_ldo.c
+@@ -286,6 +286,7 @@ static int mt6370_pmu_ldo_probe(struct platform_device *pdev)
+ 	if (IS_ERR(ldo_data->regulator)) {
+ 		dev_err(&pdev->dev, "fail to register ldo regulator %s\n",
+ 			ldo_data->desc->name);
++		ret = PTR_ERR(ldo_data->regulator);
+ 		goto probe_err;
+ 	}
+ 
+-- 
+2.56.0
+

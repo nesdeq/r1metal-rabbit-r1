@@ -1,0 +1,31 @@
+From 2885b2ec699e03738aa3857e048ffc77a2eb9a4d Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 10:22:59 +0200
+Subject: [PATCH] charger: JEITA's warm range holds its voltage where the
+ current is in band
+
+In the warm range, temp_t3_thres to temp_t4_thres,
+do_sw_jeita_state_machine holds the constant voltage at pre_cv while the
+battery current is from 150 to 250 mA. Upstream sets none there, so a cv
+of 0 from the normal range charges the cell to battery_cv, 4.4 V,
+instead of the range's 4.2 V.
+---
+ drivers/power/supply/mtk_charger.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/power/supply/mtk_charger.c b/drivers/power/supply/mtk_charger.c
+index 812407062..70588ead1 100644
+--- a/drivers/power/supply/mtk_charger.c
++++ b/drivers/power/supply/mtk_charger.c
+@@ -705,6 +705,8 @@ void do_sw_jeita_state_machine(struct mtk_charger *info)
+ 				sw_jeita->cv = sw_jeita->pre_cv - 10*1000;
+ 			} else if (ibat < 150) {
+ 				sw_jeita->cv = sw_jeita->pre_cv + 10*1000;
++			} else {
++				sw_jeita->cv = sw_jeita->pre_cv;
+ 			}
+ 			if (sw_jeita->cv > info->data.jeita_temp_t3_to_t4_cv) {
+ 				sw_jeita->cv = info->data.jeita_temp_t3_to_t4_cv;
+-- 
+2.56.0
+

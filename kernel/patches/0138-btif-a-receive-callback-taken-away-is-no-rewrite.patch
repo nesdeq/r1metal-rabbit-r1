@@ -1,0 +1,30 @@
+From e84f0e42b395a69a71df9f29f128dfeed658bc32 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Tue, 20 Oct 2026 09:44:00 +0200
+Subject: [PATCH] btif: a receive callback taken away is no rewrite
+
+btif_rx_cb_reg() tells NULL registered over a receive callback, which
+WMT does at every power off of the radio, at info as the callback
+removed. A callback written over another still warns.
+---
+ drivers/misc/mediatek/btif/common/mtk_btif.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/btif/common/mtk_btif.c b/drivers/misc/mediatek/btif/common/mtk_btif.c
+index b9941f6c0..6cb2e49c1 100644
+--- a/drivers/misc/mediatek/btif/common/mtk_btif.c
++++ b/drivers/misc/mediatek/btif/common/mtk_btif.c
+@@ -1811,7 +1811,9 @@ int _btif_dpidle_notify_ctrl(struct _mtk_btif_ *p_btif,
+ 
+ int btif_rx_cb_reg(struct _mtk_btif_ *p_btif, MTK_WCN_BTIF_RX_CB rx_cb)
+ {
+-	if (p_btif->rx_cb) {
++	if (p_btif->rx_cb && !rx_cb) {
++		BTIF_INFO_FUNC("rx cb (0x%p) removed\n", p_btif->rx_cb);
++	} else if (p_btif->rx_cb) {
+ 		BTIF_WARN_FUNC
+ 		    ("rx cb already exist, rewrite from (0x%p) to (0x%p)\n",
+ 		     p_btif->rx_cb, rx_cb);
+-- 
+2.56.0
+

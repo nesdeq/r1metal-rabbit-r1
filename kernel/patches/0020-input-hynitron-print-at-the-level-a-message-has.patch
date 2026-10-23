@@ -1,0 +1,114 @@
+From 15062a3929f2234e5fc6a444024e21f12cc85514 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 10:55:23 +0200
+Subject: [PATCH] input: hynitron: print at the level a message has
+
+Messages print at their own level instead of all at KERN_ERR:
+- HYN_ERROR is pr_err, HYN_INFO pr_info, and HYN_DEBUG and the entry
+  and exit traces pr_debug.
+- The deep sleep command's messages are info.
+- An absent debounce property prints nothing, an unreadable one an
+  error with its code.
+- A chip the driver holds no firmware for gets one info line.
+---
+ .../input/touchscreen/CST8xx/hynitron_common.h   | 16 ++++++++--------
+ drivers/input/touchscreen/CST8xx/hynitron_core.c | 10 +++++-----
+ .../CST8xx/hynitron_update_firmware.c            |  3 +--
+ 3 files changed, 14 insertions(+), 15 deletions(-)
+
+diff --git a/drivers/input/touchscreen/CST8xx/hynitron_common.h b/drivers/input/touchscreen/CST8xx/hynitron_common.h
+index b682913b5..abdde88b2 100644
+--- a/drivers/input/touchscreen/CST8xx/hynitron_common.h
++++ b/drivers/input/touchscreen/CST8xx/hynitron_common.h
+@@ -240,17 +240,17 @@ void hyn_irq_enable(void);
+ #define HYN_DEBUG_LEVEL     1
+ 
+ #if (HYN_DEBUG_LEVEL == 2)
+-#define HYN_DEBUG(fmt, args...) printk(KERN_ERR "[HYN][%s]"fmt"\n", __func__, ##args)
+-#define HYN_INFO(fmt, args...)  printk(KERN_ERR "[HYN][Info][%s]"fmt"\n",__func__, ##args)
+-#define HYN_ERROR(fmt, args...) printk(KERN_ERR "[HYN][Error][%s]"fmt"\n",__func__, ##args)
++#define HYN_DEBUG(fmt, args...) pr_debug("[HYN][%s]"fmt"\n", __func__, ##args)
++#define HYN_INFO(fmt, args...)  pr_info("[HYN][Info][%s]"fmt"\n",__func__, ##args)
++#define HYN_ERROR(fmt, args...) pr_err("[HYN][Error][%s]"fmt"\n",__func__, ##args)
+ #else
+-#define HYN_DEBUG(fmt, args...) printk(KERN_ERR "[HYN]"fmt"\n", ##args)
+-#define HYN_INFO(fmt, args...)  printk(KERN_ERR "[HYN][Info]"fmt"\n", ##args)
+-#define HYN_ERROR(fmt, args...) printk(KERN_ERR "[HYN][Error]"fmt"\n", ##args)
++#define HYN_DEBUG(fmt, args...) pr_debug("[HYN]"fmt"\n", ##args)
++#define HYN_INFO(fmt, args...)  pr_info("[HYN][Info]"fmt"\n", ##args)
++#define HYN_ERROR(fmt, args...) pr_err("[HYN][Error]"fmt"\n", ##args)
+ #endif
+ 
+-#define HYN_FUNC_ENTER() printk(KERN_ERR "[HYN]%s: Enter\n", __func__)
+-#define HYN_FUNC_EXIT()  printk(KERN_ERR "[HYN]%s: Exit(%d)\n", __func__, __LINE__)
++#define HYN_FUNC_ENTER() pr_debug("[HYN]%s: Enter\n", __func__)
++#define HYN_FUNC_EXIT()  pr_debug("[HYN]%s: Exit(%d)\n", __func__, __LINE__)
+ #else
+ #define HYN_DEBUG(fmt, args...)
+ #define HYN_INFO(fmt, args...)
+diff --git a/drivers/input/touchscreen/CST8xx/hynitron_core.c b/drivers/input/touchscreen/CST8xx/hynitron_core.c
+index 16babfada..36e8897f8 100644
+--- a/drivers/input/touchscreen/CST8xx/hynitron_core.c
++++ b/drivers/input/touchscreen/CST8xx/hynitron_core.c
+@@ -661,8 +661,8 @@ static int hyn_irq_registration(struct i2c_client *client)
+         ret = of_property_read_u32_array(node,"debounce", ints, ARRAY_SIZE(ints)); 
+ 		if(!ret){
+ 			gpio_set_debounce(ints[0], ints[1]); //gpio_set_debounce(unsigned gpio, unsigned debounce)
+-		}else{
+-			HYN_ERROR("debounce not exist");			
++		}else if(ret != -EINVAL){
++			HYN_ERROR("debounce unreadable: %d", ret);
+ 		}
+ 
+ #ifdef CONFIG_GTP_USE_PINCTRL
+@@ -1399,7 +1399,7 @@ int hyn_irq_init(struct i2c_client *client)
+ void hyn_enter_deep_sleep(void)
+ {
+     int ret = 0;
+-	HYN_ERROR("hyn_enter_deep_sleep");
++	HYN_INFO("hyn_enter_deep_sleep");
+ /* TP enter sleep mode */
+ 	rt_mutex_lock(&hyn_i2c_lock);
+ 	if(hyn_ts_data->config_chip_product_line==HYN_CHIP_PRODUCT_LINE_MUT_CAP)
+@@ -1409,7 +1409,7 @@ void hyn_enter_deep_sleep(void)
+ 		buf[0]=HYN_REG_MUT_DEEP_SLEEP_MODE>>8;
+ 		buf[1]=HYN_REG_MUT_DEEP_SLEEP_MODE&0xff;
+ 	
+-		HYN_ERROR("Set TP to sleep mode mutcap");
++		HYN_INFO("Set TP to sleep mode mutcap");
+    		ret = cst3xx_i2c_write(hyn_ts_data->client, buf,2);
+ 	    if (ret < 0){
+ 	        HYN_ERROR("Set TP to sleep mode fail, ret=%d!", ret);
+@@ -1417,7 +1417,7 @@ void hyn_enter_deep_sleep(void)
+ 		
+ 	}else if(hyn_ts_data->config_chip_product_line==HYN_CHIP_PRODUCT_LINE_SEL_CAP){
+ 	//selfcap
+-		HYN_ERROR("Set TP to sleep mode selfcap");
++		HYN_INFO("Set TP to sleep mode selfcap");
+ 		ret = hyn_i2c_write_byte(hyn_ts_data->client, HYN_REG_CAP_POWER_MODE, HYN_REG_CAP_POWER_MODE_SLEEP_VALUE);
+ 	    if (ret < 0){
+ 	        HYN_ERROR("Set TP to sleep mode fail, ret=%d!", ret);
+diff --git a/drivers/input/touchscreen/CST8xx/hynitron_update_firmware.c b/drivers/input/touchscreen/CST8xx/hynitron_update_firmware.c
+index dbee4b72c..63bc0b9ee 100644
+--- a/drivers/input/touchscreen/CST8xx/hynitron_update_firmware.c
++++ b/drivers/input/touchscreen/CST8xx/hynitron_update_firmware.c
+@@ -3540,7 +3540,6 @@ int hyn_boot_update_fw(struct i2c_client * client)
+ 			proj_id=hyn_find_fw_idx(check_proj_id);
+ 			HYN_INFO("hyn_find_fw_idx: proj_id:%d.\r\n",proj_id);	
+ 			if(proj_id<0){
+-				HYN_ERROR("not find matched TP firmware,please check chip type and chip project id. !\n"); 
+ 				proj_id=hyn_find_fw_idx(0);
+ 				if(proj_id>0){
+ 					hyn_ts_data->fw_name					   =hynitron_fw_grp[proj_id].name;
+@@ -3548,7 +3547,7 @@ int hyn_boot_update_fw(struct i2c_client * client)
+ 					hyn_ts_data->fw_length				       =hynitron_fw_grp[proj_id].fw_length;
+ 					HYN_INFO("update default TP firmware data for apk update.(%s)!\n", hynitron_fw_grp[proj_id].name);
+ 				}else{
+-					HYN_INFO("please chekc hynitron_fw_grp fw config!\n");
++					HYN_INFO("the driver holds no firmware for chip type 0x%x, project id 0x%x: the chip keeps its own\n", hyn_ts_data->chip_ic_type, hyn_ts_data->chip_ic_project_id);
+ 					return 0;
+ 				}
+ 			}else{	
+-- 
+2.56.0
+

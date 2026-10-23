@@ -1,0 +1,48 @@
+From 75179307db850667b7d11d50a6bb96ed7e87672b Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 16:09:09 +0200
+Subject: [PATCH] camera_isp: the larbs mapped are the ones the tree lists
+
+ISP_Init() maps as many larbs as the device tree has "mediatek,smi_larb"
+nodes, instead of every slot of an array sized for a bigger SoC, which
+prints errors for the larbs 4 to 7 the MT6765 lacks.
+---
+ .../misc/mediatek/cameraisp/src/mt6765/camera_isp.c    | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/misc/mediatek/cameraisp/src/mt6765/camera_isp.c b/drivers/misc/mediatek/cameraisp/src/mt6765/camera_isp.c
+index f4c7c3c48..07a8c60a8 100644
+--- a/drivers/misc/mediatek/cameraisp/src/mt6765/camera_isp.c
++++ b/drivers/misc/mediatek/cameraisp/src/mt6765/camera_isp.c
+@@ -11249,12 +11249,18 @@ static signed int __init ISP_Init(void)
+ 	#if (SMI_LARB_MMU_CTL == 1)
+ 	do {
+ 		char *comp_str = NULL;
++		int larb_cnt = 0;
+ 
+ 		comp_str = kmalloc(64, GFP_KERNEL);
+ 		if (comp_str == NULL)
+ 			return -ENOMEM;
+ 
+-		for (i = 0; i < ARRAY_SIZE(SMI_LARB_BASE); i++) {
++		/* the larbs are the nodes the dts lists */
++		for_each_compatible_node(node, NULL, "mediatek,smi_larb")
++			larb_cnt++;
++		larb_cnt = min_t(int, larb_cnt, ARRAY_SIZE(SMI_LARB_BASE));
++
++		for (i = 0; i < larb_cnt; i++) {
+ 
+ 			if (snprintf(comp_str, 64,
+ 				     "mediatek,smi_larb%d", i) < 0) {
+@@ -11270,7 +11276,7 @@ static signed int __init ISP_Init(void)
+ 			}
+ 			SMI_LARB_BASE[i] = of_iomap(node, 0);
+ 			if (!SMI_LARB_BASE[i]) {
+-				pr_err("unable to map ISP_SENINF0_BASE registers!!!\n");
++				pr_err("unable to map %s registers!!!\n", comp_str);
+ 				break;
+ 			}
+ 			pr_info("SMI_LARB%d_BASE: %p\n", i, SMI_LARB_BASE[i]);
+-- 
+2.56.0
+

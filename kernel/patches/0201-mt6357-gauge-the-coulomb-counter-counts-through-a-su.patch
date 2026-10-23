@@ -1,0 +1,45 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Thu, 22 Oct 2026 20:00:00 +0200
+Subject: [PATCH] mt6357-gauge: the coulomb counter counts through a suspend
+
+The bootloader leaves FG_SON_SLP_EN (FGADC_CON0 bit 8) set, the
+gauge's sleep mode, which MediaTek's MT6765 suspend setting has off
+(mtk_power_gs_6355_array.c, flagged as a wrong bit at every boot's
+first suspends). initial_set clears it at probe.
+---
+diff --git a/drivers/power/supply/mt6357-gauge.c b/drivers/power/supply/mt6357-gauge.c
+index 52c5e3ee6..5e989c18d 100644
+--- a/drivers/power/supply/mt6357-gauge.c
++++ b/drivers/power/supply/mt6357-gauge.c
+@@ -153,6 +153,10 @@
+ #define PMIC_FG_ZCV_DET_EN_MASK					0x1
+ #define PMIC_FG_ZCV_DET_EN_SHIFT				10
+ 
++#define PMIC_FG_SON_SLP_EN_ADDR					0xd08
++#define PMIC_FG_SON_SLP_EN_MASK					0x1
++#define PMIC_FG_SON_SLP_EN_SHIFT				8
++
+ #define PMIC_AUXADC_ADC_OUT_NAG_ADDR			0x10d4
+ #define PMIC_AUXADC_ADC_OUT_NAG_MASK			0x7FFF
+ #define PMIC_AUXADC_ADC_OUT_NAG_SHIFT			0
+@@ -2135,6 +2139,16 @@ static int initial_set(struct mtk_gauge *gauge,
+ 		PMIC_AUXADC_NAG_PRD_MASK << PMIC_AUXADC_NAG_PRD_SHIFT,
+ 		10 << PMIC_AUXADC_NAG_PRD_SHIFT);
+ 
++	/*
++	 * The gauge's sleep mode, which the bootloader sets, off as in
++	 * MediaTek's MT6765 setting, so that the coulomb counter counts
++	 * through a suspend.
++	 */
++	regmap_update_bits(gauge->regmap,
++		PMIC_FG_SON_SLP_EN_ADDR,
++		PMIC_FG_SON_SLP_EN_MASK << PMIC_FG_SON_SLP_EN_SHIFT,
++		0 << PMIC_FG_SON_SLP_EN_SHIFT);
++
+ 	fgauge_get_info(gauge,
+ 		GAUGE_PROP_BAT_PLUG_STATUS, &bat_flag);
+ 	fgauge_get_info(gauge,
+-- 
+2.56.0
+

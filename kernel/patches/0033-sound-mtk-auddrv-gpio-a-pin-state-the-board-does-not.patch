@@ -1,0 +1,57 @@
+From be79cafa666b2b81b384d0056b4162bceb1e0142 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 16:09:08 +0200
+Subject: [PATCH] sound: mtk-auddrv-gpio: a pin state the board does not define
+ is no failure
+
+A pin state the device tree does not define prints at debug level; the
+table holds every board's states. The speaker and microphone data pins
+are marked required and stay errors, as does any other failure.
+---
+ .../soc/mediatek/common_int/mtk-auddrv-gpio.c  | 18 ++++++++++++------
+ 1 file changed, 12 insertions(+), 6 deletions(-)
+
+diff --git a/sound/soc/mediatek/common_int/mtk-auddrv-gpio.c b/sound/soc/mediatek/common_int/mtk-auddrv-gpio.c
+index e25e70a88..3e4308e5f 100644
+--- a/sound/soc/mediatek/common_int/mtk-auddrv-gpio.c
++++ b/sound/soc/mediatek/common_int/mtk-auddrv-gpio.c
+@@ -91,15 +91,16 @@ struct audio_gpio_attr {
+ 	const char *name;
+ 	bool gpio_prepare;
+ 	struct pinctrl_state *gpioctrl;
++	bool required;
+ };
+ 
+ static struct audio_gpio_attr aud_gpios[GPIO_NUM] = {
+ 	[GPIO_AUD_CLK_MOSI_OFF] = {"aud_clk_mosi_off", false, NULL},
+ 	[GPIO_AUD_CLK_MOSI_ON] = {"aud_clk_mosi_on", false, NULL},
+-	[GPIO_AUD_DAT_MISO_OFF] = {"aud_dat_miso_off", false, NULL},
+-	[GPIO_AUD_DAT_MISO_ON] = {"aud_dat_miso_on", false, NULL},
+-	[GPIO_AUD_DAT_MOSI_OFF] = {"aud_dat_mosi_off", false, NULL},
+-	[GPIO_AUD_DAT_MOSI_ON] = {"aud_dat_mosi_on", false, NULL},
++	[GPIO_AUD_DAT_MISO_OFF] = {"aud_dat_miso_off", false, NULL, true},
++	[GPIO_AUD_DAT_MISO_ON] = {"aud_dat_miso_on", false, NULL, true},
++	[GPIO_AUD_DAT_MOSI_OFF] = {"aud_dat_mosi_off", false, NULL, true},
++	[GPIO_AUD_DAT_MOSI_ON] = {"aud_dat_mosi_on", false, NULL, true},
+ 	[GPIO_AUD_DAT_MISO2_OFF] = {"aud_dat_miso2_off", false, NULL},
+ 	[GPIO_AUD_DAT_MISO2_ON] = {"aud_dat_miso2_on", false, NULL},
+ 	[GPIO_AUD_DAT_MOSI2_OFF] = {"aud_dat_mosi2_off", false, NULL},
+@@ -183,8 +184,13 @@ void AudDrv_GPIO_probe(void *dev)
+ 			pinctrl_lookup_state(pinctrlaud, aud_gpios[i].name);
+ 		if (IS_ERR(aud_gpios[i].gpioctrl)) {
+ 			ret = PTR_ERR(aud_gpios[i].gpioctrl);
+-			pr_err("%s pinctrl_lookup_state %s fail %d\n", __func__,
+-			       aud_gpios[i].name, ret);
++			/* an optional state the device tree lacks is no failure */
++			if (ret == -ENODEV && !aud_gpios[i].required)
++				pr_debug("%s pinctrl state %s not defined\n",
++					 __func__, aud_gpios[i].name);
++			else
++				pr_err("%s pinctrl_lookup_state %s fail %d\n",
++				       __func__, aud_gpios[i].name, ret);
+ 		} else {
+ 			aud_gpios[i].gpio_prepare = true;
+ 		}
+-- 
+2.56.0
+

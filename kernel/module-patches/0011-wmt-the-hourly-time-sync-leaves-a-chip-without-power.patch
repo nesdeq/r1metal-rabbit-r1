@@ -1,0 +1,31 @@
+From 65017301eb5f4fc2b0e19e031a5f009ac7ae2a9b Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 10:39:03 +0200
+Subject: [PATCH] wmt: the hourly time sync leaves a chip without power alone
+
+wmt_lib_utc_time_sync sends nothing while the WMT function is off;
+wmt_core_stp_init sends the time at every power-on. Its timer and the
+thermal query call it whatever the power, and a core without power
+refuses it with four errors.
+---
+ connectivity/common/common_main/core/wmt_lib.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/connectivity/common/common_main/core/wmt_lib.c b/connectivity/common/common_main/core/wmt_lib.c
+index 6124cfc..283ccb9 100644
+--- a/connectivity/common/common_main/core/wmt_lib.c
++++ b/connectivity/common/common_main/core/wmt_lib.c
+@@ -2024,6 +2024,10 @@ INT32 wmt_lib_utc_time_sync(VOID)
+ 	MTK_WCN_BOOL bRet;
+ 	P_OSAL_SIGNAL pSignal;
+ 
++	/* Off, the chip gets the time from wmt_core_stp_init() at power-on. */
++	if (wmt_lib_get_drv_status(WMTDRV_TYPE_WMT) != DRV_STS_FUNC_ON)
++		return 0;
++
+ 	pOp = wmt_lib_get_free_op();
+ 	if (!pOp) {
+ 		WMT_WARN_FUNC("get_free_lxop fail\n");
+-- 
+2.56.0
+

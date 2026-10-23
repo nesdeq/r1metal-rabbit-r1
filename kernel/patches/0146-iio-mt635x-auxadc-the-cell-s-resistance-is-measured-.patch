@@ -1,0 +1,50 @@
+From d6c1ffbb09dd84d5d04aeabcc1e585cc5c13c19d Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Tue, 20 Oct 2026 14:54:36 +0200
+Subject: [PATCH] iio: mt635x-auxadc: the cell's resistance is measured from a
+ settled current
+
+auxadc_get_rac() waits CURRENT_SETTLE_MS, 50 ms, before the sample
+without the dummy load as before the one with it, so the gauge's latched
+current has settled after the step before it, the load's release or the
+processors going down. Upstream takes that sample at once, and a current
+not yet settled shrinks the difference below the 70 mA a measurement
+needs.
+---
+ drivers/iio/adc/mt635x-auxadc.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/iio/adc/mt635x-auxadc.c b/drivers/iio/adc/mt635x-auxadc.c
+index d4a1521f7..467761100 100644
+--- a/drivers/iio/adc/mt635x-auxadc.c
++++ b/drivers/iio/adc/mt635x-auxadc.c
+@@ -40,6 +40,8 @@
+ #define IMP_VOLT_FULL			18000
+ #define IMP_POLL_DELAY_US		1000
+ #define IMP_STOP_DELAY_US		150
++/* What the current the gauge latches needs to follow a step in the draw */
++#define CURRENT_SETTLE_MS		50
+ 
+ struct mt635x_auxadc_device {
+ 	unsigned int chip_id;
+@@ -709,6 +711,8 @@ static int auxadc_get_rac(struct mt635x_auxadc_device *adc_dev)
+ 	int retry_count = 0;
+ 
+ 	do {
++		/* The sample without the load waits out the step before it, the load's release or the processors going down */
++		mdelay(CURRENT_SETTLE_MS);
+ 		/* Trigger ADC PTIM mode to get VBAT and current */
+ 		if (adc_dev->info->imp_conv)
+ 			ret = adc_dev->info->imp_conv(adc_dev,
+@@ -716,7 +720,7 @@ static int auxadc_get_rac(struct mt635x_auxadc_device *adc_dev)
+ 		/* Convert imp vbat raw data */
+ 		vbat_1 = auxadc_conv_imp_vbat(adc_dev);
+ 		enable_dummy_load(adc_dev);
+-		mdelay(50);
++		mdelay(CURRENT_SETTLE_MS);
+ 
+ 		/* Trigger ADC PTIM mode again to get new VBAT and current */
+ 		if (adc_dev->info->imp_conv)
+-- 
+2.56.0
+

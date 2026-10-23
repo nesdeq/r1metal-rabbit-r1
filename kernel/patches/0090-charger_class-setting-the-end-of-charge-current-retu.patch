@@ -1,0 +1,29 @@
+From 1fd292853e780a368d2940b426b867e3f8748134 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 16:06:40 +0200
+Subject: [PATCH] charger_class: setting the end of charge current returns the
+ charger's answer
+
+charger_dev_set_eoc_current returns the charger operation's answer,
+and -ENOTSUPP only where there is no charger or no operation, as the
+class's other calls do.
+---
+ drivers/power/supply/charger_class.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/power/supply/charger_class.c b/drivers/power/supply/charger_class.c
+index 023910a7c..19196945c 100644
+--- a/drivers/power/supply/charger_class.c
++++ b/drivers/power/supply/charger_class.c
+@@ -224,7 +224,7 @@ int charger_dev_set_eoc_current(struct charger_device *chg_dev, u32 uA)
+ {
+ 	if (chg_dev != NULL && chg_dev->ops != NULL &&
+ 	    chg_dev->ops->set_eoc_current)
+-		chg_dev->ops->set_eoc_current(chg_dev, uA);
++		return chg_dev->ops->set_eoc_current(chg_dev, uA);
+ 
+ 	return -ENOTSUPP;
+ }
+-- 
+2.56.0
+

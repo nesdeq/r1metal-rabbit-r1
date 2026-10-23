@@ -1,0 +1,830 @@
+From c1d3711e8422036fd2d8123eae5a8ccbe7976b82 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 18:21:50 +0200
+Subject: [PATCH] power: battery, gauge, charger and PD figures of every pass
+ print at debug level
+
+- Routine lines of every pass of the charger, gauge, PD, TCPC, DLPT
+  and PBM code and of every AUXADC read print at debug level.
+- They print through pr_debug, dev_dbg, chr_debug, pd_dbg, bm_debug,
+  mt_dbg (dbg_log_en) or TCPC_DYNDBG, a pr_debug with the TCPC prefix.
+- chr_debug and pd_dbg print with pr_debug behind their level checks.
+- The JEITA state line prints with chr_err only when the state changes.
+- The battery's log level is BMLOG_ERROR_LEVEL from battery_psy_init
+  on, so the probe prints its error lines and no debug lines.
+- Three format strings get the arguments they name.
+---
+ drivers/iio/adc/mt635x-auxadc.c               | 14 ++++----
+ .../misc/mediatek/base/power/pbm_v4/mtk_pbm.c |  6 ++--
+ .../mediatek/pmic/mt6370/mt6370_pmu_charger.c | 16 ++++-----
+ .../mtk_dynamic_loading_throttling.c          | 14 ++++----
+ .../misc/mediatek/typec/tcpc/inc/tcpci_core.h |  9 +++++
+ drivers/misc/mediatek/typec/tcpc/tcpci_core.c |  8 ++---
+ drivers/power/supply/mt6357-charger-type.c    |  2 +-
+ drivers/power/supply/mtk_battery.c            | 23 ++++++------
+ drivers/power/supply/mtk_battery.h            |  2 +-
+ drivers/power/supply/mtk_battery_daemon.c     |  2 +-
+ drivers/power/supply/mtk_charger.c            | 35 +++++++++++--------
+ drivers/power/supply/mtk_charger.h            |  2 +-
+ .../supply/mtk_charger_algorithm_class.c      |  2 +-
+ drivers/power/supply/mtk_charger_intf.c       |  4 +--
+ drivers/power/supply/mtk_pd.c                 | 18 +++++-----
+ drivers/power/supply/mtk_pd.h                 |  2 +-
+ drivers/power/supply/mtk_pd_adapter.c         | 10 +++---
+ drivers/power/supply/mtk_pd_hal.c             | 28 +++++++--------
+ 18 files changed, 105 insertions(+), 92 deletions(-)
+
+diff --git a/drivers/iio/adc/mt635x-auxadc.c b/drivers/iio/adc/mt635x-auxadc.c
+index ba79a62cb..d4a1521f7 100644
+--- a/drivers/iio/adc/mt635x-auxadc.c
++++ b/drivers/iio/adc/mt635x-auxadc.c
+@@ -826,7 +826,6 @@ static int mt635x_auxadc_read_raw(struct iio_dev *indio_dev,
+ 	const struct auxadc_channels *auxadc_chan;
+ 	int auxadc_out = 0;
+ 	int ret;
+-	static DEFINE_RATELIMIT_STATE(ratelimit, 1 * HZ, 5);
+ 
+ 	mutex_lock(&adc_dev->lock);
+ 	pm_stay_awake(adc_dev->dev);
+@@ -877,12 +876,9 @@ static int mt635x_auxadc_read_raw(struct iio_dev *indio_dev,
+ 	}
+ 	if (chan->channel == AUXADC_IMP)
+ 		ret = IIO_VAL_INT_MULTIPLE;
+-	if (__ratelimit(&ratelimit)) {
+-		dev_info(adc_dev->dev,
+-			"name:%s, channel=%d, adc_out=0x%x, adc_result=%d\n",
+-			auxadc_chan->ch_name, auxadc_chan->ch_num,
+-			auxadc_out, *val);
+-	}
++	dev_dbg(adc_dev->dev,
++		"name:%s, channel=%d, adc_out=0x%x, adc_result=%d\n",
++		auxadc_chan->ch_name, auxadc_chan->ch_num, auxadc_out, *val);
+ err:
+ 	return ret;
+ }
+@@ -1034,7 +1030,9 @@ static int mt635x_bat_temp_cali(struct mt635x_auxadc_device *adc_dev,
+ 		aee_count++;
+ 	} else if (dbg_count % 50 == 0) {
+ 		/* dump debug log in normal case */
+-		wk_bat_temp_dbg(adc_dev, bat_temp_prev, bat_temp);
++		pr_debug("BAT_TEMP_PREV:%d,BAT_TEMP:%d,VBIF28:%d\n",
++			 bat_temp_prev, bat_temp,
++			 auxadc_priv_read_channel(adc_dev, AUXADC_VBIF));
+ 	}
+ out:
+ 	bat_temp_prev = bat_temp;
+diff --git a/drivers/misc/mediatek/base/power/pbm_v4/mtk_pbm.c b/drivers/misc/mediatek/base/power/pbm_v4/mtk_pbm.c
+index 0a7392a40..5cb8c38ed 100644
+--- a/drivers/misc/mediatek/base/power/pbm_v4/mtk_pbm.c
++++ b/drivers/misc/mediatek/base/power/pbm_v4/mtk_pbm.c
+@@ -192,13 +192,13 @@ unsigned int ma_to_mw(unsigned int val)
+ 	bat_vol = get_battery_volt();	/* return mV */
+ 	if (bat_vol <= 0) {
+ 		pr_notice_ratelimited("[%s] wrong volt=%d, set 4V\n",
+-			bat_vol);
++			__func__, bat_vol);
+ 		bat_vol = 4000;
+ 	}
+ 
+ 	ret_val = (bat_vol * val) / 1000;	/* mW = (mV * mA)/1000 */
+-	pr_info("[%s] %d(mV) * %d(mA) = %d(mW)\n",
+-		__func__, bat_vol, val, ret_val);
++	pr_debug("[%s] %d(mV) * %d(mA) = %d(mW)\n",
++		 __func__, bat_vol, val, ret_val);
+ 
+ 	return ret_val;
+ }
+diff --git a/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_charger.c b/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_charger.c
+index 7214e0c55..1d14d6b98 100755
+--- a/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_charger.c
++++ b/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_charger.c
+@@ -1436,7 +1436,7 @@ static int __mt6370_set_mivr(struct mt6370_pmu_charger_data *chg_data, u32 uV)
+ 		uV
+ 	);
+ 
+-	dev_info(chg_data->dev, "%s: mivr = %d (0x%02X)\n", __func__, uV,
++	mt_dbg(chg_data->dev, "%s: mivr = %d (0x%02X)\n", __func__, uV,
+ 		reg_mivr);
+ 
+ 	ret = mt6370_pmu_reg_update_bits(
+@@ -2736,7 +2736,7 @@ static int mt6370_get_tchg(struct charger_device *chg_dev, int *tchg_min,
+ 	*tchg_min = adc_temp;
+ 	*tchg_max = adc_temp;
+ 
+-	dev_info(chg_data->dev, "%s: tchg = %d\n", __func__, adc_temp);
++	mt_dbg(chg_data->dev, "%s: tchg = %d\n", __func__, adc_temp);
+ 
+ 	return ret;
+ }
+@@ -2754,7 +2754,7 @@ static int mt6370_get_ibus(struct charger_device *chg_dev, u32 *ibus)
+ 
+ 	*ibus = adc_ibus;
+ 
+-	dev_info(chg_data->dev, "%s: ibus = %dmA\n", __func__, adc_ibus / 1000);
++	mt_dbg(chg_data->dev, "%s: ibus = %dmA\n", __func__, adc_ibus / 1000);
+ 	return ret;
+ }
+ 
+@@ -2876,20 +2876,20 @@ static int mt6370_dump_register(struct charger_device *chg_dev)
+ 		}
+ 	}
+ 
+-	dev_info(chg_data->dev,
++	mt_dbg(chg_data->dev,
+ 		"%s: ICHG = %dmA, AICR = %dmA, MIVR = %dmV, IEOC = %dmA, CV = %dmV\n",
+ 		__func__, ichg / 1000, aicr / 1000, mivr / 1000,
+ 		ieoc / 1000, cv / 1000);
+ 
+-	dev_info(chg_data->dev,
++	mt_dbg(chg_data->dev,
+ 		"%s: VSYS = %dmV, VBAT = %dmV, IBAT = %dmA, IBUS = %dmA, VBUS = %dmV\n",
+ 		__func__, adc_vsys / 1000, adc_vbat / 1000,
+ 		adc_ibat / 1000, adc_ibus / 1000, adc_vbus / 1000);
+ 
+-	dev_info(chg_data->dev, "%s: CHG_EN = %d, CHG_STATUS = %s, CHG_STAT = 0x%02X\n",
++	mt_dbg(chg_data->dev, "%s: CHG_EN = %d, CHG_STATUS = %s, CHG_STAT = 0x%02X\n",
+ 		__func__, chg_en, mt6370_chg_status_name[chg_status], chg_stat);
+ 
+-	dev_info(chg_data->dev, "%s: CHG_CTRL1 = 0x%02X, CHG_CTRL2 = 0x%02X\n",
++	mt_dbg(chg_data->dev, "%s: CHG_CTRL1 = 0x%02X, CHG_CTRL2 = 0x%02X\n",
+ 		__func__, chg_ctrl[0], chg_ctrl[1]);
+ 
+ 	ret = 0;
+@@ -4291,7 +4291,7 @@ static int mt6370_pmu_chg_get_online(struct mt6370_pmu_charger_data *chg_data,
+ 	}
+ 	online = !online;
+ #endif
+-	dev_info(chg_data->dev, "%s: online = %d\n", __func__, online);
++	mt_dbg(chg_data->dev, "%s: online = %d\n", __func__, online);
+ 	val->intval = online;
+ 
+ 	return 0;
+diff --git a/drivers/misc/mediatek/power_throttling/mtk_dynamic_loading_throttling.c b/drivers/misc/mediatek/power_throttling/mtk_dynamic_loading_throttling.c
+index 65e7952ad..685712b89 100644
+--- a/drivers/misc/mediatek/power_throttling/mtk_dynamic_loading_throttling.c
++++ b/drivers/misc/mediatek/power_throttling/mtk_dynamic_loading_throttling.c
+@@ -330,8 +330,8 @@ static int get_dlpt_imix(void)
+ 
+ 	imix = (curr_avg + (volt_avg - lbatInt1) * 1000 / dlpt.imix_r) / 10;
+ 
+-	pr_info("[%s] %d,%d,%d,%d\n"
+-		, __func__, volt_avg, curr_avg, dlpt.imix_r, imix);
++	pr_debug("[%s] %d,%d,%d,%d\n"
++		 , __func__, volt_avg, curr_avg, dlpt.imix_r, imix);
+ 
+ 	if (imix < 0) {
+ 		pr_notice("[dlpt] imix= %d < 0\n", imix);
+@@ -363,9 +363,9 @@ static int dlpt_notify_handler(void *unused)
+ 		cur_ui_soc = dlpt_get_uisoc();
+ 
+ 		if (dlpt.imix_r == 0)
+-			pr_info("[DLPT] imix_r==0, skip\n");
++			pr_debug("[DLPT] imix_r==0, skip\n");
+ 		else if (!get_mtk_gauge_psy())
+-			pr_info("[DLPT] gauge disabled, skip\n");
++			pr_debug("[DLPT] gauge disabled, skip\n");
+ 		else {
+ 			if (dlpt_get_rgs_chrdet())
+ 				dlpt.imix = get_dlpt_imix_charging();
+@@ -376,9 +376,9 @@ static int dlpt_notify_handler(void *unused)
+ 				dlpt.imix = IMAX_MAX_VALUE;
+ 			exec_dlpt_callback(dlpt.imix);
+ 
+-			pr_info("[DLPT_final] %d,%d,%d,%d\n"
+-				, dlpt.imix, pre_ui_soc
+-				, cur_ui_soc, IMAX_MAX_VALUE);
++			pr_debug("[DLPT_final] %d,%d,%d,%d\n"
++				 , dlpt.imix, pre_ui_soc
++				 , cur_ui_soc, IMAX_MAX_VALUE);
+ 		}
+ 		pre_ui_soc = cur_ui_soc;
+ 		dlpt.notify_flag = false;
+diff --git a/drivers/misc/mediatek/typec/tcpc/inc/tcpci_core.h b/drivers/misc/mediatek/typec/tcpc/inc/tcpci_core.h
+index 2e64c4757..3e64312c1 100644
+--- a/drivers/misc/mediatek/typec/tcpc/inc/tcpci_core.h
++++ b/drivers/misc/mediatek/typec/tcpc/inc/tcpci_core.h
+@@ -586,6 +586,15 @@ static inline bool pd_check_rev30(struct pd_port *pd_port)
+ #define TCPC_DBG2(format, args...)
+ #endif /* TCPC_DBG2_ENABLE */
+ 
++/* TCPC lines at debug level, switched on through dynamic debug */
++#ifdef CONFIG_TCPC_LOG_WITH_PORT_NAME
++#define TCPC_DYNDBG(format, args...)	\
++	pr_debug(CONFIG_TCPC_DBG_PRESTR "TCPC:" format, tcpc->desc.name, ##args)
++#else
++#define TCPC_DYNDBG(format, args...)	\
++	pr_debug(CONFIG_TCPC_DBG_PRESTR "TCPC:" format, ##args)
++#endif /* CONFIG_TCPC_LOG_WITH_PORT_NAME */
++
+ #define TCPC_ERR(format, args...)	\
+ 	RT_DBG_INFO(CONFIG_TCPC_DBG_PRESTR "TCPC-ERR:" format, ##args)
+ 
+diff --git a/drivers/misc/mediatek/typec/tcpc/tcpci_core.c b/drivers/misc/mediatek/typec/tcpc/tcpci_core.c
+index 909a08a2c..6b4ec38bb 100644
+--- a/drivers/misc/mediatek/typec/tcpc/tcpci_core.c
++++ b/drivers/misc/mediatek/typec/tcpc/tcpci_core.c
+@@ -495,7 +495,7 @@ static void bat_update_work_func(struct work_struct *work)
+ 	ret = power_supply_get_property(
+ 			tcpc->bat_psy, POWER_SUPPLY_PROP_CAPACITY, &value);
+ 	if (ret == 0) {
+-		TCPC_INFO("%s battery update soc = %d\n",
++		TCPC_DYNDBG("%s battery update soc = %d\n",
+ 					__func__, value.intval);
+ 		tcpc->bat_soc = value.intval;
+ 	} else
+@@ -505,13 +505,13 @@ static void bat_update_work_func(struct work_struct *work)
+ 		POWER_SUPPLY_PROP_STATUS, &value);
+ 	if (ret == 0) {
+ 		if (value.intval == POWER_SUPPLY_STATUS_CHARGING) {
+-			TCPC_INFO("%s Battery Charging\n", __func__);
++			TCPC_DYNDBG("%s Battery Charging\n", __func__);
+ 			tcpc->charging_status = BSDO_BAT_INFO_CHARGING;
+ 		} else if (value.intval == POWER_SUPPLY_STATUS_DISCHARGING) {
+-			TCPC_INFO("%s Battery Discharging\n", __func__);
++			TCPC_DYNDBG("%s Battery Discharging\n", __func__);
+ 			tcpc->charging_status = BSDO_BAT_INFO_DISCHARGING;
+ 		} else {
+-			TCPC_INFO("%s Battery Idle\n", __func__);
++			TCPC_DYNDBG("%s Battery Idle\n", __func__);
+ 			tcpc->charging_status = BSDO_BAT_INFO_IDLE;
+ 		}
+ 	}
+diff --git a/drivers/power/supply/mt6357-charger-type.c b/drivers/power/supply/mt6357-charger-type.c
+index 6eefa9b4c..d6c61f643 100644
+--- a/drivers/power/supply/mt6357-charger-type.c
++++ b/drivers/power/supply/mt6357-charger-type.c
+@@ -634,7 +634,7 @@ static int psy_chr_type_get_property(struct power_supply *psy,
+ 	struct mtk_charger_type *info;
+ 	int vbus = 0;
+ 
+-	pr_notice("%s: prop:%d\n", __func__, psp);
++	pr_debug("%s: prop:%d\n", __func__, psp);
+ 	info = (struct mtk_charger_type *)power_supply_get_drvdata(psy);
+ 
+ 	switch (psp) {
+diff --git a/drivers/power/supply/mtk_battery.c b/drivers/power/supply/mtk_battery.c
+index 03a339564..943ee12f8 100755
+--- a/drivers/power/supply/mtk_battery.c
++++ b/drivers/power/supply/mtk_battery.c
+@@ -82,7 +82,7 @@ void enable_gauge_irq(struct mtk_gauge *gauge,
+ 		return;
+ 
+ 	desc = irq_to_desc(gauge->irq_no[irq]);
+-	bm_err("%s irq_no:%d:%d depth:%d\n",
++	bm_debug("%s irq_no:%d:%d depth:%d\n",
+ 		__func__, irq, gauge->irq_no[irq],
+ 		desc->depth);
+ 	if (desc->depth == 1)
+@@ -101,7 +101,7 @@ void disable_gauge_irq(struct mtk_gauge *gauge,
+ 		return;
+ 
+ 	desc = irq_to_desc(gauge->irq_no[irq]);
+-	bm_err("%s irq_no:%d:%d depth:%d\n",
++	bm_debug("%s irq_no:%d:%d depth:%d\n",
+ 		__func__, irq, gauge->irq_no[irq],
+ 		desc->depth);
+ 	if (desc->depth == 0)
+@@ -136,10 +136,10 @@ int bat_get_debug_level(void)
+ 	if (gm == NULL) {
+ 		psy = power_supply_get_by_name("mtk-gauge");
+ 		if (psy == NULL)
+-			return BMLOG_DEBUG_LEVEL;
++			return BMLOG_DEFAULT_LEVEL;
+ 		gauge = (struct mtk_gauge *)power_supply_get_drvdata(psy);
+ 		if (gauge == NULL || gauge->gm == NULL)
+-			return BMLOG_DEBUG_LEVEL;
++			return BMLOG_DEFAULT_LEVEL;
+ 		gm = gauge->gm;
+ 	}
+ 	return gm->log_level;
+@@ -182,7 +182,7 @@ bool is_recovery_mode(void)
+ 	struct mtk_battery *gm;
+ 
+ 	gm = get_mtk_battery();
+-	bm_debug("%s, bootmdoe = %d\n", gm->bootmode);
++	bm_debug("%s, bootmdoe = %d\n", __func__, gm->bootmode);
+ 
+ 	/* RECOVERY_BOOT */
+ 	if (gm->bootmode == 2)
+@@ -196,7 +196,7 @@ bool is_kernel_power_off_charging(void)
+ 	struct mtk_battery *gm;
+ 
+ 	gm = get_mtk_battery();
+-	bm_debug("%s, bootmdoe = %d\n", gm->bootmode);
++	bm_debug("%s, bootmdoe = %d\n", __func__, gm->bootmode);
+ 
+ 	/* KERNEL_POWER_OFF_CHARGING_BOOT */
+ 	if (gm->bootmode == 8)
+@@ -2352,7 +2352,7 @@ void fg_drv_update_hw_status(struct mtk_battery *gm)
+ {
+ 	ktime_t ktime;
+ 
+-	bm_err("car[%d,%ld,%ld,%ld,%ld] tmp:%d soc:%d uisoc:%d vbat:%d ibat:%d algo:%d gm3:%d %d %d %d,boot:%d\n",
++	bm_debug("car[%d,%ld,%ld,%ld,%ld] tmp:%d soc:%d uisoc:%d vbat:%d ibat:%d algo:%d gm3:%d %d %d %d,boot:%d\n",
+ 		gauge_get_int_property(GAUGE_PROP_COULOMB),
+ 		gm->coulomb_plus.end, gm->coulomb_minus.end,
+ 		gm->uisoc_plus.end, gm->uisoc_minus.end,
+@@ -2385,7 +2385,7 @@ int battery_update_routine(void *arg)
+ 
+ 	battery_update_psd(gm);
+ 	while (1) {
+-		bm_err("%s\n", __func__);
++		bm_debug("%s\n", __func__);
+ 		wait_event(gm->wait_que, (gm->fg_update_flag > 0));
+ 		gm->fg_update_flag = 0;
+ 
+@@ -2395,7 +2395,7 @@ int battery_update_routine(void *arg)
+ 
+ void fg_update_routine_wakeup(struct mtk_battery *gm)
+ {
+-	bm_err("%s\n", __func__);
++	bm_debug("%s\n", __func__);
+ 	gm->fg_update_flag = 1;
+ 	wake_up(&gm->wait_que);
+ }
+@@ -2404,7 +2404,7 @@ enum hrtimer_restart fg_drv_thread_hrtimer_func(struct hrtimer *timer)
+ {
+ 	struct mtk_battery *gm;
+ 
+-	bm_err("%s\n", __func__);
++	bm_debug("%s\n", __func__);
+ 	gm = container_of(timer,
+ 		struct mtk_battery, fg_hrtimer);
+ 	fg_update_routine_wakeup(gm);
+@@ -3004,6 +3004,8 @@ int battery_psy_init(struct platform_device *pdev)
+ 	if (!gm)
+ 		return -ENOMEM;
+ 
++	gm->log_level = BMLOG_DEFAULT_LEVEL;
++
+ 	gauge = dev_get_drvdata(&pdev->dev);
+ 	gauge->gm = gm;
+ 	gm->gauge = gauge;
+@@ -3113,7 +3115,6 @@ int battery_init(struct platform_device *pdev)
+ 	gm = gauge->gm;
+ 	gm->fixed_bat_tmp = 0xffff;
+ 	gm->tmp_table = Fg_Temperature_Table;
+-	gm->log_level = BMLOG_ERROR_LEVEL;
+ 	gm->sw_iavg_gap = 3000;
+ 
+ 	init_waitqueue_head(&gm->wait_que);
+diff --git a/drivers/power/supply/mtk_battery.h b/drivers/power/supply/mtk_battery.h
+index 611255780..df7728090 100644
+--- a/drivers/power/supply/mtk_battery.h
++++ b/drivers/power/supply/mtk_battery.h
+@@ -31,7 +31,7 @@
+ #define BMLOG_DEBUG_LEVEL   7
+ #define BMLOG_TRACE_LEVEL   8
+ 
+-#define BMLOG_DEFAULT_LEVEL BMLOG_DEBUG_LEVEL
++#define BMLOG_DEFAULT_LEVEL BMLOG_ERROR_LEVEL
+ 
+ #define bm_err(fmt, args...)   \
+ do {\
+diff --git a/drivers/power/supply/mtk_battery_daemon.c b/drivers/power/supply/mtk_battery_daemon.c
+index db58c0f47..bc6b4cb63 100644
+--- a/drivers/power/supply/mtk_battery_daemon.c
++++ b/drivers/power/supply/mtk_battery_daemon.c
+@@ -4393,7 +4393,7 @@ void fg_drv_update_daemon(struct mtk_battery *gm)
+ 
+ 	fg_current_iavg = gauge_get_average_current(gm, &valid);
+ 
+-	bm_err("[%s]ui_ht_gap:%d ui_lt_gap:%d sw_iavg:%d %d %d nafg_m:%d %d %d\n",
++	bm_debug("[%s]ui_ht_gap:%d ui_lt_gap:%d sw_iavg:%d %d %d nafg_m:%d %d %d\n",
+ 		__func__,
+ 		gm->uisoc_int_ht_gap, gm->uisoc_int_lt_gap,
+ 		gm->sw_iavg, fg_current_iavg, valid,
+diff --git a/drivers/power/supply/mtk_charger.c b/drivers/power/supply/mtk_charger.c
+index 9a99f106d..a45619b67 100644
+--- a/drivers/power/supply/mtk_charger.c
++++ b/drivers/power/supply/mtk_charger.c
+@@ -522,7 +522,7 @@ static void mtk_charger_start_timer(struct mtk_charger *info)
+ 	info->endtime = timespec_add(time_now, time);
+ 	ktime = ktime_set(info->endtime.tv_sec, info->endtime.tv_nsec);
+ 
+-	chr_err("%s: alarm timer start:%d, %ld %ld\n", __func__, ret,
++	chr_debug("%s: alarm timer start:%d, %ld %ld\n", __func__, ret,
+ 		info->endtime.tv_sec, info->endtime.tv_nsec);
+ 	alarm_start(&info->charger_timer, ktime);
+ }
+@@ -624,7 +624,7 @@ void do_sw_jeita_state_machine(struct mtk_charger *info)
+ 
+ 			sw_jeita->charging = false;
+ 		} else {
+-			chr_err("[SW_JEITA] Battery Temperature between %d and %d !!\n",
++			chr_debug("[SW_JEITA] Battery Temperature between %d and %d !!\n",
+ 				info->data.temp_t3_thres,
+ 				info->data.temp_t4_thres);
+ 
+@@ -637,9 +637,9 @@ void do_sw_jeita_state_machine(struct mtk_charger *info)
+ 		    || ((sw_jeita->sm == TEMP_T1_TO_T2)
+ 			&& (info->battery_temp
+ 			    <= info->data.temp_t2_thres_plus_x_degree))) {
+-			chr_err("[SW_JEITA] Battery Temperature not recovery to normal temperature charging mode yet!!\n");
++			chr_debug("[SW_JEITA] Battery Temperature not recovery to normal temperature charging mode yet!!\n");
+ 		} else {
+-			chr_err("[SW_JEITA] Battery Normal Temperature between %d and %d !!\n",
++			chr_debug("[SW_JEITA] Battery Normal Temperature between %d and %d !!\n",
+ 				info->data.temp_t2_thres,
+ 				info->data.temp_t3_thres);
+ 			sw_jeita->sm = TEMP_T2_TO_T3;
+@@ -650,7 +650,7 @@ void do_sw_jeita_state_machine(struct mtk_charger *info)
+ 		    && (info->battery_temp
+ 			<= info->data.temp_t1_thres_plus_x_degree)) {
+ 			if (sw_jeita->sm == TEMP_T0_TO_T1) {
+-				chr_err("[SW_JEITA] Battery Temperature between %d and %d !!\n",
++				chr_debug("[SW_JEITA] Battery Temperature between %d and %d !!\n",
+ 					info->data.temp_t1_thres_plus_x_degree,
+ 					info->data.temp_t2_thres);
+ 			}
+@@ -661,7 +661,7 @@ void do_sw_jeita_state_machine(struct mtk_charger *info)
+ 				sw_jeita->charging = false;
+ 			}
+ 		} else {
+-			chr_err("[SW_JEITA] Battery Temperature between %d and %d !!\n",
++			chr_debug("[SW_JEITA] Battery Temperature between %d and %d !!\n",
+ 				info->data.temp_t1_thres,
+ 				info->data.temp_t2_thres);
+ 
+@@ -677,7 +677,7 @@ void do_sw_jeita_state_machine(struct mtk_charger *info)
+ 
+ 			sw_jeita->charging = false;
+ 		} else {
+-			chr_err("[SW_JEITA] Battery Temperature between %d and %d !!\n",
++			chr_debug("[SW_JEITA] Battery Temperature between %d and %d !!\n",
+ 				info->data.temp_t0_thres,
+ 				info->data.temp_t1_thres);
+ 
+@@ -714,7 +714,7 @@ void do_sw_jeita_state_machine(struct mtk_charger *info)
+ 				charger_dev_enable_termination(info->chg1_dev, true);
+ 				charger_dev_set_eoc_current(info->chg1_dev, 100000);
+ 			}
+-			chr_err("[SW_JEITA] dynamic cv: %d->%d, vbat: %d, ibat: %d\n",
++			chr_debug("[SW_JEITA] dynamic cv: %d->%d, vbat: %d, ibat: %d\n",
+ 					sw_jeita->pre_cv, sw_jeita->cv, vbat, ibat);
+ 			sw_jeita->cc = info->data.jeita_temp_t3_to_t4_cc;
+ 		} else if (sw_jeita->sm == TEMP_T2_TO_T3) {
+@@ -742,9 +742,14 @@ void do_sw_jeita_state_machine(struct mtk_charger *info)
+ 		charger_dev_set_eoc_current(info->chg1_dev, 100000);
+ 	}
+ 
+-	chr_err("[SW_JEITA]preState:%d newState:%d tmp:%d cv:%d cc:%d\n",
+-		sw_jeita->pre_sm, sw_jeita->sm, info->battery_temp,
+-		sw_jeita->cv, sw_jeita->cc);
++	if (sw_jeita->sm != sw_jeita->pre_sm)
++		chr_err("[SW_JEITA]preState:%d newState:%d tmp:%d cv:%d cc:%d\n",
++			sw_jeita->pre_sm, sw_jeita->sm, info->battery_temp,
++			sw_jeita->cv, sw_jeita->cc);
++	else
++		chr_debug("[SW_JEITA]preState:%d newState:%d tmp:%d cv:%d cc:%d\n",
++			sw_jeita->pre_sm, sw_jeita->sm, info->battery_temp,
++			sw_jeita->cv, sw_jeita->cc);
+ }
+ 
+ static int mtk_chgstat_notify(struct mtk_charger *info)
+@@ -1435,7 +1440,7 @@ static void charger_check_status(struct mtk_charger *info)
+ stop_charging:
+ 	mtk_battery_notify_check(info);
+ 
+-	chr_err("tmp:%d (jeita:%d sm:%d cv:%d en:%d) (sm:%d) en:%d c:%d s:%d ov:%d %d %d\n",
++	chr_debug("tmp:%d (jeita:%d sm:%d cv:%d en:%d) (sm:%d) en:%d c:%d s:%d ov:%d %d %d\n",
+ 		temperature, info->enable_sw_jeita, info->sw_jeita.sm,
+ 		info->sw_jeita.cv, info->sw_jeita.charging, thermal->sm,
+ 		charging, info->cmd_discharging, info->safety_timeout,
+@@ -1689,7 +1694,7 @@ static int charger_routine_thread(void *arg)
+ 		info->charger_thread_timeout = false;
+ 
+ 		info->battery_temp = get_battery_temperature(info);
+-		chr_err("Vbat=%d vbus:%d ibus:%d I=%d T=%d uisoc:%d type:%s>%s pd:%d\n",
++		chr_debug("Vbat=%d vbus:%d ibus:%d I=%d T=%d uisoc:%d type:%s>%s pd:%d\n",
+ 			get_battery_voltage(info),
+ 			get_vbus(info),
+ 			get_ibus(info),
+@@ -1778,7 +1783,7 @@ static enum alarmtimer_restart
+ 	container_of(alarm, struct mtk_charger, charger_timer);
+ 
+ 	if (info->is_suspend == false) {
+-		chr_err("%s: not suspend, wake up charger\n", __func__);
++		chr_debug("%s: not suspend, wake up charger\n", __func__);
+ 		_wake_up_charger(info);
+ 	} else {
+ 		chr_err("%s: alarm timer timeout\n", __func__);
+@@ -1941,7 +1946,7 @@ static int psy_charger_get_property(struct power_supply *psy,
+ 
+ 	info = (struct mtk_charger *)power_supply_get_drvdata(psy);
+ 
+-	chr_err("%s psp:%d\n",
++	chr_debug("%s psp:%d\n",
+ 		__func__, psp);
+ 
+ 
+diff --git a/drivers/power/supply/mtk_charger.h b/drivers/power/supply/mtk_charger.h
+index b31eec555..38f91ded6 100644
+--- a/drivers/power/supply/mtk_charger.h
++++ b/drivers/power/supply/mtk_charger.h
+@@ -37,7 +37,7 @@ do {								\
+ #define chr_debug(fmt, args...)					\
+ do {								\
+ 	if (chr_get_debug_level() >= CHRLOG_DEBUG_LEVEL) {	\
+-		pr_notice(fmt, ##args);				\
++		pr_debug(fmt, ##args);				\
+ 	}							\
+ } while (0)
+ 
+diff --git a/drivers/power/supply/mtk_charger_algorithm_class.c b/drivers/power/supply/mtk_charger_algorithm_class.c
+index 23d0bea1a..84551aa86 100644
+--- a/drivers/power/supply/mtk_charger_algorithm_class.c
++++ b/drivers/power/supply/mtk_charger_algorithm_class.c
+@@ -108,7 +108,7 @@ EXPORT_SYMBOL(chg_alg_notifier_call);
+ int chg_alg_set_current_limit(struct chg_alg_device *alg_dev,
+ 	struct chg_limit_setting *setting)
+ {
+-	pr_notice("%s\n", __func__);
++	pr_debug("%s\n", __func__);
+ 	if (alg_dev != NULL && alg_dev->ops != NULL &&
+ 	    alg_dev->ops->set_current_limit)
+ 		return alg_dev->ops->set_current_limit(alg_dev, setting);
+diff --git a/drivers/power/supply/mtk_charger_intf.c b/drivers/power/supply/mtk_charger_intf.c
+index b6da3b18d..95efefca2 100644
+--- a/drivers/power/supply/mtk_charger_intf.c
++++ b/drivers/power/supply/mtk_charger_intf.c
+@@ -191,7 +191,7 @@ static int get_pmic_vbus(struct mtk_charger *info, int *vchr)
+ 	}
+ 	*vchr = prop.intval;
+ 
+-	pr_notice("%s vbus:%d\n", __func__,
++	chr_debug("%s vbus:%d\n", __func__,
+ 		prop.intval);
+ 	return ret;
+ }
+@@ -323,7 +323,7 @@ int get_charger_type(struct mtk_charger *info)
+ 			prop2.intval = POWER_SUPPLY_TYPE_USB_FLOAT;
+ 	}
+ 
+-	pr_notice("%s online:%d type:%d usb_type:%d\n", __func__,
++	chr_debug("%s online:%d type:%d usb_type:%d\n", __func__,
+ 		prop.intval,
+ 		prop2.intval,
+ 		prop3.intval);
+diff --git a/drivers/power/supply/mtk_pd.c b/drivers/power/supply/mtk_pd.c
+index bdaef93e1..eb9353093 100644
+--- a/drivers/power/supply/mtk_pd.c
++++ b/drivers/power/supply/mtk_pd.c
+@@ -141,7 +141,7 @@ static int _pd_is_algo_ready(struct chg_alg_device *alg)
+ 	int ret_value;
+ 	int uisoc;
+ 
+-	pd_err("%s %d\n", __func__, pd->state);
++	pd_dbg("%s %d\n", __func__, pd->state);
+ 	switch (pd->state) {
+ 	case PD_HW_UNINIT:
+ 	case PD_HW_FAIL:
+@@ -194,7 +194,7 @@ void __mtk_pdc_init_table(struct chg_alg_device *alg)
+ 	else
+ 		pd_err("mtk_is_pdc_ready is fail\n");
+ 
+-	pd_err("[%s] nr:%d default:%d\n", __func__, pd->cap.nr,
++	pd_dbg("[%s] nr:%d default:%d\n", __func__, pd->cap.nr,
+ 	pd->cap.selected_cap_idx);
+ }
+ 
+@@ -460,7 +460,7 @@ int __mtk_pdc_setup(struct chg_alg_device *alg, int idx)
+ 			&pd->pd_boost_idx, &pd->pd_buck_idx);
+ 	}
+ 
+-	pd_err("[%s]idx:%d:%d:%d:%d vbus:%d cur:%d ret:%d\n", __func__,
++	pd_dbg("[%s]idx:%d:%d:%d:%d vbus:%d cur:%d ret:%d\n", __func__,
+ 		pd->pd_idx, idx, pd->pd_boost_idx, pd->pd_buck_idx,
+ 		pd->cap.max_mv[idx], pd->cap.ma[idx], ret);
+ 
+@@ -568,7 +568,7 @@ int __mtk_pdc_get_setting(struct chg_alg_device *alg, int *newvbus, int *newcur,
+ 	if (idx < 0 || idx >= PD_CAP_MAX_NR)
+ 		idx = selected_idx = 0;
+ 
+-	pd_err("idx:%d %d %d %d %d %d\n", idx,
++	pd_dbg("idx:%d %d %d %d %d %d\n", idx,
+ 		cap->max_mv[idx],
+ 		cap->ma[idx],
+ 		cap->maxwatt[idx],
+@@ -620,13 +620,13 @@ int __mtk_pdc_get_setting(struct chg_alg_device *alg, int *newvbus, int *newcur,
+ 	*newvbus = cap->max_mv[*newidx];
+ 	*newcur = cap->ma[*newidx];
+ 
+-	pd_err("[%s]watt:%d,%d,%d up:%d,%d vbus:%d ibus:%d, mivr:%d,%d\n",
++	pd_dbg("[%s]watt:%d,%d,%d up:%d,%d vbus:%d ibus:%d, mivr:%d,%d\n",
+ 		__func__,
+ 		pd_max_watt, now_max_watt, pd_min_watt,
+ 		boost, buck,
+ 		vbus, ibus, chg1_mivr, chg2_mivr);
+ 
+-	pd_err("[%s]vbus:%d:%d:%d current:%d idx:%d default_idx:%d\n",
++	pd_dbg("[%s]vbus:%d:%d:%d current:%d idx:%d default_idx:%d\n",
+ 		__func__, pd->vbus_h, pd->vbus_l, *newvbus,
+ 		*newcur, *newidx, selected_idx);
+ 
+@@ -776,7 +776,7 @@ static int pd_dcs_set_charger(struct chg_alg_device *alg)
+ 	}
+ 
+ 	chg2_chip_enabled = pd_hal_is_chip_enable(alg, CHG2);
+-	pd_err("chg2_en:%d %d %d\n",
++	pd_dbg("chg2_en:%d %d %d\n",
+ 		chg2_enable, chg2_chip_enabled, pd->state);
+ 	if (pd->state == PD_RUN) {
+ 		if (!chg2_chip_enabled)
+@@ -874,7 +874,7 @@ static int _pd_start_algo(struct chg_alg_device *alg)
+ 	mutex_lock(&pd->access_lock);
+ 
+ 	do {
+-		pd_info("%s state:%d %s %d\n", __func__,
++		pd_dbg("%s state:%d %s %d\n", __func__,
+ 			pd->state,
+ 			pd_state_to_str(pd->state),
+ 			again);
+@@ -1234,7 +1234,7 @@ int _pd_get_prop(struct chg_alg_device *alg,
+ 		enum chg_alg_props s, int *value)
+ {
+ 
+-	pr_notice("%s\n", __func__);
++	pr_debug("%s\n", __func__);
+ 	if (s == ALG_MAX_VBUS)
+ 		*value = 10000;
+ 	else
+diff --git a/drivers/power/supply/mtk_pd.h b/drivers/power/supply/mtk_pd.h
+index 535c5f196..965f8d780 100644
+--- a/drivers/power/supply/mtk_pd.h
++++ b/drivers/power/supply/mtk_pd.h
+@@ -55,7 +55,7 @@ do {								\
+ #define pd_dbg(fmt, args...)					\
+ do {								\
+ 	if (pd_get_debug_level() >= PD_DEBUG_LEVEL) {	\
+-		pr_notice(fmt, ##args);				\
++		pr_debug(fmt, ##args);				\
+ 	}							\
+ } while (0)
+ 
+diff --git a/drivers/power/supply/mtk_pd_adapter.c b/drivers/power/supply/mtk_pd_adapter.c
+index 618b26b8f..710dbc74d 100644
+--- a/drivers/power/supply/mtk_pd_adapter.c
++++ b/drivers/power/supply/mtk_pd_adapter.c
+@@ -359,11 +359,11 @@ static int pd_get_cap(struct adapter_device *dev,
+ 		if (pd_cap.nr != 0) {
+ 
+ 			tacap->selected_cap_idx = pd_cap.selected_cap_idx - 1;
+-			pr_notice("[%s] nr:%d idx:%d\n",
++			pr_debug("[%s] nr:%d idx:%d\n",
+ 			__func__, pd_cap.nr, pd_cap.selected_cap_idx - 1);
+ 
+ 			j = 0;
+-			pr_notice("adapter cap: nr:%d\n", pd_cap.nr);
++			pr_debug("adapter cap: nr:%d\n", pd_cap.nr);
+ 			for (i = 0; i < pd_cap.nr; i++) {
+ 				if (pd_cap.type[i] == 0 &&
+ 					j >= 0 &&
+@@ -379,16 +379,16 @@ static int pd_get_cap(struct adapter_device *dev,
+ 					j++;
+ 				}
+ 
+-				pr_notice("[%s]:%d mv:[%d,%d] mA:%d type:%d %d\n",
++				pr_debug("[%s]:%d mv:[%d,%d] mA:%d type:%d %d\n",
+ 					__func__, i, pd_cap.min_mv[i],
+ 					pd_cap.max_mv[i], pd_cap.ma[i],
+ 					pd_cap.type[i], pd_cap.type[i]);
+ 			}
+ 
+ 			tacap->nr = j;
+-			pr_notice("pd cap: nr:%d\n", tacap->nr);
++			pr_debug("pd cap: nr:%d\n", tacap->nr);
+ 			for (i = 0; i < tacap->nr; i++) {
+-				pr_notice("[%s]:%d mv:[%d,%d] mA:%d max:%d min:%d type:%d %d\n",
++				pr_debug("[%s]:%d mv:[%d,%d] mA:%d max:%d min:%d type:%d %d\n",
+ 					__func__, i, tacap->min_mv[i],
+ 					tacap->max_mv[i], tacap->ma[i],
+ 					tacap->maxwatt[i], tacap->minwatt[i],
+diff --git a/drivers/power/supply/mtk_pd_hal.c b/drivers/power/supply/mtk_pd_hal.c
+index eb6db8fed..30db4c948 100644
+--- a/drivers/power/supply/mtk_pd_hal.c
++++ b/drivers/power/supply/mtk_pd_hal.c
+@@ -134,7 +134,7 @@ int pd_hal_is_pd_adapter_ready(struct chg_alg_device *alg)
+ 	hal = chg_alg_dev_get_drv_hal_data(alg);
+ 	type = adapter_dev_get_property(hal->adapter, PD_TYPE);
+ 
+-	pr_notice("%s type:%d\n", __func__, type);
++	pr_debug("%s type:%d\n", __func__, type);
+ 
+ 	if (type == MTK_PD_CONNECT_PE_READY_SNK ||
+ 		type == MTK_PD_CONNECT_PE_READY_SNK_PD30 ||
+@@ -194,7 +194,7 @@ static int get_pmic_vbus(int *vchr)
+ 	}
+ 	*vchr = prop.intval * 1000;
+ 
+-	pr_notice("%s vbus:%d\n", __func__,
++	pr_debug("%s vbus:%d\n", __func__,
+ 		prop.intval);
+ 	return ret;
+ }
+@@ -327,7 +327,7 @@ int pd_hal_set_mivr(struct chg_alg_device *alg, enum chg_idx chgidx, int uV)
+ 	pd = dev_get_drvdata(&alg->dev);
+ 	hal = chg_alg_dev_get_drv_hal_data(alg);
+ 
+-	pr_notice("%s: %d %d\n", __func__, chgidx, uV);
++	pr_debug("%s: %d %d\n", __func__, chgidx, uV);
+ 
+ 	ret = charger_dev_set_mivr(hal->chg1_dev, uV);
+ 	if (ret < 0)
+@@ -432,7 +432,7 @@ int pd_hal_set_adapter_cap(struct chg_alg_device *alg,
+ 	if (alg == NULL)
+ 		return -EINVAL;
+ 
+-	pr_notice("%s %d %d\n", __func__, mV, mA);
++	pr_debug("%s %d %d\n", __func__, mV, mA);
+ 	hal = chg_alg_dev_get_drv_hal_data(alg);
+ 	return adapter_dev_set_cap(hal->adapter, MTK_PD, mV, mA);
+ }
+@@ -452,7 +452,7 @@ int pd_hal_is_charger_enable(struct chg_alg_device *alg,
+ 	else if (chgidx == CHG2  && hal->chg2_dev != NULL)
+ 		ret = charger_dev_is_enabled(hal->chg2_dev, en);
+ 
+-	pr_notice("%s idx:%d %d\n", __func__, chgidx, *en);
++	pr_debug("%s idx:%d %d\n", __func__, chgidx, *en);
+ 	return 0;
+ }
+ 
+@@ -471,7 +471,7 @@ int pd_hal_enable_charger(struct chg_alg_device *alg,
+ 	else if (chgidx == CHG2  && hal->chg2_dev != NULL)
+ 		ret = charger_dev_enable(hal->chg2_dev, en);
+ 
+-	pr_notice("%s idx:%d %d\n", __func__, chgidx, en);
++	pr_debug("%s idx:%d %d\n", __func__, chgidx, en);
+ 	return 0;
+ }
+ 
+@@ -489,7 +489,7 @@ int pd_hal_get_charging_current(struct chg_alg_device *alg,
+ 		charger_dev_get_charging_current(hal->chg1_dev, ua);
+ 	else if (chgidx == CHG2 && hal->chg2_dev != NULL)
+ 		charger_dev_get_charging_current(hal->chg2_dev, ua);
+-	pr_notice("%s idx:%d %d\n", __func__, chgidx, ua);
++	pr_debug("%s idx:%d %d\n", __func__, chgidx, *ua);
+ 
+ 	return 0;
+ }
+@@ -508,7 +508,7 @@ int pd_hal_get_min_charging_current(struct chg_alg_device *alg,
+ 		ret = charger_dev_get_min_charging_current(hal->chg1_dev, uA);
+ 	if (chgidx == CHG2 && hal->chg2_dev != NULL)
+ 		ret = charger_dev_get_min_charging_current(hal->chg2_dev, uA);
+-	pr_notice("%s idx:%d %d\n", __func__, chgidx, *uA);
++	pr_debug("%s idx:%d %d\n", __func__, chgidx, *uA);
+ 	return 0;
+ }
+ 
+@@ -526,7 +526,7 @@ int pd_hal_get_min_input_current(struct chg_alg_device *alg,
+ 		ret = charger_dev_get_min_input_current(hal->chg1_dev, uA);
+ 	if (chgidx == CHG2 && hal->chg2_dev != NULL)
+ 		ret = charger_dev_get_min_input_current(hal->chg2_dev, uA);
+-	pr_notice("%s idx:%d %d\n", __func__, chgidx, *uA);
++	pr_debug("%s idx:%d %d\n", __func__, chgidx, *uA);
+ 	return 0;
+ }
+ 
+@@ -558,7 +558,7 @@ int pd_hal_set_eoc_current(struct chg_alg_device *alg,
+ 		ret = charger_dev_set_eoc_current(hal->chg1_dev, uA);
+ 	if (chgidx == CHG2 && hal->chg2_dev != NULL)
+ 		ret = charger_dev_set_eoc_current(hal->chg2_dev, uA);
+-	pr_notice("%s idx:%d %d\n", __func__, chgidx, uA);
++	pr_debug("%s idx:%d %d\n", __func__, chgidx, uA);
+ 	return 0;
+ }
+ 
+@@ -576,7 +576,7 @@ int pd_hal_enable_termination(struct chg_alg_device *alg,
+ 		ret = charger_dev_enable_termination(hal->chg1_dev, enable);
+ 	if (chgidx == CHG2 && hal->chg2_dev != NULL)
+ 		ret = charger_dev_enable_termination(hal->chg2_dev, enable);
+-	pr_notice("%s idx:%d %d\n", __func__, chgidx, enable);
++	pr_debug("%s idx:%d %d\n", __func__, chgidx, enable);
+ 	return 0;
+ }
+ 
+@@ -593,10 +593,10 @@ int pd_hal_charger_enable_chip(struct chg_alg_device *alg,
+ 	if (chgidx == CHG1 && hal->chg1_dev != NULL)
+ 		ret = charger_dev_enable_chip(hal->chg1_dev, enable);
+ 	else if (chgidx == CHG2 && hal->chg2_dev != NULL) {
+-		pr_notice("%s idx:%d %d test\n", __func__, chgidx, enable);
++		pr_debug("%s idx:%d %d test\n", __func__, chgidx, enable);
+ 		ret = charger_dev_enable_chip(hal->chg2_dev, enable);
+ 	}
+-	pr_notice("%s idx:%d %d %d\n", __func__, chgidx, enable,
++	pr_debug("%s idx:%d %d %d\n", __func__, chgidx, enable,
+ 		hal->chg2_dev != NULL);
+ 	return 0;
+ }
+@@ -629,7 +629,7 @@ int pd_hal_get_uisoc(struct chg_alg_device *alg)
+ 		ret = prop.intval;
+ 	}
+ 
+-	pr_notice("%s:%d\n", __func__,
++	pr_debug("%s:%d\n", __func__,
+ 		ret);
+ 	return ret;
+ }
+-- 
+2.56.0
+

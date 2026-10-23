@@ -1,0 +1,49 @@
+From 5499a2182f7213bd4869224dab07daf82b4a47c5 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Tue, 20 Oct 2026 09:22:44 +0200
+Subject: [PATCH] wlan: a Deauth record that has held nothing is free
+
+authSendDeauthFrame takes a Deauth record with an all-zero receiver as
+free, whatever its time, and can take record 0. The tick starts 300 s
+below 0, so in a boot's first 300 s a zeroed record would look in use
+and a Deauth log "No unused DEAUTH_INFO_T".
+---
+ connectivity/wlan/core/gen4m/mgmt/auth.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/connectivity/wlan/core/gen4m/mgmt/auth.c b/connectivity/wlan/core/gen4m/mgmt/auth.c
+index 9f93c99..11343ee 100644
+--- a/connectivity/wlan/core/gen4m/mgmt/auth.c
++++ b/connectivity/wlan/core/gen4m/mgmt/auth.c
+@@ -961,6 +961,7 @@ authSendDeauthFrame(IN struct ADAPTER *prAdapter,
+ 	uint8_t ucStaRecIdx = STA_REC_INDEX_NOT_FOUND;
+ 	uint8_t ucBssIndex = prAdapter->ucHwBssIdNum;
+ 	uint8_t aucBMC[] = BC_MAC_ADDR;
++	uint8_t aucZeroMacAddr[] = NULL_MAC_ADDR;
+ 
+ 	/* NOTE(Kevin): The best way to reply the Deauth is according to
+ 	 * the incoming data frame
+@@ -1052,7 +1053,10 @@ authSendDeauthFrame(IN struct ADAPTER *prAdapter,
+ 			/* For continuously sending Deauth frame, the minimum
+ 			 * interval is MIN_DEAUTH_INTERVAL_MSEC.
+ 			 */
+-			if (CHECK_FOR_TIMEOUT(rCurrentTime,
++			/* Never used, free: the tick starts 300 s below 0. */
++			if (EQUAL_MAC_ADDR(prDeauthInfo->aucRxAddr,
++					   aucZeroMacAddr) ||
++			    CHECK_FOR_TIMEOUT(rCurrentTime,
+ 					      prDeauthInfo->rLastSendTime,
+ 					      MSEC_TO_SYSTIME
+ 					      (MIN_DEAUTH_INTERVAL_MSEC))) {
+@@ -1071,7 +1075,7 @@ authSendDeauthFrame(IN struct ADAPTER *prAdapter,
+ 		}
+ 
+ 		/* 4 <3> Update information. */
+-		if (i4NewEntryIndex > 0) {
++		if (i4NewEntryIndex >= 0) {
+ 			prDeauthInfo =
+ 			    &(prAdapter->
+ 			      rWifiVar.arDeauthInfo[i4NewEntryIndex]);
+-- 
+2.56.0
+

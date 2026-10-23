@@ -1,0 +1,70 @@
+From b572b9bc623d45a8524d9d09089f8df63bcd0863 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Tue, 20 Oct 2026 12:50:14 +0200
+Subject: [PATCH] scp: a message the SCP does not take fails its send in time
+
+scp_ipi_send() with wait set gives the SCP SCP_AWAKE_TIMEOUT polls 10 us
+apart to take a message, as scp_awake_lock() gives the awake handshake;
+past that it returns SCP_IPI_ERROR and lets go of the mutex, which a
+hung SCP otherwise holds against every later sender.
+---
+ drivers/misc/mediatek/scp/cm4/v01/scp_ipi.c | 23 +++++++++++++++++----
+ 1 file changed, 19 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/misc/mediatek/scp/cm4/v01/scp_ipi.c b/drivers/misc/mediatek/scp/cm4/v01/scp_ipi.c
+index ed37d6734..3720bcddb 100644
+--- a/drivers/misc/mediatek/scp/cm4/v01/scp_ipi.c
++++ b/drivers/misc/mediatek/scp/cm4/v01/scp_ipi.c
+@@ -3,6 +3,7 @@
+  * Copyright (c) 2019 MediaTek Inc.
+  */
+ 
++#include <linux/delay.h>
+ #include <linux/mutex.h>
+ #include <linux/io.h>
+ #include "scp_ipi.h"
+@@ -159,6 +160,7 @@ enum scp_ipi_status scp_ipi_send(enum ipi_id id, void *buf,
+      * to check the if the sram is ready for accesses.
+      */
+ 	enum ipi_id rb_id;
++	enum scp_ipi_status status = SCP_IPI_DONE;
+ 
+ 	/*avoid scp log print too much*/
+ 	if (scp_ipi_id_record == id)
+@@ -288,16 +290,29 @@ enum scp_ipi_status scp_ipi_send(enum ipi_id id, void *buf,
+ 	/* toggle the related bit to trigger an interrupt to scp */
+ 	writel((1<<scp_id), SCP_GIPC_IN_REG);
+ 
+-	if (wait)
+-		while ((readl(SCP_GIPC_IN_REG) & (1<<scp_id)) > 0)
+-			;
++	if (wait) {
++		unsigned int count = 0;
++
++		/* the SCP has as long to take a message as to answer the awake handshake */
++		while ((readl(SCP_GIPC_IN_REG) & (1<<scp_id)) > 0) {
++			if (++count == SCP_AWAKE_TIMEOUT) {
++				pr_err("[SCP] %s:%s %d not taken in %d us\n",
++					__func__, core_ids[scp_id], id,
++					SCP_AWAKE_TIMEOUT * 10);
++				scp_ipi_desc[id].error_count++;
++				status = SCP_IPI_ERROR;
++				break;
++			}
++			udelay(10);
++		}
++	}
+ 	if (scp_awake_unlock(scp_id) == -1)
+ 		pr_debug("[SCP] %s: awake unlock fail\n", __func__);
+ 
+ 	/* scp is interrupted, so unlock mutex to let other users in */
+ 	mutex_unlock(&scp_ipi_mutex[scp_id]);
+ 
+-	return SCP_IPI_DONE;
++	return status;
+ }
+ EXPORT_SYMBOL_GPL(scp_ipi_send);
+ 
+-- 
+2.56.0
+

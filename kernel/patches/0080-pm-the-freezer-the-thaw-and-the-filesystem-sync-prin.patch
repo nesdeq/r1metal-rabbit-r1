@@ -1,0 +1,170 @@
+From 4b06bec2e38c89eb76e5ac5b306ef030782ac725 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 20:48:24 +0200
+Subject: [PATCH] pm: the freezer, the thaw and the filesystem sync print whole
+ lines
+
+Each prints whole lines, as mainline does, instead of a line finished
+by pr_cont after the work: a record printed in between, as a suspend's
+drivers print, splits such a line and leaves its end a warning-level
+record of its own. The sync line gives the seconds it took.
+---
+ kernel/power/process.c | 38 ++++++++++++++++----------------------
+ kernel/power/suspend.c | 10 ++++++++--
+ 2 files changed, 24 insertions(+), 24 deletions(-)
+
+diff --git a/kernel/power/process.c b/kernel/power/process.c
+index 098bdf52d..da3ff2639 100644
+--- a/kernel/power/process.c
++++ b/kernel/power/process.c
+@@ -30,6 +30,8 @@ unsigned int __read_mostly freeze_timeout_msecs = 20 * MSEC_PER_SEC;
+ 
+ static int try_to_freeze_tasks(bool user_only)
+ {
++	const char *what = user_only ? "user space processes" :
++					"remaining freezable tasks";
+ 	struct task_struct *g, *p;
+ 	unsigned long end_time;
+ 	unsigned int todo;
+@@ -39,6 +41,8 @@ static int try_to_freeze_tasks(bool user_only)
+ 	bool wakeup = false;
+ 	int sleep_usecs = USEC_PER_MSEC;
+ 
++	pr_info("Freezing %s\n", what);
++
+ 	start = ktime_get_boottime();
+ 
+ 	end_time = jiffies + msecs_to_jiffies(freeze_timeout_msecs);
+@@ -86,13 +90,11 @@ static int try_to_freeze_tasks(bool user_only)
+ 	elapsed_msecs = ktime_to_ms(elapsed);
+ 
+ 	if (wakeup) {
+-		pr_cont("\n");
+-		pr_info("Freezing of tasks aborted after %d.%03d seconds",
+-		       elapsed_msecs / 1000, elapsed_msecs % 1000);
++		pr_info("Freezing %s aborted after %d.%03d seconds\n", what,
++			elapsed_msecs / 1000, elapsed_msecs % 1000);
+ 	} else if (todo) {
+-		pr_cont("\n");
+-		pr_err("Freezing of tasks failed after %d.%03d seconds"
+-		       " (%d tasks refusing to freeze, wq_busy=%d):\n",
++		pr_err("Freezing %s failed after %d.%03d seconds"
++		       " (%d tasks refusing to freeze, wq_busy=%d):\n", what,
+ 		       elapsed_msecs / 1000, elapsed_msecs % 1000,
+ 		       todo - wq_busy, wq_busy);
+ 
+@@ -107,8 +109,8 @@ static int try_to_freeze_tasks(bool user_only)
+ 		}
+ 		read_unlock(&tasklist_lock);
+ 	} else {
+-		pr_cont("(elapsed %d.%03d seconds) ", elapsed_msecs / 1000,
+-			elapsed_msecs % 1000);
++		pr_info("Freezing %s completed (elapsed %d.%03d seconds)\n",
++			what, elapsed_msecs / 1000, elapsed_msecs % 1000);
+ 	}
+ 
+ 	return todo ? -EBUSY : 0;
+@@ -136,14 +138,11 @@ int freeze_processes(void)
+ 		atomic_inc(&system_freezing_cnt);
+ 
+ 	pm_wakeup_clear(true);
+-	pr_info("Freezing user space processes ... ");
+ 	pm_freezing = true;
+ 	error = try_to_freeze_tasks(true);
+-	if (!error) {
++	if (!error)
+ 		__usermodehelper_set_disable_depth(UMH_DISABLED);
+-		pr_cont("done.");
+-	}
+-	pr_cont("\n");
++
+ 	BUG_ON(in_atomic());
+ 
+ 	/*
+@@ -172,14 +171,9 @@ int freeze_kernel_threads(void)
+ {
+ 	int error;
+ 
+-	pr_info("Freezing remaining freezable tasks ... ");
+-
+ 	pm_nosig_freezing = true;
+ 	error = try_to_freeze_tasks(false);
+-	if (!error)
+-		pr_cont("done.");
+ 
+-	pr_cont("\n");
+ 	BUG_ON(in_atomic());
+ 
+ 	if (error)
+@@ -200,7 +194,7 @@ void thaw_processes(void)
+ 
+ 	oom_killer_enable();
+ 
+-	pr_info("Restarting tasks ... ");
++	pr_info("Restarting tasks: Starting\n");
+ 
+ 	__usermodehelper_set_disable_depth(UMH_FREEZING);
+ 	thaw_workqueues();
+@@ -221,7 +215,7 @@ void thaw_processes(void)
+ 	usermodehelper_enable();
+ 
+ 	schedule();
+-	pr_cont("done.\n");
++	pr_info("Restarting tasks: Done\n");
+ 	trace_suspend_resume(TPS("thaw_processes"), 0, false);
+ }
+ 
+@@ -230,7 +224,7 @@ void thaw_kernel_threads(void)
+ 	struct task_struct *g, *p;
+ 
+ 	pm_nosig_freezing = false;
+-	pr_info("Restarting kernel threads ... ");
++	pr_info("Restarting kernel threads ...\n");
+ 
+ 	thaw_workqueues();
+ 
+@@ -242,5 +236,5 @@ void thaw_kernel_threads(void)
+ 	read_unlock(&tasklist_lock);
+ 
+ 	schedule();
+-	pr_cont("done.\n");
++	pr_info("Done restarting kernel threads.\n");
+ }
+diff --git a/kernel/power/suspend.c b/kernel/power/suspend.c
+index 230cb727b..70a36bb8d 100644
+--- a/kernel/power/suspend.c
++++ b/kernel/power/suspend.c
+@@ -624,6 +624,10 @@ int suspend_syssync_enqueue(void)
+ static int enter_state(suspend_state_t state)
+ {
+ 	int error;
++#ifndef CONFIG_SUSPEND_SKIP_SYNC
++	ktime_t sync_start;
++	long sync_msecs;
++#endif
+ 
+ 	trace_suspend_resume(TPS("suspend_enter"), state, true);
+ 	if (state == PM_SUSPEND_TO_IDLE) {
+@@ -644,7 +648,7 @@ static int enter_state(suspend_state_t state)
+ 
+ #ifndef CONFIG_SUSPEND_SKIP_SYNC
+ 	trace_suspend_resume(TPS("sync_filesystems"), 0, true);
+-	pr_info("Syncing filesystems ... ");
++	sync_start = ktime_get();
+ #if MTK_SOLUTION
+ 	error = suspend_syssync_enqueue();
+ 	if (error) {
+@@ -654,7 +658,9 @@ static int enter_state(suspend_state_t state)
+ #else
+ 	ksys_sync();
+ #endif
+-	pr_cont("done.\n");
++	sync_msecs = ktime_to_ms(ktime_sub(ktime_get(), sync_start));
++	pr_info("Filesystems sync: %ld.%03ld seconds\n",
++		sync_msecs / MSEC_PER_SEC, sync_msecs % MSEC_PER_SEC);
+ 	trace_suspend_resume(TPS("sync_filesystems"), 0, false);
+ #endif
+ 
+-- 
+2.56.0
+

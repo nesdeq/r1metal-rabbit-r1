@@ -1,0 +1,29 @@
+From fb7b9b93e906bdd6d8f80cc3e86889d7cf7172e6 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 10:37:07 +0200
+Subject: [PATCH] wmt: no ROM patch for a function nobody uses is no error
+
+wmt_ctrl_get_rom_patch_info logs a function type without patch info at
+debug, not error: its answer 1 means no ROM patch, which the caller logs
+and skips.
+---
+ connectivity/common/common_main/core/wmt_ctrl.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/connectivity/common/common_main/core/wmt_ctrl.c b/connectivity/common/common_main/core/wmt_ctrl.c
+index 80ac7aa..8ca0b1a 100644
+--- a/connectivity/common/common_main/core/wmt_ctrl.c
++++ b/connectivity/common/common_main/core/wmt_ctrl.c
+@@ -679,7 +679,8 @@ INT32 wmt_ctrl_get_rom_patch_info(P_WMT_CTRL_DATA pWmtCtrlData)
+ 			WMT_DBG_FUNC("get 4 address bytes is 0x%2x,0x%2x,0x%2x,0x%2x",
+ 					pAbuf[0], pAbuf[1], pAbuf[2], pAbuf[3]);
+ 		} else {
+-			WMT_ERR_FUNC("NULL patchinfo pointer\n");
++			/* 1: no ROM patch for this type; the caller logs the skip. */
++			WMT_DBG_FUNC("no rom patch info for type %d\n", type);
+ 			ret = 1;
+ 		}
+ 	} else {
+-- 
+2.56.0
+

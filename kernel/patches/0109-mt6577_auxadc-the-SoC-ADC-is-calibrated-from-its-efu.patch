@@ -1,0 +1,39 @@
+From 2bdf5bc06e8c92ad015ca06d6274ae9ba710ef96 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 19:21:04 +0200
+Subject: [PATCH] mt6577_auxadc: the SoC ADC is calibrated from its efuse
+
+- mt6577_auxadc registers at subsys_initcall_sync, after drivers/nvmem's
+  mtk_efuse, so it reads its calibration instead of running without it.
+- adc_debug_init returns at once in a kernel without CONFIG_DEBUG_FS.
+---
+ drivers/iio/adc/mt6577_auxadc.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/iio/adc/mt6577_auxadc.c b/drivers/iio/adc/mt6577_auxadc.c
+index 1b76476e1..a359547c4 100644
+--- a/drivers/iio/adc/mt6577_auxadc.c
++++ b/drivers/iio/adc/mt6577_auxadc.c
+@@ -409,6 +409,9 @@ static void adc_debug_init(struct device *dev)
+ {
+ 	struct dentry *auxadc_droot;
+ 
++	if (!IS_ENABLED(CONFIG_DEBUG_FS))
++		return;
++
+ 	auxadc_droot = debugfs_create_dir("auxadc", NULL);
+ 	if (IS_ERR(auxadc_droot)) {
+ 		dev_notice(dev, "fail to create debugfs root\n");
+@@ -556,7 +559,8 @@ static void __exit mt6577_auxadc_exit(void)
+ 	platform_driver_unregister(&mt6577_auxadc_driver);
+ }
+ 
+-subsys_initcall(mt6577_auxadc_init);
++/* the efuse its calibration is read from registers at subsys_initcall in drivers/nvmem */
++subsys_initcall_sync(mt6577_auxadc_init);
+ module_exit(mt6577_auxadc_exit);
+ 
+ MODULE_AUTHOR("Zhiyong Tao <zhiyong.tao@mediatek.com>");
+-- 
+2.56.0
+

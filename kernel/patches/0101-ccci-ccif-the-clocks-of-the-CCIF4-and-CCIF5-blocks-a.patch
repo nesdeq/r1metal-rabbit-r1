@@ -1,0 +1,51 @@
+From a810759a959914dd3b64f05ce5e442a87de34dea Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 18:55:55 +0200
+Subject: [PATCH] ccci ccif: the clocks of the CCIF4 and CCIF5 blocks are
+ optional
+
+ccif_hif_hw_init gets infra-ccif4-md and infra-ccif5-md with
+devm_clk_get_optional: the MT6765 has no CCIF4 or CCIF5 block, and a
+tree without their clocks leaves them NULL without an error line. Any
+other clock failure still prints.
+---
+ drivers/misc/mediatek/eccci/hif/ccci_hif_ccif.c | 16 ++++++++++++++--
+ 1 file changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/misc/mediatek/eccci/hif/ccci_hif_ccif.c b/drivers/misc/mediatek/eccci/hif/ccci_hif_ccif.c
+index 172c4c03a..22f0989da 100644
+--- a/drivers/misc/mediatek/eccci/hif/ccci_hif_ccif.c
++++ b/drivers/misc/mediatek/eccci/hif/ccci_hif_ccif.c
+@@ -2160,6 +2160,14 @@ static struct ccci_hif_ops ccci_hif_ccif_ops = {
+ };
+ 
+ static u64 ccif_dmamask = DMA_BIT_MASK(36);
++
++/* ccif4 and ccif5 clock the md_ccif4 and md_ccif5 blocks, which a tree may not have */
++static bool ccif_clk_optional(const char *name)
++{
++	return !strcmp(name, "infra-ccif4-md") ||
++		!strcmp(name, "infra-ccif5-md");
++}
++
+ static int ccif_hif_hw_init(struct device *dev, struct md_ccif_ctrl *md_ctrl)
+ {
+ 	struct device_node *node = NULL;
+@@ -2207,8 +2215,12 @@ static int ccif_hif_hw_init(struct device *dev, struct md_ccif_ctrl *md_ctrl)
+ 		(struct ccif_sram_layout *)(md_ctrl->ccif_ap_base
+ 		+ APCCIF_CHDATA);
+ 	for (idx = 0; idx < ARRAY_SIZE(ccif_clk_table); idx++) {
+-		ccif_clk_table[idx].clk_ref = devm_clk_get(dev,
+-			ccif_clk_table[idx].clk_name);
++		if (ccif_clk_optional(ccif_clk_table[idx].clk_name))
++			ccif_clk_table[idx].clk_ref = devm_clk_get_optional(dev,
++				ccif_clk_table[idx].clk_name);
++		else
++			ccif_clk_table[idx].clk_ref = devm_clk_get(dev,
++				ccif_clk_table[idx].clk_name);
+ 		if (IS_ERR(ccif_clk_table[idx].clk_ref)) {
+ 			CCCI_ERROR_LOG(-1, TAG,
+ 				 "ccif get %s failed\n",
+-- 
+2.56.0
+

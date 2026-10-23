@@ -1,0 +1,57 @@
+From 4cba431d0d40140af11275d22a836995b67914b6 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 10:59:06 +0200
+Subject: [PATCH] step_motor_ms35774: a turn sleeps between its steps
+
+- The turn's thread and ms35774_shutdown sleep their waits with
+  usleep_range and msleep at the same minimum times, so the CPU idles.
+- store_m35774_orientation passes the refused angle to its %d.
+---
+ drivers/misc/step_motor_ms35774.c | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/misc/step_motor_ms35774.c b/drivers/misc/step_motor_ms35774.c
+index 9bb034a48..8c692a359 100644
+--- a/drivers/misc/step_motor_ms35774.c
++++ b/drivers/misc/step_motor_ms35774.c
+@@ -115,15 +115,15 @@ int m35774_run_thread_handler(void *_data)
+     dev_info(data->dev, "[%s] o:%d, or:%d, step:%d\n",
+         __func__, data->orientation, data->orientation_request, step);
+     pinctrl_select_state(data->pinctrl, data->pc_state[VM_H]);
+-    udelay(10*1000);
++    usleep_range(10*1000, 10*1000);
+     pinctrl_select_state(data->pinctrl, data->pc_state[ENN_L]);
+     while (step--) {
+       pinctrl_select_state(data->pinctrl, data->pc_state[STEP_H]);
+-      udelay(50);
++      usleep_range(50, 50);
+       pinctrl_select_state(data->pinctrl, data->pc_state[STEP_L]);
+-      udelay(360);
++      usleep_range(360, 360);
+     }
+-    udelay(50);
++    usleep_range(50, 50);
+     pinctrl_select_state(data->pinctrl, data->pc_state[ENN_H]);
+     pinctrl_select_state(data->pinctrl, data->pc_state[VM_L]);
+     data->run_flag = false;
+@@ -155,7 +155,7 @@ static ssize_t store_m35774_orientation(struct device *dev,
+       wake_up_interruptible(&m35774_run_thread_waiter);
+     } else {
+       dev_err(data->dev,
+-          "[%s] wrong request orientation(%d), must be 0~180\n", __func__);
++          "[%s] wrong request orientation(%d), must be 0~180\n", __func__, orientation);
+     }
+   } else {
+     dev_err(data->dev, "[%s] format error, request int 0~180\n", __func__);
+@@ -229,7 +229,7 @@ static void ms35774_shutdown(struct platform_device *pdev)
+   data->orientation_request = 90;
+   data->run_flag = true;
+   wake_up_interruptible(&m35774_run_thread_waiter);
+-  mdelay(1500);
++  msleep(1500);
+ }
+ 
+ static const struct of_device_id of_ms35774s_match[] = {
+-- 
+2.56.0
+

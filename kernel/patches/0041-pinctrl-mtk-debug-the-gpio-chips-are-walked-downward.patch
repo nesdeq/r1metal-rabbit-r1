@@ -1,0 +1,136 @@
+From 80cccd9f9dae85235cde4cf337ac656bb728c686 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 16:09:09 +0200
+Subject: [PATCH] pinctrl: mtk debug: the gpio chips are walked downward, and
+ pins stay in the table
+
+- The walks over the gpio chips step from a chip to the pin under its
+  base, so mt_gpio is created once and sysfs does not warn.
+- The sysfs store handlers and mtk_hw_set_value_wrap() refuse a pin at
+  or past npins.
+- The register dump includes its last pin and skips pins it wrote no
+  line for.
+---
+ .../mediatek/pinctrl-mtk-common-v2_debug.c    | 36 +++++++++++--------
+ 1 file changed, 21 insertions(+), 15 deletions(-)
+
+diff --git a/drivers/pinctrl/mediatek/pinctrl-mtk-common-v2_debug.c b/drivers/pinctrl/mediatek/pinctrl-mtk-common-v2_debug.c
+index 86758f229..70006a2dc 100644
+--- a/drivers/pinctrl/mediatek/pinctrl-mtk-common-v2_debug.c
++++ b/drivers/pinctrl/mediatek/pinctrl-mtk-common-v2_debug.c
+@@ -28,7 +28,7 @@ static void mtk_gpio_find_mtk_pinctrl_dev(void)
+ 	struct gpio_desc *gdesc;
+ 	unsigned int pin = ARCH_NR_GPIOS - 1;
+ 
+-	do {
++	for (;;) {
+ 		gdesc = gpio_to_desc(pin);
+ 		if (!gdesc)
+ 			break;
+@@ -39,8 +39,11 @@ static void mtk_gpio_find_mtk_pinctrl_dev(void)
+ 			return;
+ 		}
+ 
+-		pin = (pin + 1) - gdesc->gdev->chip->base;
+-	} while (pin > 0);
++		/* the chip below ends one pin under this chip's base */
++		if (gdesc->gdev->chip->base <= 0)
++			break;
++		pin = gdesc->gdev->chip->base - 1;
++	}
+ }
+ 
+ int gpio_get_tristate_input(unsigned int pin)
+@@ -143,7 +146,7 @@ static int mtk_hw_set_value_wrap(struct mtk_pinctrl *hw, unsigned int gpio,
+ {
+ 	const struct mtk_pin_desc *desc;
+ 
+-	if (gpio > hw->soc->npins)
++	if (gpio >= hw->soc->npins)
+ 		return -EINVAL;
+ 
+ 	desc = (const struct mtk_pin_desc *)&hw->soc->pins[gpio];
+@@ -229,9 +232,9 @@ void gpio_dump_regs_range(int start, int end)
+ 
+ 	pr_notice("PIN: (MODE)(DIR)(DOUT)(DIN)(DRIVE)(SMT)(IES)(PULL_EN)(PULL_SEL)(R1 R0)\n");
+ 
+-	for (i = start; i < end; i++) {
+-		(void)mtk_pctrl_show_one_pin(hw, i, buf, 96);
+-		pr_notice("%s", buf);
++	for (i = start; i <= end; i++) {
++		if (mtk_pctrl_show_one_pin(hw, i, buf, 96) > 0)
++			pr_notice("%s", buf);
+ 	}
+ }
+ EXPORT_SYMBOL_GPL(gpio_dump_regs_range);
+@@ -274,7 +277,7 @@ static ssize_t mtk_gpio_store_pin(struct device *dev,
+ 		mtk_pctrl_set_out(hw, gpio, val);
+ 	} else if (!strncmp(buf, "pullen", 6)
+ 		&& (sscanf(buf+6, "%d %d", &gpio, &val) == 2)) {
+-		if (gpio < 0 || gpio > hw->soc->npins) {
++		if (gpio < 0 || gpio >= hw->soc->npins) {
+ 			pr_notice("invalid pin number\n");
+ 			goto out;
+ 		}
+@@ -294,7 +297,7 @@ static ssize_t mtk_gpio_store_pin(struct device *dev,
+ 		hw->soc->bias_set_combo(hw, desc, pullup, pullen);
+ 	} else if ((!strncmp(buf, "pullsel", 7))
+ 		&& (sscanf(buf+7, "%d %d", &gpio, &val) == 2)) {
+-		if (gpio < 0 || gpio > hw->soc->npins) {
++		if (gpio < 0 || gpio >= hw->soc->npins) {
+ 			pr_notice("invalid pin number\n");
+ 			goto out;
+ 		}
+@@ -311,7 +314,7 @@ static ssize_t mtk_gpio_store_pin(struct device *dev,
+ 		mtk_pctrl_set_smt(hw, gpio, val);
+ 	} else if ((!strncmp(buf, "driving", 7))
+ 		&& (sscanf(buf+7, "%d %d", &gpio, &val) == 2)) {
+-		if (gpio < 0 || gpio > hw->soc->npins) {
++		if (gpio < 0 || gpio >= hw->soc->npins) {
+ 			pr_notice("invalid pin number\n");
+ 			goto out;
+ 		}
+@@ -319,7 +322,7 @@ static ssize_t mtk_gpio_store_pin(struct device *dev,
+ 		hw->soc->drive_set(hw, desc, val);
+ 	} else if ((!strncmp(buf, "r1r0", 4))
+ 		&& (sscanf(buf+4, "%d %d %d", &gpio, &val, &val2) == 3)) {
+-		if (gpio < 0 || gpio > hw->soc->npins) {
++		if (gpio < 0 || gpio >= hw->soc->npins) {
+ 			pr_notice("invalid pin number\n");
+ 			goto out;
+ 		}
+@@ -346,7 +349,7 @@ static ssize_t mtk_gpio_store_pin(struct device *dev,
+ 			else
+ 				vals[i] = 0;
+ 		}
+-		if (gpio < 0) {
++		if (gpio < 0 || gpio >= hw->soc->npins) {
+ 			pr_notice("invalid pin number\n");
+ 			goto out;
+ 		}
+@@ -395,7 +398,7 @@ static int mtk_gpio_create_attr(void)
+ 	unsigned int pin = ARCH_NR_GPIOS - 1;
+ 	int err = 0;
+ 
+-	do {
++	for (;;) {
+ 		gdesc = gpio_to_desc(pin);
+ 		if (!gdesc)
+ 			break;
+@@ -415,8 +418,11 @@ static int mtk_gpio_create_attr(void)
+ 			}
+ 		}
+ 
+-		pin = (pin + 1) - gdesc->gdev->chip->base;
+-	} while (pin > 0);
++		/* the chip below ends one pin under this chip's base */
++		if (gdesc->gdev->chip->base <= 0)
++			break;
++		pin = gdesc->gdev->chip->base - 1;
++	}
+ 
+ 	return err;
+ }
+-- 
+2.56.0
+

@@ -1,0 +1,66 @@
+From 8dc69ac43c78a3218b7c503aa0817fbb10518d29 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 13:21:42 +0200
+Subject: [PATCH] dynamic_debug: every callsite prints while printk.debug is
+ set, none while it is not
+
+Every dynamic debug callsite prints while printk_debugging() is true and
+none while it is false: dynamic_debug_init sets them before the command
+line's queries, and printk's worker again whenever a switch changes.
+---
+ lib/dynamic_debug.c | 25 +++++++++++++++++++++++++
+ 1 file changed, 25 insertions(+)
+
+diff --git a/lib/dynamic_debug.c b/lib/dynamic_debug.c
+index d25315612..503e25fb6 100644
+--- a/lib/dynamic_debug.c
++++ b/lib/dynamic_debug.c
+@@ -36,6 +36,7 @@
+ #include <linux/sched.h>
+ #include <linux/device.h>
+ #include <linux/netdevice.h>
++#include <linux/notifier.h>
+ 
+ extern struct _ddebug __start___verbose[];
+ extern struct _ddebug __stop___verbose[];
+@@ -1095,6 +1096,27 @@ static void ddebug_remove_all_tables(void)
+ 
+ static __initdata int ddebug_init_success;
+ 
++/* Every callsite prints while debug records are logged, none otherwise. */
++static void ddebug_follow_printk(void)
++{
++	char query[] = "+p";
++
++	if (!printk_debugging())
++		query[0] = '-';
++	ddebug_exec_queries(query, NULL);
++}
++
++static int ddebug_printk_logging(struct notifier_block *nb,
++				 unsigned long event, void *unused)
++{
++	ddebug_follow_printk();
++	return NOTIFY_OK;
++}
++
++static struct notifier_block ddebug_printk_nb = {
++	.notifier_call = ddebug_printk_logging,
++};
++
+ static int __init dynamic_debug_init_control(void)
+ {
+ 	struct proc_dir_entry *procfs_dir;
+@@ -1159,6 +1181,9 @@ static int __init dynamic_debug_init(void)
+ 		 modct, entries, (int)(modct * sizeof(struct ddebug_table)),
+ 		 verbose_bytes + (int)(__stop___verbose - __start___verbose));
+ 
++	ddebug_follow_printk();
++	printk_logging_notifier_register(&ddebug_printk_nb);
++
+ 	/* apply ddebug_query boot param, dont unload tables on err */
+ 	if (ddebug_setup_string[0] != '\0') {
+ 		pr_warn("ddebug_query param name is deprecated, change it to dyndbg\n");
+-- 
+2.56.0
+

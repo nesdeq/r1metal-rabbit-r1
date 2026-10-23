@@ -1,0 +1,154 @@
+From ef92f7ecd7f84e9bc5c3876980249d60bf821a93 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 10:22:28 +0200
+Subject: [PATCH] battery, charger: the kernel's own power offs sync first
+
+battery_power_off syncs the filesystems before kernel_power_off, and
+every power off of the battery driver calls it; the charger's two power
+offs sync before theirs. Without the sync a power off loses what the
+page cache holds unwritten.
+---
+ drivers/power/supply/mtk_battery.c        | 20 +++++++++++++-------
+ drivers/power/supply/mtk_battery.h        |  1 +
+ drivers/power/supply/mtk_battery_daemon.c |  4 ++--
+ drivers/power/supply/mtk_charger.c        |  3 +++
+ 4 files changed, 19 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/power/supply/mtk_battery.c b/drivers/power/supply/mtk_battery.c
+index ae9d27ce5..16c285176 100755
+--- a/drivers/power/supply/mtk_battery.c
++++ b/drivers/power/supply/mtk_battery.c
+@@ -2521,6 +2521,13 @@ static void wake_up_overheat(struct shutdown_controller *sdd)
+ 	wake_up(&sdd->wait_que);
+ }
+ 
++/* every power off the battery driver makes itself syncs the filesystems first */
++void battery_power_off(void)
++{
++	ksys_sync();
++	kernel_power_off();
++}
++
+ void set_shutdown_vbat_lt(struct mtk_battery *gm, int vbat_lt, int vbat_lt_lv1)
+ {
+ 	gm->sdc.vbat_lt = vbat_lt;
+@@ -2644,7 +2651,7 @@ int set_shutdown_cond(struct mtk_battery *gm, int shutdown_cond)
+ 		sdc->shutdown_status.is_overheat = true;
+ 		mutex_unlock(&sdc->lock);
+ 		bm_debug("[%s]OVERHEAT shutdown!\n", __func__);
+-		kernel_power_off();
++		battery_power_off();
+ 		break;
+ 	case SOC_ZERO_PERCENT:
+ 		if (sdc->shutdown_status.is_soc_zero_percent != true) {
+@@ -2761,7 +2768,7 @@ static int shutdown_event_handler(struct mtk_battery *gm)
+ 			polling++;
+ 			if (duraction.tv_sec >= SHUTDOWN_TIME) {
+ 				bm_debug("soc zero shutdown\n");
+-				kernel_power_off();
++				battery_power_off();
+ 				return next_waketime(polling);
+ 			}
+ 		} else if (current_soc > 0) {
+@@ -2782,7 +2789,7 @@ static int shutdown_event_handler(struct mtk_battery *gm)
+ 				now, sdd->pre_time[UISOC_ONE_PERCENT]);
+ 			if (duraction.tv_sec >= SHUTDOWN_TIME) {
+ 				bm_debug("uisoc one percent shutdown\n");
+-				kernel_power_off();
++				battery_power_off();
+ 				return next_waketime(polling);
+ 			}
+ 		} else if (now_current > 0 && current_soc > 0) {
+@@ -2870,7 +2877,7 @@ static int shutdown_event_handler(struct mtk_battery *gm)
+ 				if (duraction.tv_sec >= SHUTDOWN_TIME) {
+ 					bm_debug("low bat shutdown, over %d second\n",
+ 						SHUTDOWN_TIME);
+-					kernel_power_off();
++					battery_power_off();
+ 					return next_waketime(polling);
+ 				}
+ 			}
+@@ -2957,7 +2964,7 @@ static int power_misc_routine_thread(void *arg)
+ 			sdd->overheat = false;
+ 			bm_debug("%s battery overheat~ power off\n",
+ 				__func__);
+-			kernel_power_off();
++			battery_power_off();
+ 			return 1;
+ 		}
+ 	}
+@@ -2997,8 +3004,7 @@ static void low_bat_net_work(struct work_struct *work)
+ 			vbat_sum / LOW_BAT_NET_SAMPLES,
+ 			LOW_BAT_NET_SAMPLES * LOW_BAT_NET_PERIOD_SEC,
+ 			BAT_VOLTAGE_LOW_BOUND);
+-		ksys_sync();
+-		kernel_power_off();
++		battery_power_off();
+ 	}
+ 
+ 	queue_delayed_work(system_freezable_power_efficient_wq,
+diff --git a/drivers/power/supply/mtk_battery.h b/drivers/power/supply/mtk_battery.h
+index a738fa732..68d4e65c1 100644
+--- a/drivers/power/supply/mtk_battery.h
++++ b/drivers/power/supply/mtk_battery.h
+@@ -1021,6 +1021,7 @@ extern void disable_fg(struct mtk_battery *gm);
+ extern int get_shutdown_cond(struct mtk_battery *gm);
+ extern int get_shutdown_cond_flag(struct mtk_battery *gm);
+ extern void set_shutdown_cond_flag(struct mtk_battery *gm, int val);
++extern void battery_power_off(void);
+ /*mtk_battery.c end */
+ 
+ /* mtk_battery_algo.c */
+diff --git a/drivers/power/supply/mtk_battery_daemon.c b/drivers/power/supply/mtk_battery_daemon.c
+index bc6b4cb63..34daf0803 100644
+--- a/drivers/power/supply/mtk_battery_daemon.c
++++ b/drivers/power/supply/mtk_battery_daemon.c
+@@ -3905,7 +3905,7 @@ void sw_check_bat_plugout(struct mtk_battery *gm)
+ 			gm->bs_data.bat_status = POWER_SUPPLY_STATUS_UNKNOWN;
+ 			wakeup_fg_algo(gm, FG_INTR_BAT_PLUGOUT);
+ 			battery_update(gm);
+-			kernel_power_off();
++			battery_power_off();
+ 		}
+ 	}
+ }
+@@ -4104,7 +4104,7 @@ static irqreturn_t bat_plugout_irq(int irq, void *data)
+ 		wakeup_fg_algo(gm, FG_INTR_BAT_PLUGOUT);
+ 		battery_update(gm);
+ 		fg_int_event(gm, EVT_INT_BAT_PLUGOUT);
+-		kernel_power_off();
++		battery_power_off();
+ 	}
+ 	return IRQ_HANDLED;
+ }
+diff --git a/drivers/power/supply/mtk_charger.c b/drivers/power/supply/mtk_charger.c
+index 2c1e794f1..812407062 100644
+--- a/drivers/power/supply/mtk_charger.c
++++ b/drivers/power/supply/mtk_charger.c
+@@ -56,6 +56,7 @@
+ #include <linux/of_irq.h>
+ #include <linux/of_address.h>
+ #include <linux/reboot.h>
++#include <linux/syscalls.h>
+ 
+ #include "mtk_charger.h"
+ 
+@@ -1251,6 +1252,7 @@ static void mtk_battery_notify_VBatTemp_check(struct mtk_charger *info)
+ 			if (info->battery_temp <= -20) {
+ 				chr_err("bat_temp(%d) too low! shutdown!!!!!!!!!!!!!\n",
+ 						info->battery_temp);
++				ksys_sync();
+ 				kernel_power_off();
+ 			}
+ 		} else {
+@@ -1640,6 +1642,7 @@ static void kpoc_power_off_check(struct mtk_charger *info)
+ 		vbus = get_vbus(info);
+ 		if (vbus >= 0 && vbus < 2500 && !mtk_is_charger_on(info) && !info->pd_reset) {
+ 			chr_err("Unplug Charger/USB in KPOC mode, vbus=%d, shutdown\n", vbus);
++			ksys_sync();
+ 			kernel_power_off();
+ 		}
+ 	}
+-- 
+2.56.0
+

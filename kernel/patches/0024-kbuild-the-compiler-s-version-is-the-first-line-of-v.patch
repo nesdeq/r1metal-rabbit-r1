@@ -1,0 +1,29 @@
+From 6704a482cf2c61f57b10db6ff7cd3619686c5d46 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 15:07:30 +0200
+Subject: [PATCH] kbuild: the compiler's version is the first line of --version
+
+The compiler's version string is the first line of `$CC --version`, as
+later kernels take it. Upstream takes every line of `$CC -v` holding
+" version ", which with clang 23 includes a ROCm installation of the
+building machine and breaks the build of init/version.c.
+---
+ scripts/mkcompile_h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/scripts/mkcompile_h b/scripts/mkcompile_h
+index 1f10d91cc..03e7374cd 100755
+--- a/scripts/mkcompile_h
++++ b/scripts/mkcompile_h
+@@ -73,7 +73,7 @@ UTS_TRUNCATE="cut -b -$UTS_LEN"
+   echo \#define LINUX_COMPILE_BY \"`echo $LINUX_COMPILE_BY | $UTS_TRUNCATE`\"
+   echo \#define LINUX_COMPILE_HOST \"`echo $LINUX_COMPILE_HOST | $UTS_TRUNCATE`\"
+ 
+-  CC_VERSION=$($CC -v 2>&1 | grep ' version ' | sed 's/[[:space:]]*$//')
++  CC_VERSION=$($CC --version | head -n1 | sed 's/[[:space:]]*$//')
+   LD_VERSION=$($LD -v | head -n1 | sed 's/(compatible with [^)]*)//' \
+ 		      | sed 's/[[:space:]]*$//')
+   printf '#define LINUX_COMPILER "%s"\n' "$CC_VERSION, $LD_VERSION"
+-- 
+2.56.0
+

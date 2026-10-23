@@ -1,0 +1,30 @@
+From d0462df0fd5c7459c704220eff572ed95108b87d Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 10:42:05 +0200
+Subject: [PATCH] wlan: optional files are asked for without a warning
+
+kalRequestFirmware uses request_firmware_direct, which does not warn of
+a missing file: every file it loads is optional (wifi.cfg,
+wifi_sigma.cfg, txpowerctrl.cfg, the power limit file, the EEPROM
+image). The RAM code and the ROM patches load elsewhere and warn.
+---
+ connectivity/wlan/core/gen4m/os/linux/gl_kal.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/connectivity/wlan/core/gen4m/os/linux/gl_kal.c b/connectivity/wlan/core/gen4m/os/linux/gl_kal.c
+index f0509ec..a49aeab 100644
+--- a/connectivity/wlan/core/gen4m/os/linux/gl_kal.c
++++ b/connectivity/wlan/core/gen4m/os/linux/gl_kal.c
+@@ -6140,7 +6140,8 @@ int32_t kalRequestFirmware(const uint8_t *pucPath,
+ 	 * Android path: "/etc/firmware", "/vendor/firmware", "/firmware/image"
+ 	 * Linux path: "/lib/firmware", "/lib/firmware/update"
+ 	 */
+-	ret = _kalRequestFirmware(&fw, pucPath, dev);
++	/* Optional files: no loader warning, no user-mode helper fallback. */
++	ret = request_firmware_direct(&fw, pucPath, dev);
+ 
+ 	if (ret != 0) {
+ 		DBGLOG(INIT, TRACE, "kalRequestFirmware %s Fail, errno[%d]!!\n",
+-- 
+2.56.0
+

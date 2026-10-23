@@ -1,0 +1,357 @@
+From c3f95f4d5891b1660d5653918ad78b6eb181ecf1 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 13:35:25 +0200
+Subject: [PATCH] thermal: every zone's and cooler's debug lines print while
+ printk.debug is set
+
+While printk.debug is set the debug lines of every thermal zone and
+cooler built print as with their own flags on, and mtk_cooler_bcct_v1
+refreshes its charger snapshot as with its klog flag on.
+---
+ .../mediatek/thermal/common/coolers/mtk_cooler_VR_FPS.c    | 3 ++-
+ .../mediatek/thermal/common/coolers/mtk_cooler_bcct_2nd.c  | 3 ++-
+ .../mediatek/thermal/common/coolers/mtk_cooler_bcct_v1.c   | 5 +++--
+ .../misc/mediatek/thermal/common/coolers/mtk_cooler_mutt.c | 3 ++-
+ drivers/misc/mediatek/thermal/common/coolers/mtk_ta.c      | 3 ++-
+ drivers/misc/mediatek/thermal/common/mtk_thermal_timer.c   | 3 ++-
+ .../misc/mediatek/thermal/common/thermal_zones/mtk_tsAll.c | 7 ++++---
+ .../mediatek/thermal/common/thermal_zones/mtk_ts_battery.c | 3 ++-
+ .../mediatek/thermal/common/thermal_zones/mtk_ts_bts.c     | 3 ++-
+ .../mediatek/thermal/common/thermal_zones/mtk_ts_btsmdpa.c | 3 ++-
+ .../mediatek/thermal/common/thermal_zones/mtk_ts_charger.c | 3 ++-
+ .../thermal/common/thermal_zones/mtk_ts_charger2.c         | 3 ++-
+ .../thermal/common/thermal_zones/mtk_ts_imgsensor.c        | 5 +++--
+ .../misc/mediatek/thermal/common/thermal_zones/mtk_ts_pa.c | 3 ++-
+ .../thermal/common/thermal_zones/mtk_ts_pa_thput.c         | 3 ++-
+ .../mediatek/thermal/common/thermal_zones/mtk_ts_wmt.c     | 3 ++-
+ drivers/misc/mediatek/thermal/mt6765/inc/tscpu_settings.h  | 3 ++-
+ drivers/misc/mediatek/thermal/mt6765/inc/tspmic_settings.h | 3 ++-
+ 18 files changed, 40 insertions(+), 22 deletions(-)
+
+diff --git a/drivers/misc/mediatek/thermal/common/coolers/mtk_cooler_VR_FPS.c b/drivers/misc/mediatek/thermal/common/coolers/mtk_cooler_VR_FPS.c
+index 4def81db7..ec4721d72 100644
+--- a/drivers/misc/mediatek/thermal/common/coolers/mtk_cooler_VR_FPS.c
++++ b/drivers/misc/mediatek/thermal/common/coolers/mtk_cooler_VR_FPS.c
+@@ -30,9 +30,10 @@
+  */
+ #define CLVR_FPS_LOG_TAG	"[Cooler_VR_FPS]"
+ 
++/* a debug line prints where clVR_FPS_status took debug 1 or printk.debug is set */
+ #define clVR_FPS_dprintk(fmt, args...)   \
+ 	do {                                    \
+-		if (clVR_FPS_debug_log == 1) {                \
++		if (clVR_FPS_debug_log == 1 || printk_debugging()) { \
+ 			pr_notice(CLVR_FPS_LOG_TAG fmt, ##args); \
+ 		}                                   \
+ 	} while (0)
+diff --git a/drivers/misc/mediatek/thermal/common/coolers/mtk_cooler_bcct_2nd.c b/drivers/misc/mediatek/thermal/common/coolers/mtk_cooler_bcct_2nd.c
+index f49855fca..c678067d4 100644
+--- a/drivers/misc/mediatek/thermal/common/coolers/mtk_cooler_bcct_2nd.c
++++ b/drivers/misc/mediatek/thermal/common/coolers/mtk_cooler_bcct_2nd.c
+@@ -25,9 +25,10 @@
+ #define mtk_cooler_bcct_2nd_dprintk_always(fmt, args...) \
+ 	pr_notice("[Thermal/TC/bcct_2nd]" fmt, ##args)
+ 
++/* a debug line prints where clbcct_2nd took klog 1 or printk.debug is set */
+ #define mtk_cooler_bcct_2nd_dprintk(fmt, args...) \
+ 	do { \
+-		if (cl_bcct_2nd_klog_on == 1) \
++		if (cl_bcct_2nd_klog_on == 1 || printk_debugging()) \
+ 			pr_notice("[Thermal/TC/bcct_2nd]" fmt, ##args); \
+ 	}  while (0)
+ 
+diff --git a/drivers/misc/mediatek/thermal/common/coolers/mtk_cooler_bcct_v1.c b/drivers/misc/mediatek/thermal/common/coolers/mtk_cooler_bcct_v1.c
+index 550057f3a..05a08fac3 100644
+--- a/drivers/misc/mediatek/thermal/common/coolers/mtk_cooler_bcct_v1.c
++++ b/drivers/misc/mediatek/thermal/common/coolers/mtk_cooler_bcct_v1.c
+@@ -29,9 +29,10 @@ static int cl_bcct_klog_on;
+ #define mtk_cooler_bcct_dprintk_always(fmt, args...) \
+ 	pr_notice("[Thermal/TC/bcct]" fmt, ##args)
+ 
++/* a debug line prints where clbcct took klog 1 or printk.debug is set */
+ #define mtk_cooler_bcct_dprintk(fmt, args...) \
+ 	do { \
+-		if (cl_bcct_klog_on == 1) \
++		if (cl_bcct_klog_on == 1 || printk_debugging()) \
+ 			pr_notice("[Thermal/TC/bcct]" fmt, ##args); \
+ 	}  while (0)
+ 
+@@ -491,7 +492,7 @@ struct thermal_cooling_device *cdev, unsigned long state)
+ 	if (chrlmt_is_lcmoff)
+ 		cl_abcct_state = 0;
+ 
+-	if (cl_bcct_klog_on == 1) {
++	if (cl_bcct_klog_on == 1 || printk_debugging()) {
+ 		if (ktime_to_ms(ktime_sub(ktime_get(), lasttime)) > 5000) {
+ 			bat_chg_info_update();
+ 			lasttime = ktime_get();
+diff --git a/drivers/misc/mediatek/thermal/common/coolers/mtk_cooler_mutt.c b/drivers/misc/mediatek/thermal/common/coolers/mtk_cooler_mutt.c
+index 85693b183..d04407db2 100644
+--- a/drivers/misc/mediatek/thermal/common/coolers/mtk_cooler_mutt.c
++++ b/drivers/misc/mediatek/thermal/common/coolers/mtk_cooler_mutt.c
+@@ -210,9 +210,10 @@ int md_id, unsigned int id, char *buf, unsigned int len)
+ #define mtk_cooler_mutt_dprintk_always(fmt, args...) \
+ pr_debug("[Thermal/TC/mutt]" fmt, ##args)
+ 
++/* a debug line prints where clmutt took klog 1 or printk.debug is set */
+ #define mtk_cooler_mutt_dprintk(fmt, args...) \
+ do { \
+-	if (cl_mutt_klog_on == 1) \
++	if (cl_mutt_klog_on == 1 || printk_debugging()) \
+ 		pr_debug("[Thermal/TC/mutt]" fmt, ##args); \
+ } while (0)
+ 
+diff --git a/drivers/misc/mediatek/thermal/common/coolers/mtk_ta.c b/drivers/misc/mediatek/thermal/common/coolers/mtk_ta.c
+index d8227c722..c7e47552b 100644
+--- a/drivers/misc/mediatek/thermal/common/coolers/mtk_ta.c
++++ b/drivers/misc/mediatek/thermal/common/coolers/mtk_ta.c
+@@ -43,9 +43,10 @@ static kgid_t gid = KGIDT_INIT(1000);
+ static unsigned int fg_app_pid;
+ static int mtkts_ta_debug_log;
+ 
++/* a debug line prints where ta_log is set or printk.debug is set */
+ #define tsta_dprintk(fmt, args...)   \
+ 	do {                                    \
+-		if (mtkts_ta_debug_log) {                \
++		if (mtkts_ta_debug_log || printk_debugging()) { \
+ 			pr_debug("[Thermal/TC/TA]" fmt, ##args); \
+ 		}                                   \
+ 	} while (0)
+diff --git a/drivers/misc/mediatek/thermal/common/mtk_thermal_timer.c b/drivers/misc/mediatek/thermal/common/mtk_thermal_timer.c
+index bd4f711ff..73f3206c0 100644
+--- a/drivers/misc/mediatek/thermal/common/mtk_thermal_timer.c
++++ b/drivers/misc/mediatek/thermal/common/mtk_thermal_timer.c
+@@ -36,9 +36,10 @@
+ #define NAME_LEN (20)
+ #define mtkTTimer_debug_log (0)
+ 
++/* a debug line prints while printk.debug is set */
+ #define mtkTTimer_dprintk(fmt, args...)   \
+ 	do {	\
+-		if (mtkTTimer_debug_log)	\
++		if (mtkTTimer_debug_log || printk_debugging())	\
+ 			pr_notice("[Thermal timer] " fmt, ##args); \
+ 	} while (0)
+ 
+diff --git a/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_tsAll.c b/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_tsAll.c
+index 3e1dc8717..5da83b2bf 100644
+--- a/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_tsAll.c
++++ b/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_tsAll.c
+@@ -62,9 +62,10 @@ static int tsallts_debug_log;
+ 
+ #define TSALLTS_TEMP_CRIT 120000	/* 120.000 degree Celsius */
+ 
++/* a debug line prints while printk.debug is set */
+ #define tsallts_dprintk(fmt, args...)   \
+ 	do {                                    \
+-		if (tsallts_debug_log) {                \
++		if (tsallts_debug_log || printk_debugging()) { \
+ 			pr_debug("[Thermal/TZ/CPUALL]" fmt, ##args);\
+ 		}                                   \
+ 	} while (0)
+@@ -72,7 +73,7 @@ static int tsallts_debug_log;
+ #if AUTO_GEN_COOLERS
+ #define clnothings_dprintk(fmt, args...)   \
+ 	do {                                    \
+-		if (tsallts_debug_log) {                \
++		if (tsallts_debug_log || printk_debugging()) { \
+ 			pr_debug("[Thermal/TZ/CLNOTHINGS]" fmt, ##args);\
+ 		}                                   \
+ 	} while (0)
+@@ -397,7 +398,7 @@ struct file *file, const char __user *buffer, size_t count,	\
+ \
+ 		g_tsData[(num - 1)].interval = pTempD->time_msec;	\
+ \
+-		if (tsallts_debug_log) {	\
++		if (tsallts_debug_log || printk_debugging()) {	\
+ 			for (i = 0; i < 10; i++) {	\
+ 				tsallts_printk("Trip_%d_temp=%d ", i,	\
+ 				g_tsData[(num - 1)].trip_temp[i]);	\
+diff --git a/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_battery.c b/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_battery.c
+index 4d160826e..42561cca1 100644
+--- a/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_battery.c
++++ b/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_battery.c
+@@ -127,9 +127,10 @@ static int polling_factor2 = 10000;
+ 
+ #define mtktsbattery_TEMP_CRIT 60000	/* 60.000 degree Celsius */
+ 
++/* a debug line prints while printk.debug is set */
+ #define mtktsbattery_dprintk(fmt, args...)   \
+ do {                                    \
+-	if (mtktsbattery_debug_log) {                \
++	if (mtktsbattery_debug_log || printk_debugging()) { \
+ 		pr_debug("[Thermal/TZ/BATTERY]" fmt, ##args); \
+ 	}                                   \
+ } while (0)
+diff --git a/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_bts.c b/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_bts.c
+index 681dbf45a..21290cf71 100644
+--- a/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_bts.c
++++ b/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_bts.c
+@@ -96,9 +96,10 @@ int bts_cur_temp = 1;
+ 
+ #define MTKTS_BTS_TEMP_CRIT 60000	/* 60.000 degree Celsius */
+ 
++/* a debug line prints while printk.debug is set */
+ #define mtkts_bts_dprintk(fmt, args...)   \
+ do {                                    \
+-	if (mtkts_bts_debug_log) {                \
++	if (mtkts_bts_debug_log || printk_debugging()) { \
+ 		pr_notice("[Thermal/TZ/BTS]" fmt, ##args); \
+ 	}                                   \
+ } while (0)
+diff --git a/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_btsmdpa.c b/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_btsmdpa.c
+index 1275dbf47..da4e3cb33 100644
+--- a/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_btsmdpa.c
++++ b/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_btsmdpa.c
+@@ -88,9 +88,10 @@ static int polling_factor2 = 10000;
+ #define MTKTS_BTSMDPA_SW_FILTER (0)
+ #define MTKTS_BTSMDPA_TEMP_CRIT 60000	/* 60.000 degree Celsius */
+ 
++/* a debug line prints while printk.debug is set */
+ #define mtkts_btsmdpa_dprintk(fmt, args...)   \
+ do {                                    \
+-	if (mtkts_btsmdpa_debug_log) {                \
++	if (mtkts_btsmdpa_debug_log || printk_debugging()) { \
+ 		pr_notice("[Thermal/TZ/BTSMDPA]" fmt, ##args); \
+ 	}                                   \
+ } while (0)
+diff --git a/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_charger.c b/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_charger.c
+index c6c712445..20ffe437d 100644
+--- a/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_charger.c
++++ b/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_charger.c
+@@ -26,9 +26,10 @@
+ 
+ #define mtktscharger_TEMP_CRIT (150000) /* 150.000 degree Celsius */
+ 
++/* a debug line prints while printk.debug is set */
+ #define mtktscharger_dprintk(fmt, args...) \
+ do { \
+-	if (mtktscharger_debug_log) \
++	if (mtktscharger_debug_log || printk_debugging()) \
+ 		pr_debug("[Thermal/tzcharger]" fmt, ##args); \
+ } while (0)
+ 
+diff --git a/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_charger2.c b/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_charger2.c
+index 1c01dc990..0cb67eadf 100644
+--- a/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_charger2.c
++++ b/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_charger2.c
+@@ -23,9 +23,10 @@
+ 
+ #define mtktscharger2_TEMP_CRIT (150000) /* 150.000 degree Celsius */
+ 
++/* a debug line prints while printk.debug is set */
+ #define mtktscharger2_dprintk(fmt, args...) \
+ do { \
+-	if (mtktscharger2_debug_log) \
++	if (mtktscharger2_debug_log || printk_debugging()) \
+ 		pr_notice("[Thermal/tzcharger2]" fmt, ##args); \
+ } while (0)
+ 
+diff --git a/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_imgsensor.c b/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_imgsensor.c
+index 4454b6d8f..5119c7efd 100644
+--- a/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_imgsensor.c
++++ b/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_imgsensor.c
+@@ -51,9 +51,10 @@ enum CAMERA_DUAL_CAMERA_SENSOR_ENUM senDevId, MUINT8 *valid, MUINT32 *temp)
+ #define RESERVED_TZS (20)
+ #define MTK_IMGS_TEMP_CRIT 120000	/* 120.000 degree Celsius */
+ 
++/* a debug line prints where tzimgs_debug is set or printk.debug is set */
+ #define mtk_imgs_dprintk(fmt, args...)   \
+ 	do {                                    \
+-		if (mtk_imgs_debug_log) {                \
++		if (mtk_imgs_debug_log || printk_debugging()) { \
+ 			pr_notice("[Thermal/TZ/IMGS]" fmt, ##args);\
+ 		}                                   \
+ 	} while (0)
+@@ -631,7 +632,7 @@ struct file *file, const char __user *buffer, size_t count,	\
+ \
+ 		g_tsData[num].interval = pTempD->time_msec;	\
+ \
+-		if (mtk_imgs_debug_log) {	\
++		if (mtk_imgs_debug_log || printk_debugging()) {	\
+ 			for (i = 0; i < 10; i++) {	\
+ 				mtk_imgs_printk("Trip_%d_temp=%d ",	\
+ 					i, g_tsData[num].trip_temp[i]);	\
+diff --git a/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_pa.c b/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_pa.c
+index 5b121dc96..16f3a3dd0 100644
+--- a/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_pa.c
++++ b/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_pa.c
+@@ -77,9 +77,10 @@ static int polling_factor2 = 10000;
+ 
+ #define mtktspa_TEMP_CRIT 85000	/* 85.000 degree Celsius */
+ 
++/* a debug line prints while printk.debug is set */
+ #define mtktspa_dprintk(fmt, args...)   \
+ do {                                    \
+-	if (mtktspa_debug_log) {                \
++	if (mtktspa_debug_log || printk_debugging()) { \
+ 		pr_debug("[Thermal/TZ/PA]" fmt, ##args); \
+ 	}                                   \
+ } while (0)
+diff --git a/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_pa_thput.c b/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_pa_thput.c
+index 8f22c36f1..e5e45f453 100644
+--- a/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_pa_thput.c
++++ b/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_pa_thput.c
+@@ -33,9 +33,10 @@
+ #endif
+ 
+ #define mtk_mdm_debug_log 0
++/* a debug line prints while printk.debug is set */
+ #define mtk_mdm_dprintk(fmt, args...)   \
+ do {                                    \
+-	if (mtk_mdm_debug_log)                \
++	if (mtk_mdm_debug_log || printk_debugging()) \
+ 		pr_debug("[Thermal/TZ/MDM_TxPower]" fmt, ##args); \
+ } while (0)
+ 
+diff --git a/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_wmt.c b/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_wmt.c
+index e10ec798f..24d57ec73 100644
+--- a/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_wmt.c
++++ b/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_wmt.c
+@@ -59,9 +59,10 @@ static int isTimerCancelled;
+ 
+ static int wmt_tm_debug_log;
+ static DEFINE_MUTEX(WMT_pg_task_lock);
++/* a debug line prints where clwmt_val took log=1 or printk.debug is set */
+ #define wmt_tm_dprintk(fmt, args...)   \
+ do { \
+-	if (wmt_tm_debug_log) \
++	if (wmt_tm_debug_log || printk_debugging()) \
+ 		pr_debug("[thermal/wmt]" fmt, ##args); \
+ } while (0)
+ 
+diff --git a/drivers/misc/mediatek/thermal/mt6765/inc/tscpu_settings.h b/drivers/misc/mediatek/thermal/mt6765/inc/tscpu_settings.h
+index f7d130fb1..3cf04d34c 100644
+--- a/drivers/misc/mediatek/thermal/mt6765/inc/tscpu_settings.h
++++ b/drivers/misc/mediatek/thermal/mt6765/inc/tscpu_settings.h
+@@ -229,9 +229,10 @@
+  */
+ #define TSCPU_LOG_TAG		"[Thermal/TZ/CPU]"
+ 
++/* a debug line prints where tzcpu_log is 1 or printk.debug is set */
+ #define tscpu_dprintk(fmt, args...)   \
+ 	do {                                    \
+-		if (tscpu_debug_log == 1) {                \
++		if (tscpu_debug_log == 1 || printk_debugging()) { \
+ 			pr_notice(TSCPU_LOG_TAG fmt, ##args); \
+ 		}                                   \
+ 	} while (0)
+diff --git a/drivers/misc/mediatek/thermal/mt6765/inc/tspmic_settings.h b/drivers/misc/mediatek/thermal/mt6765/inc/tspmic_settings.h
+index 258b5333c..f80676cb2 100644
+--- a/drivers/misc/mediatek/thermal/mt6765/inc/tspmic_settings.h
++++ b/drivers/misc/mediatek/thermal/mt6765/inc/tspmic_settings.h
+@@ -28,9 +28,10 @@
+ pr_notice("[Thermal/TZ/PMIC] " fmt, ##args)
+ 
+ 
++/* a debug line prints where tzpmic_log is 1 or printk.debug is set */
+ #define mtktspmic_dprintk(fmt, args...)   \
+ 	do {								\
+-		if (mtktspmic_debug_log == 1) {				\
++		if (mtktspmic_debug_log == 1 || printk_debugging()) {	\
+ 			pr_notice("[Thermal/TZ/PMIC] " fmt, ##args); \
+ 		}							\
+ 	} while (0)
+-- 
+2.56.0
+

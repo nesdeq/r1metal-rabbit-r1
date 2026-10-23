@@ -1,0 +1,273 @@
+From e41dc5ad1d6182892cf33b79e3119c98b5239bce Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 13:22:54 +0200
+Subject: [PATCH] ccci_util: the modem driver's own logs record nothing while
+ logging is off
+
+While printk.silent is set the modem driver's own log writers store
+nothing, and setting it empties the ccci_log ring, the ccci_dump regions
+and the event ring, bytes and all. The emptyings are counted, so a
+reader of /proc/ccci_log or /proc/ccci_dump resumes where an emptying
+left each ring, not from a stale place.
+---
+ .../mediatek/ccci_util/ccci_private_log.c     | 109 +++++++++++++++++-
+ 1 file changed, 104 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/misc/mediatek/ccci_util/ccci_private_log.c b/drivers/misc/mediatek/ccci_util/ccci_private_log.c
+index 07dbb2978..b68d6a15d 100644
+--- a/drivers/misc/mediatek/ccci_util/ccci_private_log.c
++++ b/drivers/misc/mediatek/ccci_util/ccci_private_log.c
+@@ -17,6 +17,7 @@
+ #include <linux/ktime.h>
+ #include <linux/delay.h>
+ #include <linux/vmalloc.h>
++#include <linux/notifier.h>
+ #include "mt-plat/mtk_ccci_common.h"
+ #include <linux/rtc.h>
+ #include "ccci_util_log.h"
+@@ -35,6 +36,8 @@ struct ccci_ring_buffer {
+ 	unsigned int read_pos;
+ 	unsigned int write_pos;
+ 	unsigned int ch_num;
++	/* counts the emptyings logging switched off made */
++	unsigned int emptied;
+ 	atomic_t reader_cnt;
+ 	wait_queue_head_t log_wq;
+ 	spinlock_t write_lock;
+@@ -55,6 +58,8 @@ int ccci_log_write(const char *fmt, ...)
+ 
+ 	if (unlikely(ccci_log_buf.buffer == NULL))
+ 		return -ENODEV;
++	if (printk_silenced())
++		return 0;
+ 
+ 	temp_log = kmalloc(CCCI_LOG_MAX_WRITE, GFP_ATOMIC);
+ 	if (temp_log == NULL) {
+@@ -87,6 +92,12 @@ int ccci_log_write(const char *fmt, ...)
+ 	}
+ 
+ 	spin_lock_irqsave(&ccci_log_buf.write_lock, flags);
++	/* tested again under the lock the emptying takes */
++	if (printk_silenced()) {
++		spin_unlock_irqrestore(&ccci_log_buf.write_lock, flags);
++		kfree(temp_log);
++		return 0;
++	}
+ 	if (ccci_log_buf.write_pos + write_len > CCCI_LOG_BUF_SIZE) {
+ 		first_half = CCCI_LOG_BUF_SIZE - ccci_log_buf.write_pos;
+ 		memcpy(ccci_log_buf.buffer + ccci_log_buf.write_pos,
+@@ -123,6 +134,8 @@ int ccci_log_write_raw(unsigned int set_flags, const char *fmt, ...)
+ 
+ 	if (unlikely(ccci_log_buf.buffer == NULL))
+ 		return -ENODEV;
++	if (printk_silenced())
++		return 0;
+ 
+ 	temp_log = kmalloc(CCCI_LOG_MAX_WRITE, GFP_ATOMIC);
+ 	if (temp_log == NULL) {
+@@ -162,6 +175,11 @@ int ccci_log_write_raw(unsigned int set_flags, const char *fmt, ...)
+ 	}
+ 
+ 	spin_lock_irqsave(&ccci_log_buf.write_lock, flags);
++	if (printk_silenced()) {
++		spin_unlock_irqrestore(&ccci_log_buf.write_lock, flags);
++		kfree(temp_log);
++		return 0;
++	}
+ 	if (ccci_log_buf.write_pos + write_len > CCCI_LOG_BUF_SIZE) {
+ 		first_half = CCCI_LOG_BUF_SIZE - ccci_log_buf.write_pos;
+ 		memcpy(ccci_log_buf.buffer + ccci_log_buf.write_pos,
+@@ -188,7 +206,7 @@ int ccci_log_write_raw(unsigned int set_flags, const char *fmt, ...)
+ static ssize_t ccci_log_read(struct file *file, char __user *buf,
+ 	size_t size, loff_t *ppos)
+ {
+-	unsigned int available, read_len, first_half, read_pos;
++	unsigned int available, read_len, first_half, read_pos, emptied;
+ 	unsigned long flags;
+ 	int ret;
+ 
+@@ -216,6 +234,7 @@ static ssize_t ccci_log_read(struct file *file, char __user *buf,
+ 	}
+ 
+ 	read_len = size < available ? size : available;
++	emptied = ccci_log_buf.emptied;
+ 	spin_unlock_irqrestore(&ccci_log_buf.write_lock, flags);
+ 
+ 	if (read_pos + read_len > CCCI_LOG_BUF_SIZE) {
+@@ -233,8 +252,11 @@ static ssize_t ccci_log_read(struct file *file, char __user *buf,
+ 
+ 	spin_lock_irqsave(&ccci_log_buf.write_lock, flags);
+ 	read_len = read_len - ret;
+-	ccci_log_buf.read_pos = (read_pos + read_len) & (CCCI_LOG_BUF_SIZE - 1);
+-	ccci_log_buf.ch_num -= read_len;
++	/* a ring emptied during the copy keeps the place the emptying gave it */
++	if (ccci_log_buf.emptied == emptied) {
++		ccci_log_buf.read_pos = (read_pos + read_len) & (CCCI_LOG_BUF_SIZE - 1);
++		ccci_log_buf.ch_num -= read_len;
++	}
+ 	spin_unlock_irqrestore(&ccci_log_buf.write_lock, flags);
+ 	return read_len;
+ }
+@@ -316,8 +338,12 @@ struct ccci_user_ctlb {
+ 	unsigned int sep_cnt1[2][CCCI_DUMP_MAX];
+ 	unsigned int sep_cnt2[2]; /* 1st MD; 2nd MD */
+ 	unsigned int busy;
++	/* the count of emptyings the read places belong to */
++	unsigned int emptied;
+ };
+ static spinlock_t file_lock;
++/* counts the emptyings of the regions logging switched off made */
++static unsigned int ccci_dump_emptied;
+ 
+ static struct ccci_dump_buffer init_setting_ctlb[2];
+ static struct ccci_dump_buffer normal_ctlb[2];
+@@ -461,6 +487,8 @@ int ccci_dump_write(int md_id, int buf_type,
+ 		return -4;
+ 	if (unlikely(node_array[buf_id][buf_type].ctlb_ptr->buffer == NULL))
+ 		return -5;
++	if (printk_silenced())
++		return 0;
+ 
+ 	/* using local ptr */
+ 	ptr = node_array[buf_id][buf_type].ctlb_ptr;
+@@ -535,6 +563,11 @@ int ccci_dump_write(int md_id, int buf_type,
+ 	}
+ 
+ 	spin_lock_irqsave(&ptr->lock, flags);
++	if (printk_silenced()) {
++		spin_unlock_irqrestore(&ptr->lock, flags);
++		kfree(temp_log);
++		return 0;
++	}
+ 	if (flag & CCCI_DUMP_CLR_BUF_FLAG) {
+ 		ptr->data_size = 0;
+ 		ptr->write_pos = 0;
+@@ -642,7 +675,7 @@ static void format_separate_str(char str[], int type)
+ static ssize_t ccci_dump_fops_read(struct file *file, char __user *buf,
+ 	size_t size, loff_t *ppos)
+ {
+-	unsigned int available, read_len;
++	unsigned int available, read_len, emptied;
+ 	int ret;
+ 	int i;
+ 	int has_read = 0;
+@@ -670,6 +703,13 @@ static ssize_t ccci_dump_fops_read(struct file *file, char __user *buf,
+ 	if (has_closed)
+ 		return 0;
+ 
++	/* regions emptied since the last read are read from their beginning */
++	emptied = READ_ONCE(ccci_dump_emptied);
++	if (user_info->emptied != emptied) {
++		user_info->emptied = emptied;
++		memset(user_info->read_idx, 0, sizeof(user_info->read_idx));
++	}
++
+ 	for (i = 0; i < 2; i++) {
+ 		if (!(buff_en_bit_map & (1U << i)))
+ 			continue;
+@@ -729,6 +769,9 @@ static ssize_t ccci_dump_fops_read(struct file *file, char __user *buf,
+ 			/* insert region data */
+ 			/* One short read */
+ 			if ((ptr->attr & CCCI_DUMP_ATTR_RING) == 0) {
++				/* a region emptied during this read has nothing more to give */
++				if (user_info->read_idx[i][index] > ptr->write_pos)
++					user_info->read_idx[i][index] = ptr->write_pos;
+ 				read_pos = user_info->read_idx[i][index];
+ 				available = ptr->write_pos - read_pos;
+ 				if (available == 0)
+@@ -750,6 +793,8 @@ static ssize_t ccci_dump_fops_read(struct file *file, char __user *buf,
+ 					"[ccci0/util]dump copy to ser fail%d\n",
+ 						ret);
+ 			} else { /* ring buffer read */
++				if (user_info->read_idx[i][index] > ptr->data_size)
++					user_info->read_idx[i][index] = ptr->data_size;
+ 				if (ptr->data_size > ptr->buf_size) {
+ 					read_pos = ptr->write_pos
+ 						+ user_info->read_idx[i][index];
+@@ -1124,7 +1169,7 @@ int ccci_event_log(const char *fmt, ...)
+ 	struct timeval tv_android = { 0 };
+ 	struct rtc_time tm_android;
+ 
+-	if (ccci_event_buffer.buffer == NULL)
++	if (ccci_event_buffer.buffer == NULL || printk_silenced())
+ 		return 0;
+ 
+ 	temp_log = kmalloc(CCCI_LOG_MAX_WRITE, GFP_ATOMIC);
+@@ -1173,6 +1218,11 @@ int ccci_event_log(const char *fmt, ...)
+ 	}
+ 
+ 	spin_lock_irqsave(&ccci_event_buffer.lock, flags);
++	if (printk_silenced()) {
++		spin_unlock_irqrestore(&ccci_event_buffer.lock, flags);
++		kfree(temp_log);
++		return 0;
++	}
+ 
+ 	wr_pose = ccci_event_buffer.write_pos;
+ 	if (wr_pose + write_len > ccci_event_buffer.buf_size) {
+@@ -1238,6 +1288,54 @@ int ccci_event_log_cpy(char buf[], int size)
+ 	return cpy_size;
+ }
+ 
++/* Setting printk.silent empties every ring, bytes and all. */
++static int ccci_log_follow_printk(struct notifier_block *nb,
++	unsigned long event, void *unused)
++{
++	struct buffer_node *node_ptr = NULL;
++	struct ccci_dump_buffer *ptr = NULL;
++	unsigned long flags;
++	int i;
++
++	if (!printk_silenced())
++		return NOTIFY_OK;
++
++	if (ccci_log_buf.buffer) {
++		spin_lock_irqsave(&ccci_log_buf.write_lock, flags);
++		ccci_log_buf.read_pos = ccci_log_buf.write_pos;
++		ccci_log_buf.ch_num = 0;
++		ccci_log_buf.emptied++;
++		memset(ccci_log_buf.buffer, 0, CCCI_LOG_BUF_SIZE);
++		spin_unlock_irqrestore(&ccci_log_buf.write_lock, flags);
++	}
++
++	for (i = 0; i < ARRAY_SIZE(node_array); i++) {
++		for (node_ptr = &node_array[i][0]; node_ptr->ctlb_ptr; node_ptr++) {
++			ptr = node_ptr->ctlb_ptr;
++			if (ptr->buffer == NULL)
++				continue;
++			spin_lock_irqsave(&ptr->lock, flags);
++			ptr->data_size = 0;
++			ptr->write_pos = 0;
++			memset(ptr->buffer, 0, ptr->buf_size);
++			spin_unlock_irqrestore(&ptr->lock, flags);
++		}
++	}
++	WRITE_ONCE(ccci_dump_emptied, ccci_dump_emptied + 1);
++
++	if (ccci_event_buffer.buffer) {
++		spin_lock_irqsave(&ccci_event_buffer.lock, flags);
++		ccci_event_buffer.data_size = 0;
++		ccci_event_buffer.write_pos = 0;
++		memset(ccci_event_buffer.buffer, 0, ccci_event_buffer.buf_size);
++		spin_unlock_irqrestore(&ccci_event_buffer.lock, flags);
++	}
++	return NOTIFY_OK;
++}
++
++static struct notifier_block ccci_log_printk_nb = {
++	.notifier_call = ccci_log_follow_printk,
++};
+ 
+ void ccci_log_init(void)
+ {
+@@ -1258,6 +1356,7 @@ void ccci_log_init(void)
+ 	atomic_set(&ccci_log_buf.reader_cnt, 0);
+ 	ccci_dump_buffer_init();
+ 	ccci_event_buffer_init();
++	printk_logging_notifier_register(&ccci_log_printk_nb);
+ }
+ 
+ void get_ccci_aee_buffer(unsigned long *vaddr, unsigned long *size)
+-- 
+2.56.0
+

@@ -1,0 +1,27 @@
+From bdcd181a156b136ea0bf28bec02af80220b3798c Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 15:19:31 +0200
+Subject: [PATCH] wmt: mtk_wcn_consys_get_pinctrl takes no arguments
+
+mtk_wcn_consys_get_pinctrl is defined with (void), as its prototype
+declares it; clang 23 rejects the empty list.
+---
+ connectivity/common/common_main/platform/mtk_wcn_consys_hw.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/connectivity/common/common_main/platform/mtk_wcn_consys_hw.c b/connectivity/common/common_main/platform/mtk_wcn_consys_hw.c
+index 4774e55..b49b96e 100644
+--- a/connectivity/common/common_main/platform/mtk_wcn_consys_hw.c
++++ b/connectivity/common/common_main/platform/mtk_wcn_consys_hw.c
+@@ -898,7 +898,7 @@ INT32 mtk_wcn_consys_detect_adie_chipid(UINT32 co_clock_type)
+ 	return chipid;
+ }
+ 
+-struct pinctrl *mtk_wcn_consys_get_pinctrl()
++struct pinctrl *mtk_wcn_consys_get_pinctrl(void)
+ {
+ 	return consys_pinctrl;
+ }
+-- 
+2.56.0
+

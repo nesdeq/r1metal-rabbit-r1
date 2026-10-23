@@ -1,0 +1,261 @@
+From dffc09a144e6168865143faff73430b4ee6a5aee Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 16:09:08 +0200
+Subject: [PATCH] m4u: progress is info, failures stop the probe, a fault reads
+ only its own larb
+
+- The progress lines of a successful probe are info.
+- m4u_probe() fails with the error of a failed step instead of going on.
+- At a fault the handler reads only the faulting port's word in its
+  larb, which has power, instead of all four larbs.
+- /proc/m4u_dbg/port powers each larb around its read, and
+  larb_clock_on() returns the SMI driver's error.
+- MDP_WROT0 is configured once.
+---
+ drivers/misc/mediatek/m4u/2.0/m4u.c       | 30 +++++++++---
+ drivers/misc/mediatek/m4u/mt6765/m4u_hw.c | 59 ++++++++++++++---------
+ 2 files changed, 58 insertions(+), 31 deletions(-)
+
+diff --git a/drivers/misc/mediatek/m4u/2.0/m4u.c b/drivers/misc/mediatek/m4u/2.0/m4u.c
+index 15e7d047a..931d61522 100644
+--- a/drivers/misc/mediatek/m4u/2.0/m4u.c
++++ b/drivers/misc/mediatek/m4u/2.0/m4u.c
+@@ -2199,11 +2199,12 @@ static const struct file_operations m4u_fops = {
+ static int m4u_probe(struct platform_device *pdev)
+ {
+ 	struct device_node *node = pdev->dev.of_node;
++	int ret;
+ 
+ 	m4u_info("%s 0\n", __func__);
+ #if defined(CONFIG_MACH_MT6765) || defined(CONFIG_MACH_MT6761)
+ #if defined(CONFIG_MTK_SMI_EXT)
+-	m4u_err("%s: %d\n", __func__, smi_mm_first_get());
++	m4u_info("%s: %d\n", __func__, smi_mm_first_get());
+ 	if (!smi_mm_first_get()) {
+ 		m4u_err("SMI not start probe\n");
+ 		return -EPROBE_DEFER;
+@@ -2214,8 +2215,10 @@ static int m4u_probe(struct platform_device *pdev)
+ 		int err;
+ 
+ 		err = of_property_read_u32(node, "cell-index", &pdev->id);
+-		if (err)
++		if (err) {
+ 			m4u_err("[DTS] get m4u platform_device id fail!!\n");
++			return err;
++		}
+ 	}
+ 	m4u_info("%s 1, pdev id = %d name = %s\n", __func__, pdev->id,
+ 		pdev->name);
+@@ -2224,12 +2227,23 @@ static int m4u_probe(struct platform_device *pdev)
+ 	gM4uDev->m4u_base[pdev->id] = (unsigned long)of_iomap(node, 0);
+ 	gM4uDev->irq_num[pdev->id] = irq_of_parse_and_map(node, 0);
+ 
+-	m4u_err("%s 2, of_iomap: 0x%lx, irq_num: %d, pDev: %p\n", __func__,
+-	       gM4uDev->m4u_base[pdev->id], gM4uDev->irq_num[pdev->id],
+-	       gM4uDev->pDev[pdev->id]);
++	m4u_info("%s 2, of_iomap: 0x%lx, irq_num: %d, pDev: %p\n", __func__,
++		 gM4uDev->m4u_base[pdev->id], gM4uDev->irq_num[pdev->id],
++		 gM4uDev->pDev[pdev->id]);
++
++	if (!gM4uDev->m4u_base[pdev->id]) {
++		m4u_err("%s: of_iomap failed\n", __func__);
++		return -ENOMEM;
++	}
++	if (!gM4uDev->irq_num[pdev->id]) {
++		m4u_err("%s: no interrupt in the device tree\n", __func__);
++		return -EINVAL;
++	}
+ 
+ 	if (pdev->id == 0) {
+-		m4u_domain_init(gM4uDev, &gMvaNode_unknown);
++		ret = m4u_domain_init(gM4uDev, &gMvaNode_unknown);
++		if (ret)
++			return ret;
+ 
+ #ifdef M4U_TEE_SERVICE_ENABLE
+ 		{
+@@ -2253,7 +2267,9 @@ static int m4u_probe(struct platform_device *pdev)
+ 
+ 	}
+ 
+-	m4u_hw_init(gM4uDev, pdev->id);
++	ret = m4u_hw_init(gM4uDev, pdev->id);
++	if (ret)
++		return ret;
+ 
+ 	m4u_info("%s 3 finish...\n", __func__);
+ 
+diff --git a/drivers/misc/mediatek/m4u/mt6765/m4u_hw.c b/drivers/misc/mediatek/m4u/mt6765/m4u_hw.c
+index d8434e60d..3522e94b4 100644
+--- a/drivers/misc/mediatek/m4u/mt6765/m4u_hw.c
++++ b/drivers/misc/mediatek/m4u/mt6765/m4u_hw.c
+@@ -848,9 +848,11 @@ int larb_clock_on(int larb, bool config_mtcmos)
+ 		    smi_bus_prepare_enable(larb, smi_clk_name[larb]);
+ 	if (ret != 0)
+ 		m4u_err("%s error: larb %d\n", __func__, larb);
+-#endif
+ 
++	return ret;
++#else
+ 	return 0;
++#endif
+ }
+ 
+ 
+@@ -863,7 +865,7 @@ int larb_clock_off(int larb, bool config_mtcmos)
+ 		ret =
+ 		    smi_bus_disable_unprepare(larb, smi_clk_name[larb]);
+ 	if (ret != 0)
+-		m4u_err("larb_clock_on error: larb %d\n", larb);
++		m4u_err("%s error: larb %d\n", __func__, larb);
+ #endif
+ 
+ 	return 0;
+@@ -1756,9 +1758,16 @@ void m4u_print_port_status(struct seq_file *seq, int only_print_active)
+ 			}
+ 			larb_base = gLarbBaseAddr[larb];
+ 
++			/* a larb answers its registers only while it has power */
++			if (larb_clock_on(larb, 1)) {
++				M4U_PRINT_SEQ(seq, "%s(?),",
++					m4u_get_port_name(port));
++				continue;
++			}
+ 			mmu_en = m4uHw_get_field_by_mask(larb_base,
+ 					SMI_LARB_NON_SEC_CONx(larb_port),
+ 					F_SMI_NON_SEC_MMU_EN(1));
++			larb_clock_off(larb, 1);
+ 
+ 		} else {
+ 			larb_port = m4u_port_2_larb_port(port);
+@@ -2011,17 +2020,11 @@ irqreturn_t MTK_M4U_isr(int irq, void *dev_id)
+ 		int m4u_slave_id;
+ 		int larb_index = 0;
+ 		unsigned int regval;
+-		int layer, write, m4u_port;
++		int layer, write, m4u_port, larb_port;
+ 		unsigned int fault_mva, fault_pa;
+ 
+ 		m4u_err("m4u main interrupt happened: sta=0x%x\n", IntrSrc);
+ 
+-		for (larb_index = 0; larb_index < SMI_LARB_NR; larb_index++) {
+-			m4u_err("larb%d: NON_SEC_CON:0x%x\n", larb_index,
+-					M4U_ReadReg32(gLarbBaseAddr[larb_index],
+-					SMI_LARB_NON_SEC_CONx(larb_index)));
+-		}
+-
+ 		if (IntrSrc & (F_INT_MMU0_MAIN_MSK | F_INT_MMU0_MAU_MSK))
+ 			m4u_slave_id = 0;
+ 		else if (IntrSrc & (F_INT_MMU1_MAIN_MSK | F_INT_MMU1_MAU_MSK))
+@@ -2044,6 +2047,13 @@ irqreturn_t MTK_M4U_isr(int irq, void *dev_id)
+ 		regval = M4U_ReadReg32(m4u_base, REG_MMU_INT_ID(m4u_slave_id));
+ 		m4u_port = m4u_get_port_by_tf_id(m4u_index, regval);
+ 		larb_index = m4u_port_2_larb_id(m4u_port);
++		larb_port = m4u_port_2_larb_port(m4u_port);
++
++		/* only the faulting master's larb is known to have power */
++		if (larb_index < SMI_LARB_NR && gLarbBaseAddr[larb_index])
++			m4u_err("larb%d: NON_SEC_CON:0x%x\n", larb_index,
++				M4U_ReadReg32(gLarbBaseAddr[larb_index],
++					SMI_LARB_NON_SEC_CONx(larb_port)));
+ 
+ 		/* dump something quickly */
+ 		///m4u_dump_rs_info(m4u_index, slave_id);
+@@ -2186,7 +2196,7 @@ int m4u_reg_init(struct m4u_domain *m4u_domain, unsigned long ProtectPA,
+ 	unsigned int regval;
+ 	int i;
+ 
+-	m4u_err("%s, ProtectPA = 0x%lx\n", __func__, ProtectPA);
++	m4u_info("%s, ProtectPA = 0x%lx\n", __func__, ProtectPA);
+ 
+ 	/* m4u clock is in infra domain, we never close this clock. */
+ 	m4u_clock_on();
+@@ -2231,9 +2241,9 @@ int m4u_reg_init(struct m4u_domain *m4u_domain, unsigned long ProtectPA,
+ 	/* ============================================= */
+ 	/* m4u registers */
+ 	/* ============================================= */
+-	m4u_err("m4u hw init id = %d, base address: 0x%lx, pgd_pa: 0x%x\n",
+-		m4u_id, gM4UBaseAddr[m4u_id],
+-		(unsigned int)m4u_domain->pgd_pa);
++	m4u_info("m4u hw init id = %d, base address: 0x%lx, pgd_pa: 0x%x\n",
++		 m4u_id, gM4UBaseAddr[m4u_id],
++		 (unsigned int)m4u_domain->pgd_pa);
+ 
+ 	{
+ 		M4U_WriteReg32(gM4UBaseAddr[m4u_id], REG_MMUg_PT_BASE,
+@@ -2279,8 +2289,8 @@ int m4u_reg_init(struct m4u_domain *m4u_domain, unsigned long ProtectPA,
+ #ifdef CONFIG_MTK_SMI_EXT
+ 		M4U_WriteReg32(m4u_base, REG_MMU_IN_ORDER_WR_EN, 0);
+ #endif
+-		m4u_err("m4u inorder setting: 0x%x\n",
+-			M4U_ReadReg32(m4u_base, REG_MMU_IN_ORDER_WR_EN));
++		m4u_info("m4u inorder setting: 0x%x\n",
++			 M4U_ReadReg32(m4u_base, REG_MMU_IN_ORDER_WR_EN));
+ 		/* 3 non-standard AXI mode */
+ 		M4U_WriteReg32(m4u_base, REG_MMU_STANDARD_AXI_MODE, 0);
+ 		/* 4 write command throttling mode */
+@@ -2296,13 +2306,17 @@ int m4u_reg_init(struct m4u_domain *m4u_domain, unsigned long ProtectPA,
+ 
+ int m4u_domain_init(struct m4u_device *m4u_dev, void *priv_reserve)
+ {
++	int ret;
++
+ 	m4u_info("%s\n", __func__);
+ 
+ 	memset(&gM4uDomain, 0, sizeof(gM4uDomain));
+ 	gM4uDomain.pgsize_bitmap = M4U_PGSIZES;
+ 	mutex_init(&gM4uDomain.pgtable_mutex);
+ 
+-	m4u_pgtable_init(m4u_dev, &gM4uDomain);
++	ret = m4u_pgtable_init(m4u_dev, &gM4uDomain);
++	if (ret)
++		return ret;
+ 
+ 	m4u_mvaGraph_init(priv_reserve);
+ 
+@@ -2325,7 +2339,7 @@ int m4u_hw_init(struct m4u_device *m4u_dev, int m4u_id)
+ #ifdef M4U_4GBDRAM
+ 	gM4U_4G_DRAM_Mode = enable_4G();
+ #endif
+-	m4u_err("4G DRAM Mode is: %d\n", gM4U_4G_DRAM_Mode);
++	m4u_info("4G DRAM Mode is: %d\n", gM4U_4G_DRAM_Mode);
+ 
+ 	gM4UBaseAddr[m4u_id] = m4u_dev->m4u_base[m4u_id];
+ 
+@@ -2345,8 +2359,8 @@ int m4u_hw_init(struct m4u_device *m4u_dev, int m4u_id)
+ 		return -1;
+ 	}
+ 
+-	m4u_err("protect memory va=0x%lx, pa=0x%lx.\n",
+-		pProtectVA, (unsigned long)ProtectPA);
++	m4u_info("protect memory va=0x%lx, pa=0x%lx.\n",
++		 pProtectVA, (unsigned long)ProtectPA);
+ 
+ 	pM4URegBackUp = kmalloc(M4U_REG_BACKUP_SIZE, GFP_KERNEL | __GFP_ZERO);
+ 	if (pM4URegBackUp == NULL)
+@@ -2362,7 +2376,7 @@ int m4u_hw_init(struct m4u_device *m4u_dev, int m4u_id)
+ 		return -ENODEV;
+ 	}
+ 
+-	m4u_err("request_irq, irq_num=%d\n", m4u_dev->irq_num[m4u_id]);
++	m4u_info("request_irq, irq_num=%d\n", m4u_dev->irq_num[m4u_id]);
+ 
+ 	m4u_isr_pause_timer_init();
+ 
+@@ -2397,12 +2411,9 @@ int m4u_hw_init(struct m4u_device *m4u_dev, int m4u_id)
+ 		port.ePortID = M4U_PORT_MDP_WROT0;
+ 		m4u_config_port(&port);
+ 
+-		port.ePortID = M4U_PORT_MDP_WROT0;
+-		m4u_config_port(&port);
+-
+ 	}
+ 
+-	m4u_err("config port, done\n");
++	m4u_info("config port, done\n");
+ 	return 0;
+ }
+ 
+-- 
+2.56.0
+

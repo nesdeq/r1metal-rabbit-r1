@@ -1,0 +1,40 @@
+From 501b3ac23bb7fbbf57a1328b1e782fd685a4a08e Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Tue, 13 Oct 2026 15:04:18 +0200
+Subject: [PATCH] clocksource: timer-mediatek: clear the system timer's
+ interrupt on shutdown
+
+The shutdown clears a raised interrupt before it stops the timer: the
+sleep controller wakes on that line (R12_SYS_TIMER_EVENT_B), so a
+suspend entered with it raised ends at once. The clear enables the timer
+first, without which the status does not change. This is mainline
+commit ce9570657d45.
+---
+ drivers/clocksource/timer-mediatek.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/drivers/clocksource/timer-mediatek.c b/drivers/clocksource/timer-mediatek.c
+index 11f6ae680..5227a143b 100644
+--- a/drivers/clocksource/timer-mediatek.c
++++ b/drivers/clocksource/timer-mediatek.c
+@@ -108,6 +108,7 @@ static void __iomem *gpt_sched_reg __read_mostly;
+ static void mtk_syst_ack_irq(struct timer_of *to)
+ {
+ 	/* Clear and disable interrupt */
++	writel(SYST_CON_EN, SYST_CON_REG(to));
+ 	writel(SYST_CON_IRQ_CLR | SYST_CON_EN, SYST_CON_REG(to));
+ }
+ 
+@@ -152,6 +153,9 @@ static int mtk_syst_clkevt_next_event(unsigned long ticks,
+ 
+ static int mtk_syst_clkevt_shutdown(struct clock_event_device *clkevt)
+ {
++	/* Clear a pending interrupt: the sleep controller wakes on it */
++	mtk_syst_ack_irq(to_timer_of(clkevt));
++
+ 	/* Disable timer */
+ 	writel(0, SYST_CON_REG(to_timer_of(clkevt)));
+ 
+-- 
+2.56.0
+

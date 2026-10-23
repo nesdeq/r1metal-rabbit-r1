@@ -1,0 +1,42 @@
+From 01225cdeb16e415ea2ffeb1bde0003c80648c343 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 14 Oct 2026 18:21:50 +0200
+Subject: [PATCH] thermal: the PMIC zones' per-read trace is off by default
+
+mtktspmic_debug_log starts at 0 and the probe leaves it there, so the
+PMIC and buck zones trace a temperature read only while
+/proc/driver/thermal/tzpmic_log sets it.
+---
+ .../misc/mediatek/thermal/common/thermal_zones/mtk_ts_pmic.c    | 2 --
+ drivers/misc/mediatek/thermal/mt6765/src/mtk_pmic_efuse.c       | 2 +-
+ 2 files changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_pmic.c b/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_pmic.c
+index 203a34d33..bcdafeaff 100644
+--- a/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_pmic.c
++++ b/drivers/misc/mediatek/thermal/common/thermal_zones/mtk_ts_pmic.c
+@@ -673,8 +673,6 @@ static int mtk_ts_pmic_probe(struct platform_device *pdev)
+ 	struct proc_dir_entry *mtktspmic_dir = NULL;
+ 	struct mt6397_chip *chip;
+ 
+-	mtktspmic_debug_log = 1;
+-
+ 	chip = (struct mt6397_chip *)dev_get_drvdata(pdev->dev.parent);
+ 	mtktspmic_info("[%s]\n", __func__);
+ 
+diff --git a/drivers/misc/mediatek/thermal/mt6765/src/mtk_pmic_efuse.c b/drivers/misc/mediatek/thermal/mt6765/src/mtk_pmic_efuse.c
+index b2a2feadd..b042ba3b4 100644
+--- a/drivers/misc/mediatek/thermal/mt6765/src/mtk_pmic_efuse.c
++++ b/drivers/misc/mediatek/thermal/mt6765/src/mtk_pmic_efuse.c
+@@ -33,7 +33,7 @@
+  *Local variable definition
+  *=============================================================
+  */
+-int mtktspmic_debug_log = 1;
++int mtktspmic_debug_log;
+ /* Cali */
+ static __s32 g_o_vts;
+ static __s32 g_o_vts_2;
+-- 
+2.56.0
+

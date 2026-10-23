@@ -1,0 +1,60 @@
+From 6d8c650f9aa51810b9fcc642ac606c17347b9d74 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 10:13:08 +0200
+Subject: [PATCH] charger: under JEITA the algorithms are told the limits in
+ force
+
+Under software JEITA select_charging_current_limit fills the limits
+handed to the charger algorithms: -1, or JEITA's or a thermal cooler's
+current where it binds. Upstream leaves them at 0 under JEITA, which
+mtk_pd takes as a limit, answering ALG_NOT_READY with every adapter.
+---
+ drivers/power/supply/mtk_basic_charger.c | 16 ++++++++++++++--
+ 1 file changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/power/supply/mtk_basic_charger.c b/drivers/power/supply/mtk_basic_charger.c
+index 9d25dccdc..3f67389b1 100644
+--- a/drivers/power/supply/mtk_basic_charger.c
++++ b/drivers/power/supply/mtk_basic_charger.c
+@@ -205,24 +205,36 @@ static bool select_charging_current_limit(struct mtk_charger *info,
+ 	}
+ 
+ 	if (info->enable_sw_jeita) {
++		/* The setting tells the algorithms the limits in force, -1 where none. */
++		info->setting.input_current_limit1 = -1;
++		info->setting.charging_current_limit1 = -1;
++		info->setting.input_current_limit2 = -1;
++		info->setting.charging_current_limit2 = -1;
+ 		if (IS_ENABLED(CONFIG_USBIF_COMPLIANCE)
+ 			&& info->chr_type == POWER_SUPPLY_TYPE_USB)
+ 			chr_debug("USBIF & STAND_HOST skip current check\n");
+ 		else if (pdata->charging_current_limit > info->sw_jeita.cc) {
+ 			chr_debug("[%s] jeita cc:%duA\n", __func__, info->sw_jeita.cc);
+ 			pdata->charging_current_limit = info->sw_jeita.cc;
++			info->setting.charging_current_limit1 = info->sw_jeita.cc;
+ 		}
+ 		/* The thermal coolers' limits apply with JEITA too: the lower limit wins. */
+ 		if (pdata->thermal_charging_current_limit != -1 &&
+ 		    pdata->thermal_charging_current_limit <
+-				pdata->charging_current_limit)
++				pdata->charging_current_limit) {
+ 			pdata->charging_current_limit =
+ 				pdata->thermal_charging_current_limit;
++			info->setting.charging_current_limit1 =
++				pdata->thermal_charging_current_limit;
++		}
+ 		if (pdata->thermal_input_current_limit != -1 &&
+ 		    pdata->thermal_input_current_limit <
+-				pdata->input_current_limit)
++				pdata->input_current_limit) {
+ 			pdata->input_current_limit =
+ 				pdata->thermal_input_current_limit;
++			info->setting.input_current_limit1 =
++				pdata->thermal_input_current_limit;
++		}
+ 	} else {
+ 		/* not support charge control interface for thermal
+ 		 * if sw jeita is enabled, which will replace thermal policy
+-- 
+2.56.0
+

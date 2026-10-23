@@ -1,0 +1,32 @@
+From 6c675674e389e2a18450d7b1b477536e5055a6aa Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 19 Oct 2026 19:20:57 +0200
+Subject: [PATCH] mt6357-charger-type: a tree without the boot mode phandle
+ boots normally
+
+check_boot_mode returns without an error line, leaving the normal boot
+mode, where the node has no bootmode property, as on the R1. A bootmode
+phandle that does not resolve, or a boot node without atag,boot, is
+still an error.
+---
+ drivers/power/supply/mt6357-charger-type.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/drivers/power/supply/mt6357-charger-type.c b/drivers/power/supply/mt6357-charger-type.c
+index d6c61f643..246afb292 100644
+--- a/drivers/power/supply/mt6357-charger-type.c
++++ b/drivers/power/supply/mt6357-charger-type.c
+@@ -761,6 +761,10 @@ static int check_boot_mode(struct mtk_charger_type *info, struct device *dev)
+ 	struct device_node *boot_node = NULL;
+ 	struct tag_bootmode *tag = NULL;
+ 
++	/* a tree without the phandle leaves the boot mode normal */
++	if (!of_find_property(dev->of_node, "bootmode", NULL))
++		return 0;
++
+ 	boot_node = of_parse_phandle(dev->of_node, "bootmode", 0);
+ 	if (!boot_node)
+ 		pr_notice("%s: failed to get boot mode phandle\n", __func__);
+-- 
+2.56.0
+

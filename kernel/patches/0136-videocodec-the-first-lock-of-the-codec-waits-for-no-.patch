@@ -1,0 +1,51 @@
+From 05139f945cf750d137b41a9002efbc11de441223 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Tue, 20 Oct 2026 09:23:18 +0200
+Subject: [PATCH] videocodec: the first lock of the codec waits for no unlock
+
+The first lock of the codec block after boot, in vcodec_lockhw_vdec and
+vcodec_lockhw_venc, looks at the block without waiting on HWLockEvent,
+which no unlock has set yet; upstream's wait times out at once and
+prints an error before it takes the free block.
+---
+ .../videocodec/mt6765/videocodec_kernel_driver.c | 16 ++--------------
+ 1 file changed, 2 insertions(+), 14 deletions(-)
+
+diff --git a/drivers/misc/mediatek/videocodec/mt6765/videocodec_kernel_driver.c b/drivers/misc/mediatek/videocodec/mt6765/videocodec_kernel_driver.c
+index c90e301bb..290ad64c0 100644
+--- a/drivers/misc/mediatek/videocodec/mt6765/videocodec_kernel_driver.c
++++ b/drivers/misc/mediatek/videocodec/mt6765/videocodec_kernel_driver.c
+@@ -987,13 +987,7 @@ static long vcodec_lockhw_vdec(struct VAL_HW_LOCK_T *pHWLock, char *bLockedHW)
+ 		}
+ 		mutex_unlock(&HWLockEventTimeoutLock);
+ 
+-		if (FirstUseDecHW == 1) {
+-			/* Add one line comment for avoid kernel coding style,
+-			 * WARNING:BRACES:
+-			 */
+-			eValRet = eVideoWaitEvent(&HWLockEvent,
+-						sizeof(struct VAL_EVENT_T));
+-		}
++		/* The first lock waits for no unlock: none has set the event yet. */
+ 		mutex_lock(&HWLockEventTimeoutLock);
+ 		if (HWLockEvent.u4TimeoutMs != 1000) {
+ 			HWLockEvent.u4TimeoutMs = 1000;
+@@ -1221,14 +1215,8 @@ static long vcodec_lockhw_venc(struct VAL_HW_LOCK_T *pHWLock, char *bLockedHW)
+ 			FirstUseEncHW = 0;
+ 		}
+ 		mutex_unlock(&HWLockEventTimeoutLock);
+-		if (FirstUseEncHW == 1) {
+-			/* Add one line comment for avoid kernel coding
+-			 * style, WARNING:BRACES:
+-			 */
+-			eValRet = eVideoWaitEvent(&HWLockEvent,
+-						sizeof(struct VAL_EVENT_T));
+-		}
+ 
++		/* The first lock waits for no unlock: none has set the event yet. */
+ 		mutex_lock(&HWLockEventTimeoutLock);
+ 		if (HWLockEvent.u4TimeoutMs == 1) {
+ 			HWLockEvent.u4TimeoutMs = 1000;
+-- 
+2.56.0
+

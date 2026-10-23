@@ -1,0 +1,29 @@
+From a3deb78bae9fb7dbaf75cb4d3738a8a58ac70c47 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Tue, 20 Oct 2026 11:07:35 +0200
+Subject: [PATCH] musb: a SetupEnd with no data stage to end is told as such
+
+musb_g_ep0_irq tells a SetupEnd outside ep0's TX and RX data stages in
+one line with the stage and CSR0, as one with no data stage of the
+driver's to end, instead of calling the stage wrong.
+---
+ drivers/misc/mediatek/usb20/musb_gadget_ep0.c | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/drivers/misc/mediatek/usb20/musb_gadget_ep0.c b/drivers/misc/mediatek/usb20/musb_gadget_ep0.c
+index a0f52f4a4..b7de743ea 100644
+--- a/drivers/misc/mediatek/usb20/musb_gadget_ep0.c
++++ b/drivers/misc/mediatek/usb20/musb_gadget_ep0.c
+@@ -777,8 +777,7 @@ irqreturn_t musb_g_ep0_irq(struct musb *musb)
+ 			musb->ep0_state = MUSB_EP0_STAGE_STATUSIN;
+ 			break;
+ 		default:
+-			pr_notice("SetupEnd came in a wrong ep0stage %s\n"
+-					"SetupEnd, csr = %x\n",
++			pr_notice("SetupEnd in stage %s, with no data stage of the driver's to end, csr %x\n",
+ 				decode_ep0stage(musb->ep0_state), csr);
+ 			setup_end_err = true;
+ 		}
+-- 
+2.56.0
+

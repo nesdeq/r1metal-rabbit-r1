@@ -1,0 +1,32 @@
+From a7c10fc427ea53f1dfd417fd48e3b8bfc2cc9d53 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Wed, 21 Oct 2026 10:42:33 +0200
+Subject: [PATCH] rtnetlink: the hold monitor names the time its timer waits
+
+rtnl_print_btrace names RTNL_LOCK_MAX_HOLD_TIME, the 3 s its timer
+waits, in place of a fixed 2, and prints the start time, an unsigned
+long long, with %llu.
+---
+ net/core/rtnetlink.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/net/core/rtnetlink.c b/net/core/rtnetlink.c
+index d044a8c8d..ea1d0b400 100644
+--- a/net/core/rtnetlink.c
++++ b/net/core/rtnetlink.c
+@@ -121,10 +121,11 @@ static void rtnl_print_btrace(struct timer_list *unused)
+ 		show_trace.entries = rtnl_instance.addrs;
+ 		show_trace.max_entries = RTNL_DEBUG_ADDRS_COUNT;
+ 		pr_info("-----------%s start-----------\n", __func__);
+-		pr_info("[mtk_net][rtnl_lock] %s[%d][%c] hold lock more than 2 sec,start time: %lld\n",
++		pr_info("[mtk_net][rtnl_lock] %s[%d][%c] hold lock more than %d sec,start time: %llu\n",
+ 			rtnl_instance.task->comm,
+ 			rtnl_instance.pid,
+ 			task_state_to_char(rtnl_instance.task),
++			RTNL_LOCK_MAX_HOLD_TIME,
+ 			rtnl_instance.start);
+ 
+ 		print_stack_trace(&show_trace, 0);
+-- 
+2.56.0
+
