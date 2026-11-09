@@ -1,0 +1,81 @@
+From 4d0184b1d650914a3160175bb71052f4d30b6cf7 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Sat, 24 Oct 2026 23:22:05 +0200
+Subject: [PATCH] power: mt6370: a charger told to stop stays stopped when its
+ input returns
+
+The MT6370 sets CHG_EN again while its input is gone. A USB PD hard
+reset, which a sink sends when the source's capabilities do not come in
+time, takes VBUS away for about a second; the charger then charges a
+battery the charger manager holds at its level (cmd_discharging), while
+the manager still reports Not charging. The driver keeps what CHG_EN was
+last set to and sets it so again as the power path comes back on.
+---
+ .../mediatek/pmic/mt6370/mt6370_pmu_charger.c    | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_charger.c b/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_charger.c
+index cc6900ddb..d7ca74de8 100755
+--- a/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_charger.c
++++ b/drivers/misc/mediatek/pmic/mt6370/mt6370_pmu_charger.c
+@@ -185,6 +185,8 @@ struct mt6370_pmu_charger_data {
+ 	struct regulator_dev *otg_rdev;
+ 
+ 	bool pp_en;
++	/* What CHG_EN was last set to: the chip sets it again without input */
++	bool chg_en;
+ 	union power_supply_propval *old_propval;
+ };
+ 
+@@ -1957,6 +1959,8 @@ static int mt6370_enable_charging(struct charger_device *chg_dev, bool en)
+ 		(chg_data->chip, MT6370_PMU_REG_CHGCTRL2, MT6370_MASK_CHG_EN);
+ 	if (ret < 0)
+ 		dev_notice(chg_data->dev, "%s: fail, en = %d\n", __func__, en);
++	else
++		chg_data->chg_en = en;
+ 	mutex_unlock(&chg_data->ichg_access_lock);
+ 	mt6370_power_supply_changed(chg_data);
+ 	return ret;
+@@ -2059,6 +2063,7 @@ static int mt6370_is_safety_timer_enable(struct charger_device *chg_dev,
+ static int mt6370_enable_power_path(struct charger_device *chg_dev, bool en)
+ {
+ 	int ret = 0;
++	bool back = false;
+ 	struct mt6370_pmu_charger_data *chg_data =
+ 		dev_get_drvdata(&chg_dev->dev);
+ 
+@@ -2068,6 +2073,7 @@ static int mt6370_enable_power_path(struct charger_device *chg_dev, bool en)
+ 				__func__, en, chg_data->pp_en);
+ 	if (en == chg_data->pp_en)
+ 		goto out;
++	back = en;
+ 
+ 	ret = (en ? mt6370_pmu_reg_clr_bit : mt6370_pmu_reg_set_bit)
+ 		(chg_data->chip, MT6370_PMU_REG_CHGCTRL1,
+@@ -2085,6 +2091,15 @@ static int mt6370_enable_power_path(struct charger_device *chg_dev, bool en)
+ 	chg_data->pp_en = en;
+ out:
+ 	mutex_unlock(&chg_data->pp_lock);
++	/*
++	 * The chip sets CHG_EN while its input is gone, as on a USB PD hard
++	 * reset: a charger told to stop is stopped again as the input returns.
++	 */
++	if (back && !chg_data->chg_en) {
++		dev_info(chg_data->dev, "%s: input back, charging stays off\n",
++			 __func__);
++		mt6370_enable_charging(chg_dev, false);
++	}
+ 	return ret;
+ }
+ 
+@@ -4787,6 +4802,7 @@ static int mt6370_pmu_charger_probe(struct platform_device *pdev)
+ 	mutex_init(&chg_data->attach_lock);
+ #endif
+ 	chg_data->pp_en = true;
++	chg_data->chg_en = true;
+ 	chg_data->old_propval =
+ 		devm_kcalloc(chg_data->dev, mt6370_pmu_chg_desc.num_properties,
+ 			     sizeof(*chg_data->old_propval), GFP_KERNEL);
+-- 
+2.47.3
+

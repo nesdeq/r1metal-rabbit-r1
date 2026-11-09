@@ -1,0 +1,39 @@
+From b767d331130f1ea55fadacaa5cf55868c59abcee Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Thu, 29 Oct 2026 12:57:15 +0100
+Subject: [PATCH] charger: current_cmd resumes charging through the charger
+ thread
+
+The charger thread switches the chip only where its decision changes:
+a charge that current_cmd switches on behind it stays on while the
+thread holds charging off for JEITA, the safety timer or VBUS, and
+do_algorithm, which sets the currents and the voltage, does not run
+meanwhile. 0 0 no longer sets CHG_EN; it clears the hold and leaves
+the chip to the thread. Every write wakes the thread, so that a hold
+also reaches the chip after a pass under way, whose do_algorithm
+switches charging on.
+---
+ drivers/power/supply/mtk_charger.c | 5 ++---
+ 1 file changed, 2 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/power/supply/mtk_charger.c b/drivers/power/supply/mtk_charger.c
+index 5fb51dca2..6f69a2d17 100644
+--- a/drivers/power/supply/mtk_charger.c
++++ b/drivers/power/supply/mtk_charger.c
+@@ -1023,11 +1023,10 @@ static ssize_t mtk_chg_current_cmd_write(struct file *file,
+ 			charger_dev_do_event(info->chg1_dev,
+ 					EVENT_DISCHARGE, 0);
+ 		} else if (cmd_discharging == 0) {
++			/* charging resumes where the charger thread allows */
+ 			info->cmd_discharging = false;
+-			charger_dev_enable(info->chg1_dev, true);
+-			charger_dev_do_event(info->chg1_dev,
+-					EVENT_RECHARGE, 0);
+ 		}
++		_wake_up_charger(info);
+ 
+ 		chr_info("%s: current_unlimited=%d, cmd_discharging=%d\n",
+ 			__func__, current_unlimited, cmd_discharging);
+-- 
+2.56.0
+

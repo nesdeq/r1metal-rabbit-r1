@@ -4,7 +4,7 @@ r1metal's kernel is Rabbit's published Linux 4.19 for the R1 with Rabbit's Media
 
 | Tree | Source | Commit | Patches |
 |---|---|---|---|
-| Kernel, at `src` | [android_kernel_rabbit_mt6765](https://github.com/rabbit-hmi-oss/android_kernel_rabbit_mt6765) | `8167c8c1087f057d2ef302fc93b47554291687ec` | [`patches/`](patches), 201 |
+| Kernel, at `src` | [android_kernel_rabbit_mt6765](https://github.com/rabbit-hmi-oss/android_kernel_rabbit_mt6765) | `8167c8c1087f057d2ef302fc93b47554291687ec` | [`patches/`](patches), 207 |
 | Drivers, at `vendor/mediatek/kernel_modules` | [android_kernel_modules_rabbit_mt6765](https://github.com/rabbit-hmi-oss/android_kernel_modules_rabbit_mt6765) | `0afdf059a0dfa17becc4bbe47363280a42224c2f` | [`module-patches/`](module-patches), 56 |
 
 [`config`](config) is the configuration of Rabbit's own kernel (rabbitOS v0.8.293). [`config.changes`](config.changes) holds where r1metal departs from it: each symbol it names takes its line from there ([`merge-config.awk`](merge-config.awk)). The compiler lines `config` carries are those of Rabbit's build (Android clang 11); `make olddefconfig` sets them from the compiler on the path, LLVM 23.1.3, which builds r1metal's kernel.

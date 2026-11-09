@@ -48,7 +48,7 @@ Writes the boot image and the overlay to the slot the R1 does not boot from, and
 | `--wipe` | Erase user data first: everything r1metal keeps. |
 | `--log off\|on\|debug` | How much the R1 logs from its first line until logging is set on the R1 (the debug screen's LOG line, or `./r1 sh log`). `debug` also logs debug lines. Default `on`. |
 
-Before it writes anything, `flash` checks the boot image and the overlay, then asks for an OpenAI key. The key is not shown as it is typed, and `flash` checks it with OpenAI. Enter flashes without a key. An R1 that runs r1metal and already keeps a key is not asked. The R1 keeps the key unencrypted in `/data/.r1metal/openai/key`.
+Once it has checked the boot image and the overlay and brought the R1 into fastboot, and before it writes anything, `flash` asks for an OpenAI key. The key is not shown as it is typed, and `flash` checks it with OpenAI. Enter flashes without a key. An R1 that runs r1metal with its safe open and already keeps a key is not asked, unless the flash erases user data and with it the key: with `--wipe`, or where the bootloader has to be unlocked. The R1 keeps the key in `/data/.r1metal/openai/key`, in the safe its passphrase opens.
 
 `flash` reaches the R1 powered off or running r1metal:
 
@@ -127,12 +127,7 @@ Every r1metal accepts these verbs:
 | `clock SECONDS MINUTES` | Sets the clocks to seconds since the epoch (UTC) and the UTC offset to minutes. `./r1 sh clock` sends this computer's. |
 | `time` | Queries the time and place services. |
 | `radio on`, `radio off` | Keeps the radio powered until `off` or the next sleep. |
-| `scan [MHZ...]`, `scan ask [MHZ...]` | One passive Wi-Fi scan, or one the driver may make active, on those channels or all. |
-| `channels` | Logs how the kernel's rules mark each channel. |
-| `link on`, `link off` | Joins the default network and stays on it until `off`, a sleep, or the network is lost. |
-| `resolve NAME` | A name's addresses. |
-| `fetch URL` | A page's status, length, SHA-256 and timings. |
-| `talk URL TEXT` | A WebSocket echo. |
+| `link on`, `link off` | Joins the default network and stays on it until `off`, a sleep, or the network is lost. Refused where no network is known. |
 | `news` | Builds the day's edition again. |
 | `chat TEXT` | The conversation takes `TEXT` as if it were typed on its screen. The reply is spoken unless muted. |
 | `record on`, `record off` | Starts a screen recording or stops it. |
@@ -146,13 +141,8 @@ The firmware on the release page also has the debug shell, which adds these verb
 | `ls PATH`, `cat PATH`, `dmesg` | A directory's entries, a file's text, or the kernel log. |
 | `write PATH TEXT`, `rm PATH`, `mkdir PATH`, `rmdir PATH` | Writes a file, removes one file, creates a directory with its parents, or removes an empty directory. |
 | `read PATH OFFSET LENGTH`, `append PATH BASE64` | Part of a file as one base64 line, or decoded base64 appended to a file. |
-| `run PATH [ARGUMENT...]` | Makes the file executable and runs it. Answers its output, errors and exit status. |
-| `sys NUMBER [ARGUMENT...]` | A system call with up to six arguments. Answers the return value and errno. |
-| `peek ADDRESS LENGTH`, `poke ADDRESS HEX`, `rd32 ADDRESS COUNT`, `wr32 ADDRESS WORD...` | The app's memory in hex. `rd32` and `wr32` access mapped registers one 32-bit word at a time. |
-| `later SECONDS PATH TEXT` | Writes a file after a delay, to undo a change that cuts the console off. |
-| `burn THREADS SECONDS`, `hog BUSY_MS IDLE_MS TIMES` | Busy cores for thermal tests, or a competing thread on the drawing thread's core for pacing tests. |
-| `decode PATH FRAMES` | Runs an MP4's samples through the hardware decoder. |
-| `tone HERTZ MILLISECONDS UNDER`, `heard PATH`, `play PATH` | Plays a tone, describes an MP4's audio per second, or plays an MP4. All at the set volume. |
+
+The shell never reaches Signal's files, the memory of any process or a file held in memory alone, however the path is written.
 
 ## logs
 
@@ -189,7 +179,7 @@ Logs contain network names, addresses and device identifiers.
 ./r1 record FILE.mp4
 ```
 
-Records the screen into an H.264 MP4 at 60 frames a second until Ctrl-C. It needs `ffmpeg` with `libx264` on this computer. The first Ctrl-C waits for the last frames, and a second one exits at once. Tried from Linux only.
+Records the screen into an H.264 MP4 at 60 frames a second until Ctrl-C. It needs `ffmpeg` with `libx264` on this computer. The first Ctrl-C waits for the last frames, and a second one exits at once. Works from macOS and Linux.
 
 ## bootloader
 
@@ -205,7 +195,7 @@ Prints the bootloader's variables and its log. The R1 stays in fastboot.
 ./r1 build [--stock DIR] [--out FILE] [--overlay FILE] [--enable-extras]
 ```
 
-Builds the kernel and the firmware from r1metal's source, which follows. `build` runs only on Linux on x86-64. The first build fetches the kernel's source, Rabbit's modules, LLVM and musl, about 17 GB.
+Builds the kernel and the firmware from r1metal's source, which follows. `build` runs on Linux on x86-64 or arm64, and on macOS in a Lima VM. The first build fetches the kernel's source, Rabbit's modules, LLVM and musl, about 17 GB.
 
 | Option | |
 |---|---|

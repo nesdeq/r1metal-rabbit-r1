@@ -2,7 +2,10 @@
 
 <h1 align="center">r1metal: custom firmware for the Rabbit R1</h1>
 
-<p align="center">Rabbit OS out. Linux and one fast Rust program (direct to hardware) in, and the whole firmware is<br><b>under 15 MB</b><br>YES YOU READ THAT RIGHT!<br>Your Rabbit R1 becomes a quick, quiet AI companion that runs on your own OpenAI key.</p>
+<p align="center">Rabbit OS out. Linux and one fast Rust program (direct to hardware) in, and the whole firmware is<br><b>under 16 MB</b><br>YES YOU READ THAT RIGHT!<br>Your Rabbit R1 becomes a quick, quiet AI companion that runs on your own OpenAI key.</p>
+
+<p align="center"><a href="docs/video/r1metal-demo.mp4"><img src="docs/images/demo.gif" alt="r1metal on a Rabbit R1: the robot answers and switches between the six themes, the timer counts down beside the battery, photos show as pixel art and as taken, the palettes change the colors"></a></p>
+<p align="center"><a href="docs/video/r1metal-demo.mp4"><b>Watch the full demo</b></a> (4:43, recorded on the R1) · <a href="docs/MANUAL.md"><b>Read the manual</b></a> (<a href="docs/MANUAL.pdf">PDF</a>)</p>
 
 <p align="center"><b>Stage</b> · One large icon at a time</p>
 <p align="center">
@@ -58,19 +61,32 @@
   <img src="docs/images/companion-themes.png" width="13.5%" alt="Rabbit R1 running r1metal, Companion theme, themes">
   <img src="docs/images/companion-chat.png" width="13.5%" alt="Rabbit R1 running r1metal, Companion theme, chat">
 </p>
-<p align="center"><sub>Five themes, ten color palettes each</sub></p>
+
+<p align="center"><b>Rail</b> · The rail keeps your place</p>
+<p align="center">
+  <img src="docs/images/rail-home.png" width="13.5%" alt="Rabbit R1 running r1metal, Rail theme, home">
+  <img src="docs/images/rail-settings.png" width="13.5%" alt="Rabbit R1 running r1metal, Rail theme, settings">
+  <img src="docs/images/rail-notes.png" width="13.5%" alt="Rabbit R1 running r1metal, Rail theme, notes">
+  <img src="docs/images/rail-power.png" width="13.5%" alt="Rabbit R1 running r1metal, Rail theme, power">
+  <img src="docs/images/rail-pictures.png" width="13.5%" alt="Rabbit R1 running r1metal, Rail theme, pictures">
+  <img src="docs/images/rail-themes.png" width="13.5%" alt="Rabbit R1 running r1metal, Rail theme, themes">
+  <img src="docs/images/rail-chat.png" width="13.5%" alt="Rabbit R1 running r1metal, Rail theme, chat">
+</p>
+<p align="center"><sub>Six themes, sixteen color palettes each</sub></p>
 
 ## What you get
 
 - **60 frames a second, everywhere. Every screen, every scroll of the wheel.**
 - **A week on standby. Days of normal use on a charge.**
-- **An AI that knows you.** One endless conversation that searches the web, remembers you, opens screens when you ask and answers aloud.
+- **An AI that knows you.** One endless conversation that searches the web, remembers you, opens screens, sets an alarm or a timer, looks at a photo you show it and answers aloud.
+- **Signal.** Link the R1 to your Signal account: read, type or say messages, one to one and in groups, with photos and voice notes. Auto mode lets the AI answer a contact for you.
 - **Voice notes.** Recorded, transcribed, summarized, saved as Markdown and PDF.
 - **Live translator** between two languages.
-- **A real camera.** 2048×2048 photos, 720p video at 60 fps with sound, and any photo redrawn as pixel art in about 13 seconds.
+- **A real camera.** 2448×2448 photos merged from bursts of frames, 720p video at 60 fps with sound, and any photo redrawn as pixel art in about 13 seconds.
 - **A morning paper.** A daily edition of news and finance from 47 sources.
+- **Encrypted.** A passphrase locks your keys, passwords, Signal and settings.
 - **Your files on your computer.** Plug the R1 in and it shows up as a drive.
-- **No subscription.** You pay OpenAI only for what you use.
+- **No subscription.** You pay OpenAI only for what you use, up to a monthly limit you set.
 - **Rabbit OS is one command away**, whenever you want it back.
 
 ## Controls
@@ -79,11 +95,11 @@
 - **Push-to-talk button:** press to open, hold to talk.
 - **Swipe in from the left:** back. **From the top:** home.
 - **The robot:** when its antennas blink, tap it for what fits the screen: read a text aloud, mute the chat and type instead, switch a photo between pixel art and the real shot.
-- **Sleep:** after 2 minutes untouched, nothing to configure. Press the button to wake.
+- **Sleep:** after 1 minute untouched, nothing to configure. Press the button to wake.
 
 ## How?
 
-Linux 4.19, from Rabbit's published source with 257 patches of our own, drives the hardware. One static Rust program is the whole system: `/init`, process 1. No Android, no shell, no vendor libraries. It programs the camera and the codecs register by register and draws every pixel itself. All of it is built with LLVM 23.1 for the R1's Cortex-A53: the program by Rust 1.99 at `opt-level = 3` with full LTO into one codegen unit, its C by clang at `-O3`, the kernel with ThinLTO.
+Linux 4.19, from Rabbit's published source with 263 patches of our own, drives the hardware. One static Rust program is the whole system: `/init`, process 1. No Android, no shell, no vendor libraries. It programs the camera and the codecs register by register and draws every pixel itself. All of it is built with LLVM 23.1 for the R1's Cortex-A53: the program by Rust 1.99 at `opt-level = 3` with full LTO into one codegen unit, its C by clang at `-O3`, the kernel with ThinLTO.
 
 That fixes what held the R1 back:
 
@@ -142,11 +158,13 @@ curl -LO $base/boot.img -LO $base/dtbo.img
 
 Paste your OpenAI key when asked; `r1` checks it and puts it on the R1. The first flash erases the R1. When `r1` is done, the R1 starts r1metal.
 
-**4. Join your Wi-Fi** under Settings › WiFi.
+**4. Choose a passphrase** of 6 to 12 characters when the R1 first starts, and type it again. It encrypts your keys, passwords, Signal and settings, and the R1 asks for it at every start. Nothing recovers a lost one: only a flash with `--wipe` starts over, erasing everything.
+
+**5. Join your Wi-Fi** under Settings › WiFi.
 
 **No key at hand?** Press Enter instead. The R1 then asks for it in a window: join your Wi-Fi from there, choose **SCAN QR CODE**, run `./r1 key --qr`, paste your key and hold the R1's camera to the code.
 
-**5. Charge the R1 to full once** on r1metal, and you're done. The battery level adapts to your R1's battery, and the first full charge calibrates it; until then the battery icon shows no level.
+**6. Charge the R1 to full once** on r1metal, and you're done. The battery level adapts to your R1's battery, and the first full charge calibrates it; until then the battery icon shows no level.
 
 ## Back to Rabbit OS
 

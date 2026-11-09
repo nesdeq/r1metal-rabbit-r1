@@ -1,0 +1,36 @@
+From 0710e9dbe54b99a7f827dfc94b46b10a400e37e3 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Sat, 24 Oct 2026 09:36:25 +0000
+Subject: [PATCH] usb: gadget: u_serial: a process that exits waits for no host
+ to read
+
+gs_close waits up to GS_CLOSE_TIMEOUT, 15 s, for what was written to
+drain while a host is connected, and discards the rest. A process
+that exits never writes again: its last close of the port waits for
+nothing and discards what is left at once, so that a process whose
+host reads nothing is not kept from its end for 15 s.
+---
+ drivers/usb/gadget/function/u_serial.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/usb/gadget/function/u_serial.c b/drivers/usb/gadget/function/u_serial.c
+index c99dc37f9..84df853f0 100644
+--- a/drivers/usb/gadget/function/u_serial.c
++++ b/drivers/usb/gadget/function/u_serial.c
+@@ -783,9 +783,11 @@ static void gs_close(struct tty_struct *tty, struct file *file)
+ 		gser->disconnect(gser);
+ 
+ 	/* wait for circular write buffer to drain, disconnect, or at
+-	 * most GS_CLOSE_TIMEOUT seconds; then discard the rest
++	 * most GS_CLOSE_TIMEOUT seconds; then discard the rest; a
++	 * process that exits waits for no host, and discards it at once
+ 	 */
+-	if (kfifo_len(&port->port_write_buf) > 0 && gser) {
++	if (kfifo_len(&port->port_write_buf) > 0 && gser &&
++	    !(current->flags & PF_EXITING)) {
+ 		spin_unlock_irq(&port->port_lock);
+ 		wait_event_interruptible_timeout(port->drain_wait,
+ 					gs_writes_finished(port),
+-- 
+2.56.0
+

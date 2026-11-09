@@ -53,6 +53,10 @@ CONFIG_NR_CPUS=8
 CONFIG_F2FS_FS=y
 # CONFIG_F2FS_FS_COMPRESSION is not set
 
+# The filesystem encrypts the private directory of the data partition with a key the passphrase gives (fscrypt), which takes the kernel's keys.
+CONFIG_FS_ENCRYPTION=y
+CONFIG_KEYS=y
+
 # Devices that exist only inside virtual machines.
 # CONFIG_VIRTIO_BLK is not set
 # CONFIG_VIRTIO_NET is not set
@@ -100,7 +104,6 @@ CONFIG_F2FS_FS=y
 # CONFIG_SECURITY_PERF_EVENTS_RESTRICT is not set
 # CONFIG_INTEGRITY is not set
 # CONFIG_NETWORK_SECMARK is not set
-# CONFIG_KEYS is not set
 # CONFIG_SYSTEM_TRUSTED_KEYRING is not set
 # CONFIG_SYSTEM_DATA_VERIFICATION is not set
 # CONFIG_ASYMMETRIC_KEY_TYPE is not set
@@ -110,11 +113,7 @@ CONFIG_CFG80211_CERTIFICATION_ONUS=y
 # CONFIG_CFG80211_REQUIRE_SIGNED_REGDB is not set
 # CONFIG_CFG80211_USE_KERNEL_REGDB_KEYS is not set
 
-# /dev/mem, to read the GIC's trigger setup and the SPM's power status, which no driver shows.
-CONFIG_DEVMEM=y
-# CONFIG_STRICT_DEVMEM is not set
-
-# Device mapper, verity, encryption, overlays and quotas; r1metal mounts f2fs, fuse, tmpfs, configfs, pstore and tracefs only.
+# Device mapper, verity, block encryption, overlays and quotas; r1metal mounts f2fs, fuse, tmpfs, configfs, pstore and tracefs only.
 # CONFIG_MD is not set
 # CONFIG_BLK_DEV_DM is not set
 # CONFIG_DM_CRYPT is not set
@@ -124,7 +123,6 @@ CONFIG_DEVMEM=y
 # CONFIG_DM_BOW is not set
 # CONFIG_DM_USER is not set
 # CONFIG_FS_VERITY is not set
-# CONFIG_FS_ENCRYPTION is not set
 # CONFIG_BLK_INLINE_ENCRYPTION is not set
 # CONFIG_OVERLAY_FS is not set
 # CONFIG_INCREMENTAL_FS is not set

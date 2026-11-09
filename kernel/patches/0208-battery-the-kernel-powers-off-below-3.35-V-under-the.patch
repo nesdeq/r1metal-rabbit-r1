@@ -1,32 +1,33 @@
-From c8d5bead5238b4325d3bcf0439f81b28fd28eb87 Mon Sep 17 00:00:00 2001
+From 76c9427a60de0f1292d939efb0b4470a1526b5ed Mon Sep 17 00:00:00 2001
 From: r1metal <r1metal@localhost>
-Date: Wed, 21 Oct 2026 10:19:44 +0200
-Subject: [PATCH] battery: the kernel powers off below 3.4 V behind the
+Date: Sat, 7 Nov 2026 12:33:34 +0100
+Subject: [PATCH] battery: the kernel powers off below 3.35 V, under the
  firmware's cut
 
 low_bat_net_work reads the gauge's voltage and current every 10 s and
-powers off, after a sync, once the last 6 readings average under
-BAT_VOLTAGE_LOW_BOUND (3400 mV) while discharging; a suspend empties the
-window. Upstream's voltage cut, LOW_BAT_VOLT, is never armed on MT6357.
+powers off through battery_power_off, which syncs first, once the last
+6 readings average under LOW_TMP_BAT_VOLTAGE_LOW_BOUND (3350 mV) while
+discharging; a suspend empties the window. The firmware cuts at a
+10-sample mean under 3400 mV, so this cut comes only where the firmware
+does not run.
 ---
- drivers/power/supply/mtk_battery.c | 64 ++++++++++++++++++++++++++++++
- drivers/power/supply/mtk_battery.h |  9 +++++
- 2 files changed, 73 insertions(+)
+ drivers/power/supply/mtk_battery.c | 62 ++++++++++++++++++++++++++++++
+ drivers/power/supply/mtk_battery.h | 10 +++++
+ 2 files changed, 72 insertions(+)
 
 diff --git a/drivers/power/supply/mtk_battery.c b/drivers/power/supply/mtk_battery.c
-index 360da17d4..a5b9da2fa 100755
+index f945cc7b7..d11b3068f 100755
 --- a/drivers/power/supply/mtk_battery.c
 +++ b/drivers/power/supply/mtk_battery.c
-@@ -22,6 +22,8 @@
+@@ -22,6 +22,7 @@
  #include <linux/sched.h>	/* For wait queue*/
  #include <linux/skbuff.h>	/* netlink */
  #include <linux/socket.h>	/* netlink */
-+#include <linux/suspend.h>
-+#include <linux/syscalls.h>	/* ksys_sync */
++#include <linux/suspend.h>	/* register_pm_notifier */
+ #include <linux/syscalls.h>	/* ksys_sync */
  #include <linux/time.h>
  #include <linux/vmalloc.h>
- #include <linux/wait.h>		/* For wait queue*/
-@@ -2962,6 +2964,62 @@ static int power_misc_routine_thread(void *arg)
+@@ -2871,6 +2872,61 @@ static int power_misc_routine_thread(void *arg)
  	return 0;
  }
  
@@ -52,7 +53,7 @@ index 360da17d4..a5b9da2fa 100755
 +			vbat_sum += sdc->net_vbat[i];
 +			ibat_sum += sdc->net_ibat[i];
 +		}
-+		low = vbat_sum < BAT_VOLTAGE_LOW_BOUND * LOW_BAT_NET_SAMPLES &&
++		low = vbat_sum < LOW_BAT_NET_MV * LOW_BAT_NET_SAMPLES &&
 +			ibat_sum < 0;
 +	}
 +	mutex_unlock(&sdc->lock);
@@ -61,9 +62,8 @@ index 360da17d4..a5b9da2fa 100755
 +		pr_crit("battery: a mean of %d mV over %d s while discharging, under %d mV: powering off\n",
 +			vbat_sum / LOW_BAT_NET_SAMPLES,
 +			LOW_BAT_NET_SAMPLES * LOW_BAT_NET_PERIOD_SEC,
-+			BAT_VOLTAGE_LOW_BOUND);
-+		ksys_sync();
-+		kernel_power_off();
++			LOW_BAT_NET_MV);
++		battery_power_off();
 +	}
 +
 +	queue_delayed_work(system_freezable_power_efficient_wq,
@@ -89,7 +89,7 @@ index 360da17d4..a5b9da2fa 100755
  static int mtk_power_misc_psy_event(
  	struct notifier_block *nb, unsigned long event, void *v)
  {
-@@ -3000,6 +3058,12 @@ void mtk_power_misc_init(struct mtk_battery *gm)
+@@ -2909,6 +2965,12 @@ void mtk_power_misc_init(struct mtk_battery *gm)
  
  	gm->sdc.psy_nb.notifier_call = mtk_power_misc_psy_event;
  	power_supply_reg_notifier(&gm->sdc.psy_nb);
@@ -103,20 +103,21 @@ index 360da17d4..a5b9da2fa 100755
  
  int battery_psy_init(struct platform_device *pdev)
 diff --git a/drivers/power/supply/mtk_battery.h b/drivers/power/supply/mtk_battery.h
-index df7728090..a738fa732 100644
+index 465159b71..4909e4572 100644
 --- a/drivers/power/supply/mtk_battery.h
 +++ b/drivers/power/supply/mtk_battery.h
-@@ -734,6 +734,9 @@ struct simulator_log {
+@@ -734,6 +734,10 @@ struct simulator_log {
  #define AVGVBAT_ARRAY_SIZE 30
  #define INIT_VOLTAGE 3450
  #define BATTERY_SHUTDOWN_TEMPERATURE 60
-+/* low_bat_net_work averages the last 6 readings, taken 10 s apart */
++/* low_bat_net_work: the last 6 readings, 10 s apart, against the stock cold-cell bound, under the firmware's 3400 mV */
 +#define LOW_BAT_NET_PERIOD_SEC 10
 +#define LOW_BAT_NET_SAMPLES 6
++#define LOW_BAT_NET_MV LOW_TMP_BAT_VOLTAGE_LOW_BOUND
  
  struct shutdown_condition {
  	bool is_overheat;
-@@ -759,6 +762,12 @@ struct shutdown_controller {
+@@ -759,6 +763,12 @@ struct shutdown_controller {
  	int vbat_lt;
  	int vbat_lt_lv1;
  	int shutdown_cond_flag;

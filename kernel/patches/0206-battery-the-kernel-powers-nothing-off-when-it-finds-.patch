@@ -1,0 +1,178 @@
+From b507517f79b58fdf58589b48d4fd829d796d2276 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Sat, 24 Oct 2026 23:44:03 +0200
+Subject: [PATCH] battery: the kernel powers nothing off when it finds the
+ battery empty
+
+The firmware alone decides that the battery is empty: it measures the
+cell then and powers off itself, and a power off it does not know of
+loses that measure. set_shutdown_cond no longer arms SOC_ZERO_PERCENT,
+UISOC_ONE_PERCENT or DLPT_SHUTDOWN, shutdown_event_handler no longer
+powers off on them, and DLPT no longer restarts the system after four
+checks under 3.1 V. The overheat, cold and battery removal power offs,
+the PMIC's undervoltage lockout and DLPT's throttling stay.
+---
+ .../mtk_dynamic_loading_throttling.c          |   5 -
+ drivers/power/supply/mtk_battery.c            | 108 +-----------------
+ 2 files changed, 2 insertions(+), 111 deletions(-)
+
+diff --git a/drivers/misc/mediatek/power_throttling/mtk_dynamic_loading_throttling.c b/drivers/misc/mediatek/power_throttling/mtk_dynamic_loading_throttling.c
+index 685712b89..f08b51bdc 100644
+--- a/drivers/misc/mediatek/power_throttling/mtk_dynamic_loading_throttling.c
++++ b/drivers/misc/mediatek/power_throttling/mtk_dynamic_loading_throttling.c
+@@ -206,11 +206,6 @@ static int dlpt_check_power_off(void)
+ 	} else
+ 		dlpt_power_off_cnt = 0;
+ 
+-	if (dlpt_power_off_cnt >= 4 &&
+-	    mutex_trylock(&system_transition_mutex)) {
+-		kernel_restart("DLPT reboot system");
+-		mutex_unlock(&system_transition_mutex);
+-	}
+ 	return ret;
+ }
+ 
+diff --git a/drivers/power/supply/mtk_battery.c b/drivers/power/supply/mtk_battery.c
+index adc429e32..f945cc7b7 100755
+--- a/drivers/power/supply/mtk_battery.c
++++ b/drivers/power/supply/mtk_battery.c
+@@ -2656,41 +2656,6 @@ int set_shutdown_cond(struct mtk_battery *gm, int shutdown_cond)
+ 		bm_debug("[%s]OVERHEAT shutdown!\n", __func__);
+ 		battery_power_off();
+ 		break;
+-	case SOC_ZERO_PERCENT:
+-		if (sdc->shutdown_status.is_soc_zero_percent != true) {
+-			mutex_lock(&sdc->lock);
+-			if (now_is_kpoc != 1) {
+-				if (now_is_charging != 1) {
+-					sds->is_soc_zero_percent =
+-						true;
+-					get_monotonic_boottime(
+-						&sdc->pre_time[
+-						SOC_ZERO_PERCENT]);
+-					bm_debug("[%s]soc_zero_percent shutdown\n",
+-						__func__);
+-					wakeup_fg_algo(gm, FG_INTR_SHUTDOWN);
+-				}
+-			}
+-			mutex_unlock(&sdc->lock);
+-		}
+-		break;
+-	case UISOC_ONE_PERCENT:
+-		if (sdc->shutdown_status.is_uisoc_one_percent != true) {
+-			mutex_lock(&sdc->lock);
+-			if (now_is_kpoc != 1) {
+-				if (now_is_charging != 1) {
+-					sds->is_uisoc_one_percent =
+-						true;
+-					get_monotonic_boottime(
+-					&sdc->pre_time[UISOC_ONE_PERCENT]);
+-					bm_debug("[%s]uisoc 1 percent shutdown\n",
+-						__func__);
+-					wakeup_fg_algo(gm, FG_INTR_SHUTDOWN);
+-				}
+-			}
+-			mutex_unlock(&sdc->lock);
+-		}
+-		break;
+ #ifdef SHUTDOWN_CONDITION_LOW_BAT_VOLT
+ 	case LOW_BAT_VOLT:
+ 		if (sdc->shutdown_status.is_under_shutdown_voltage != true) {
+@@ -2710,16 +2675,6 @@ int set_shutdown_cond(struct mtk_battery *gm, int shutdown_cond)
+ 		}
+ 		break;
+ #endif
+-	case DLPT_SHUTDOWN:
+-		if (sdc->shutdown_status.is_dlpt_shutdown != true) {
+-			mutex_lock(&sdc->lock);
+-			sdc->shutdown_status.is_dlpt_shutdown = true;
+-			get_monotonic_boottime(&sdc->pre_time[DLPT_SHUTDOWN]);
+-			wakeup_fg_algo(gm, FG_INTR_DLPT_SD);
+-			mutex_unlock(&sdc->lock);
+-		}
+-		break;
+-
+ 	default:
+ 		break;
+ 	}
+@@ -2743,9 +2698,7 @@ static int shutdown_event_handler(struct mtk_battery *gm)
+ 	int polling = 0;
+ 	static int ui_zero_time_flag;
+ 	static int down_to_low_bat;
+-	int now_current = 0;
+ 	int current_ui_soc = gm->ui_soc;
+-	int current_soc = gm->soc;
+ 	int vbat = gauge_get_int_property(GAUGE_PROP_BATTERY_VOLTAGE);
+ 	int tmp = 25;
+ 	struct shutdown_controller *sdd = &gm->sdc;
+@@ -2757,65 +2710,8 @@ static int shutdown_event_handler(struct mtk_battery *gm)
+ 
+ 	get_monotonic_boottime(&now);
+ 
+-	bm_debug("%s:soc_zero:%d,ui 1percent:%d,dlpt_shut:%d,under_shutdown_volt:%d\n",
+-		__func__,
+-		sdd->shutdown_status.is_soc_zero_percent,
+-		sdd->shutdown_status.is_uisoc_one_percent,
+-		sdd->shutdown_status.is_dlpt_shutdown,
+-		sdd->shutdown_status.is_under_shutdown_voltage);
+-
+-	if (sdd->shutdown_status.is_soc_zero_percent) {
+-		if (current_ui_soc == 0) {
+-			duraction = timespec_sub(
+-				now, sdd->pre_time[SOC_ZERO_PERCENT]);
+-			polling++;
+-			if (duraction.tv_sec >= SHUTDOWN_TIME) {
+-				bm_debug("soc zero shutdown\n");
+-				battery_power_off();
+-				return next_waketime(polling);
+-			}
+-		} else if (current_soc > 0) {
+-			sdd->shutdown_status.is_soc_zero_percent = false;
+-		} else {
+-			/* ui_soc is not zero, check it after 10s */
+-			polling++;
+-		}
+-	}
+-
+-	if (sdd->shutdown_status.is_uisoc_one_percent) {
+-		now_current = gauge_get_int_property(
+-			GAUGE_PROP_BATTERY_CURRENT);
+-
+-		if (current_ui_soc == 0) {
+-			duraction =
+-				timespec_sub(
+-				now, sdd->pre_time[UISOC_ONE_PERCENT]);
+-			if (duraction.tv_sec >= SHUTDOWN_TIME) {
+-				bm_debug("uisoc one percent shutdown\n");
+-				battery_power_off();
+-				return next_waketime(polling);
+-			}
+-		} else if (now_current > 0 && current_soc > 0) {
+-			polling = 0;
+-			sdd->shutdown_status.is_uisoc_one_percent = 0;
+-			bm_debug("disable uisoc_one_percent shutdown cur:%d soc:%d\n",
+-				now_current, current_soc);
+-			return next_waketime(polling);
+-		}
+-		/* ui_soc is not zero, check it after 10s */
+-		polling++;
+-
+-	}
+-
+-	if (sdd->shutdown_status.is_dlpt_shutdown) {
+-		duraction = timespec_sub(now, sdd->pre_time[DLPT_SHUTDOWN]);
+-		polling++;
+-		if (duraction.tv_sec >= SHUTDOWN_TIME) {
+-			bm_debug("dlpt shutdown count, %d\n",
+-				(int)duraction.tv_sec);
+-			return next_waketime(polling);
+-		}
+-	}
++	bm_debug("%s:under_shutdown_volt:%d\n",
++		__func__, sdd->shutdown_status.is_under_shutdown_voltage);
+ 
+ 	if (sdd->shutdown_status.is_under_shutdown_voltage) {
+ 
+-- 
+2.47.3
+

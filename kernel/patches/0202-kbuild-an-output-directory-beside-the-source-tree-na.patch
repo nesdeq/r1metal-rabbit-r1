@@ -1,0 +1,35 @@
+From c0c56ccd6f13694a1cf70c2d6e5bc131366dfd9b Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Fri, 23 Oct 2026 21:18:29 +0200
+Subject: [PATCH] kbuild: an output directory beside the source tree names it
+ relatively
+
+An output directory outside the source tree took the tree's absolute
+path as $(srctree), and every compile named its source file by it.
+Clang keeps that name in the module as source_filename, ThinLTO's hash
+of the module takes it in, and the hash ends the name of every local
+symbol ThinLTO promotes, which kallsyms keeps: the kernel differed with
+the directory it was built in. $(srctree) is the source tree's path
+from the output directory, as it already is for an output directory
+inside the tree.
+---
+ Makefile | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/Makefile b/Makefile
+index 8dcf2753f..0648b2061 100644
+--- a/Makefile
++++ b/Makefile
+@@ -195,7 +195,8 @@ else
+                 # building in a subdirectory of the source tree
+                 srctree := ..
+         else
+-                srctree := $(KBUILD_SRC)
++                # building elsewhere: the source tree by its path from here
++                srctree := $(shell realpath --relative-to=$(CURDIR) $(KBUILD_SRC))
+         endif
+ endif
+ 
+-- 
+2.47.3
+
