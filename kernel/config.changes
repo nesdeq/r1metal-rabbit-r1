@@ -83,7 +83,7 @@ CONFIG_KEYS=y
 # CONFIG_MMC_SDHCI_PLTFM is not set
 # CONFIG_MMSTAT_TRACER is not set
 
-# Hardening, mitigations and access control r1metal does not run on.
+# Hardening, mitigations and access control r1metal does not run on; the stack protector and the checks of copies to and from userspace stay, as the drivers parse what any transmitter in range sends.
 # CONFIG_AUDIT is not set
 # CONFIG_SECCOMP is not set
 # CONFIG_SECCOMP_FILTER is not set
@@ -93,11 +93,8 @@ CONFIG_KEYS=y
 # CONFIG_ARM64_SSBD is not set
 # CONFIG_ARM64_SW_TTBR0_PAN is not set
 # CONFIG_RANDOMIZE_BASE is not set
-# CONFIG_STACKPROTECTOR is not set
-# CONFIG_STACKPROTECTOR_STRONG is not set
 # CONFIG_VMAP_STACK is not set
 # CONFIG_DEBUG_LIST is not set
-# CONFIG_HARDENED_USERCOPY is not set
 # CONFIG_SECURITY is not set
 # CONFIG_SECURITY_SELINUX is not set
 # CONFIG_SECURITY_NETWORK is not set
@@ -209,7 +206,7 @@ CONFIG_CFG80211_CERTIFICATION_ONUS=y
 # CONFIG_MAGIC_SYSRQ is not set
 # CONFIG_IKCONFIG is not set
 
-# Networking beyond plain IPv4 and IPv6 sockets, netlink and packet sockets: routing policy, tunnels, IPsec, bridges, PPP, shaping, SCTP, TIPC, mac80211.
+# Networking beyond plain IPv4 and IPv6 sockets, netlink, packet sockets and the TUN device the router's forwarder reads the R1's own packets from: routing policy, tunnels, IPsec, bridges, PPP, shaping, SCTP, TIPC, mac80211.
 # CONFIG_IP_MULTIPLE_TABLES is not set
 # CONFIG_IPV6_MULTIPLE_TABLES is not set
 # CONFIG_IPV6_SUBTREES is not set
@@ -245,7 +242,6 @@ CONFIG_CFG80211_CERTIFICATION_ONUS=y
 # CONFIG_BRIDGE is not set
 # CONFIG_L2TP is not set
 # CONFIG_PPP is not set
-# CONFIG_TUN is not set
 # CONFIG_VETH is not set
 # CONFIG_DUMMY is not set
 # CONFIG_NET_SCHED is not set
@@ -278,7 +274,8 @@ CONFIG_CFG80211_CERTIFICATION_ONUS=y
 # CONFIG_CRYPTO_CRC32C is not set
 # CONFIG_LIBCRC32C is not set
 
-# USB as a host: the R1 is only ever a gadget; its gadget keeps the console, the drive and FunctionFS.
+# USB as a host: the R1 is only ever a gadget; its gadget keeps the console, the drive and FunctionFS, and takes the network adapter a host on the cable is lent the modem's connection over (CDC NCM), which FunctionFS cannot be: it refuses a class's own descriptors.
+CONFIG_USB_CONFIGFS_NCM=y
 # CONFIG_USB_STORAGE is not set
 # CONFIG_SND_USB is not set
 # CONFIG_USB_HID is not set

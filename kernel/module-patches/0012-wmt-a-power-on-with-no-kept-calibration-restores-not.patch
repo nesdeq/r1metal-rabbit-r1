@@ -2,11 +2,12 @@ From f335043386c4fec605350c1294b1491655bb793e Mon Sep 17 00:00:00 2001
 From: r1metal <r1metal@localhost>
 Date: Wed, 14 Oct 2026 10:39:40 +0200
 Subject: [PATCH] wmt: a power-on with no kept calibration restores nothing and
- says so once
+ says so
 
 With no calibration kept, as at the first power-on after boot, the
-restore is skipped with one info line and the chip calibrates in full.
-Trying it logs three errors.
+restore is skipped and the chip calibrates in full. An info line says so
+where the Wi-Fi results would be written back, and one where the
+calibration starts. Trying it logs three errors.
 ---
  connectivity/common/common_main/core/wmt_ic_soc.c | 15 +++++++++++++++
  1 file changed, 15 insertions(+)

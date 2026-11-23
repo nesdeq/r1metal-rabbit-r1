@@ -5,8 +5,7 @@ Subject: [PATCH] wlan: the periodic status dumps are trace output
 
 The lines the performance and link quality monitors print every second
 in a network, and the per-command trace, print at TRACE, which the
-default log level leaves out, instead of INFO. They are 17 % of the
-kernel log.
+default log level leaves out, instead of INFO.
 ---
  .../wlan/core/gen4m/chips/common/cmm_asic_connac.c        | 4 ++--
  connectivity/wlan/core/gen4m/common/wlan_lib.c            | 4 ++--

@@ -1,0 +1,40 @@
+From 84e7fea5346243e5c2caa760434228dcc5496d8f Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Fri, 13 Nov 2026 22:44:39 +0000
+Subject: [PATCH] neigh: a neighbour is asked again as soon as its retransmit
+ time says
+
+__neigh_event_send and neigh_timer_handler hold a neighbour's timer to
+HZ/100 at the least, 8 ms here, where Rabbit's tree holds it to HZ/2: a
+retrans_time_ms under 500 ms counts as 500 ms there, so an ARP request
+that got no answer goes out again half a second later whatever is
+written. Mainline lowered the same two bounds in 19e16d220f0a and
+96d10d5b192e.
+---
+ net/core/neighbour.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/net/core/neighbour.c b/net/core/neighbour.c
+index e471c32e4..ca9ba1bbf 100644
+--- a/net/core/neighbour.c
++++ b/net/core/neighbour.c
+@@ -988,8 +988,8 @@ static void neigh_timer_handler(struct timer_list *t)
+ 	}
+ 
+ 	if (neigh->nud_state & NUD_IN_TIMER) {
+-		if (time_before(next, jiffies + HZ/2))
+-			next = jiffies + HZ/2;
++		if (time_before(next, jiffies + HZ/100))
++			next = jiffies + HZ/100;
+ 		if (!mod_timer(&neigh->timer, next))
+ 			neigh_hold(neigh);
+ 	}
+@@ -1030,7 +1030,7 @@ int __neigh_event_send(struct neighbour *neigh, struct sk_buff *skb)
+ 			neigh->nud_state     = NUD_INCOMPLETE;
+ 			neigh->updated = now;
+ 			next = now + max(NEIGH_VAR(neigh->parms, RETRANS_TIME),
+-					 HZ/2);
++					 HZ/100);
+ 			neigh_add_timer(neigh, next);
+ 			immediate_probe = true;
+ 		} else {

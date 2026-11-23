@@ -1,0 +1,121 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Mon, 16 Nov 2026 12:55:40 +0000
+Subject: [PATCH] usb: gadget: u_ether: f_ncm's timer has the block it gathers
+ sent
+
+f_ncm gathers the frames for the host into one block and sends it
+when it is full, or 300 us after its last frame, by calling
+eth_start_xmit with no skb from its timer. eth_start_xmit returned at
+once for no skb, since it read the skb's shared info first, so a
+block left only once 31 frames or 16 kB had gathered: a host got no
+answer to its DHCP request.
+
+The call with no skb is taken. One made while no request is free
+returns busy before the block is packed, and the timer asks again
+300 us on, until a request is free or the link goes down. A block
+packed for which no request is left is freed and counted as dropped,
+where the stack was told to send again an skb the block had already
+taken in. The shared info is read from the skb that goes out, after
+the function wrapped it.
+---
+ drivers/usb/gadget/function/f_ncm.c   |  6 ++++-
+ drivers/usb/gadget/function/u_ether.c | 36 +++++++++++++++++++--------
+ 2 files changed, 31 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/usb/gadget/function/f_ncm.c b/drivers/usb/gadget/function/f_ncm.c
+index e4aa370e8..e1611f476 100644
+--- a/drivers/usb/gadget/function/f_ncm.c
++++ b/drivers/usb/gadget/function/f_ncm.c
+@@ -1169,7 +1169,11 @@ static enum hrtimer_restart ncm_tx_timeout(struct hrtimer *data)
+ 		 * XXX and performed in some way outside of the ndo_start_xmit
+ 		 * XXX interface.
+ 		 */
+-		ncm->netdev->netdev_ops->ndo_start_xmit(NULL, ncm->netdev);
++		/* no request was free: the block is asked for again */
++		if (ncm->netdev->netdev_ops->ndo_start_xmit(NULL, ncm->netdev)
++		    == NETDEV_TX_BUSY)
++			hrtimer_start(&ncm->task_timer, TX_TIMEOUT_NSECS,
++				      HRTIMER_MODE_REL_SOFT);
+ 
+ 		ncm->timer_force_tx = false;
+ 	}
+diff --git a/drivers/usb/gadget/function/u_ether.c b/drivers/usb/gadget/function/u_ether.c
+index d17043fd2..829c11d12 100644
+--- a/drivers/usb/gadget/function/u_ether.c
++++ b/drivers/usb/gadget/function/u_ether.c
+@@ -722,11 +722,7 @@ static netdev_tx_t eth_start_xmit(struct sk_buff *skb,
+ 	static unsigned long	okCnt, busyCnt;
+ 	static DEFINE_RATELIMIT_STATE(ratelimit1, 1 * HZ, 2);
+ 	static DEFINE_RATELIMIT_STATE(ratelimit2, 1 * HZ, 2);
+-
+-	if (!skb)
+-		return -EINVAL;
+-
+-	pinfo = skb_shinfo(skb);
++	bool			gathers = false;
+ 
+ 	spin_lock_irqsave(&dev->lock, flags);
+ 	if (dev->port_usb) {
+@@ -737,11 +733,21 @@ static netdev_tx_t eth_start_xmit(struct sk_buff *skb,
+ 	}
+ 	spin_unlock_irqrestore(&dev->lock, flags);
+ 
+-	if (skb && !in) {
+-		dev_kfree_skb_any(skb);
++	if (!in) {
++		if (skb)
++			dev_kfree_skb_any(skb);
+ 		return NETDEV_TX_OK;
+ 	}
+ 
++	/* no skb: the block a function gathers goes, once a request is free */
++	if (!skb) {
++		spin_lock_irqsave(&dev->req_lock, flags);
++		retval = list_empty(&dev->tx_reqs);
++		spin_unlock_irqrestore(&dev->req_lock, flags);
++		if (retval)
++			return NETDEV_TX_BUSY;
++	}
++
+ 	/* apply outgoing CDC or RNDIS filters */
+ 	if (skb && !is_promisc(cdc_filter)) {
+ 		u8		*dest = skb->data;
+@@ -765,14 +771,18 @@ static netdev_tx_t eth_start_xmit(struct sk_buff *skb,
+ 	}
+ 
+ 	spin_lock_irqsave(&dev->lock, flags);
+-	if (dev->wrap && dev->port_usb)
+-		skb = dev->wrap(dev->port_usb, skb);
++	if (dev->port_usb) {
++		if (dev->wrap)
++			skb = dev->wrap(dev->port_usb, skb);
++		gathers = dev->port_usb->supports_multi_frame;
++	}
+ 	spin_unlock_irqrestore(&dev->lock, flags);
+ 	if (!skb) {
+-		if (!dev->port_usb->supports_multi_frame)
++		if (!gathers)
+ 			dev->net->stats.tx_dropped++;
+ 		return NETDEV_TX_OK;
+ 	}
++	pinfo = skb_shinfo(skb);
+ 	spin_lock_irqsave(&dev->req_lock, flags);
+ 	if (multi_pkt_xfer && !dev->tx_req_bufsize) {
+ 		retval = alloc_tx_buffer(dev);
+@@ -808,6 +818,12 @@ static netdev_tx_t eth_start_xmit(struct sk_buff *skb,
+ 					okCnt, busyCnt, rndis_test_tx_busy);
+ 		spin_unlock_irqrestore(&dev->req_lock, flags);
+ 		rndis_test_tx_busy++;
++		/* a gathered block is no skb the stack can send again */
++		if (gathers) {
++			dev_kfree_skb_any(skb);
++			dev->net->stats.tx_dropped++;
++			return NETDEV_TX_OK;
++		}
+ 		return NETDEV_TX_BUSY;
+ 	}
+ 	okCnt++;
+-- 
+2.56.1
+

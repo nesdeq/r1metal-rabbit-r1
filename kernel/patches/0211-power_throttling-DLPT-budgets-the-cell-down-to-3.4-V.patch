@@ -1,0 +1,30 @@
+From 2e9efa312fac7f580fb2c00299a64169841339ac Mon Sep 17 00:00:00 2001
+From: r1metal <r1metal@localhost>
+Date: Thu, 19 Nov 2026 22:05:08 +0100
+Subject: [PATCH] power_throttling: DLPT budgets the cell down to 3.4 V
+
+DLPT_VOLT_MIN is 3400: the current DLPT hands PBM is the one that takes
+the cell to 3.4 V by its resistance, the voltage the low battery level
+clears at (POWER_INT0_VOLT) and the firmware's cutoff lies at. Upstream
+budgets down to 3.1 V: under the 3.25 V at which the low battery level
+cuts the processors to 600 mW, and 0.5 V over the PMIC's undervoltage
+lockout, where a load the budget does not count, a camera or a radio,
+takes a worn cell under it.
+---
+ .../mediatek/power_throttling/mtk_dynamic_loading_throttling.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/misc/mediatek/power_throttling/mtk_dynamic_loading_throttling.c b/drivers/misc/mediatek/power_throttling/mtk_dynamic_loading_throttling.c
+index f08b51bdc..2814e5ff1 100644
+--- a/drivers/misc/mediatek/power_throttling/mtk_dynamic_loading_throttling.c
++++ b/drivers/misc/mediatek/power_throttling/mtk_dynamic_loading_throttling.c
+@@ -25,7 +25,8 @@
+ #define POWER_UVLO_VOLT_LEVEL		2600
+ #define IMAX_MAX_VALUE			5500
+ #define DLPT_NOTIFY_FAST_UISOC		30
+-#define	DLPT_VOLT_MIN			3100
++/* The budget keeps the cell at the voltage the low battery level clears at, POWER_INT0_VOLT */
++#define	DLPT_VOLT_MIN			3400
+ 
+ struct reg_t {
+ 	unsigned int addr;

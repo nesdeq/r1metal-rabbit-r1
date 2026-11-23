@@ -2,7 +2,7 @@
 
 <h1 align="center">r1metal: custom firmware for the Rabbit R1</h1>
 
-<p align="center">Rabbit OS out. Linux and one fast Rust program (direct to hardware) in, and the whole firmware is<br><b>under 16 MB</b><br>YES YOU READ THAT RIGHT!<br>Your Rabbit R1 becomes a quick, quiet AI companion that runs on your own OpenAI key.</p>
+<p align="center">Rabbit OS out. Linux and one fast Rust program (direct to hardware) in, and the whole firmware is<br><b>20 MB</b><br>YES YOU READ THAT RIGHT!<br>Your Rabbit R1 becomes a quick, quiet AI companion that runs on your own OpenAI key.</p>
 
 <p align="center"><a href="docs/video/r1metal-demo.mp4"><img src="docs/images/demo.gif" alt="r1metal on a Rabbit R1: the robot answers and switches between the six themes, the timer counts down beside the battery, photos show as pixel art and as taken, the palettes change the colors"></a></p>
 <p align="center"><a href="docs/video/r1metal-demo.mp4"><b>Watch the full demo</b></a> (4:43, recorded on the R1) · <a href="docs/MANUAL.md"><b>Read the manual</b></a> (<a href="docs/MANUAL.pdf">PDF</a>)</p>
@@ -78,14 +78,19 @@
 
 - **60 frames a second, everywhere. Every screen, every scroll of the wheel.**
 - **A week on standby. Days of normal use on a charge.**
-- **An AI that knows you.** One endless conversation that searches the web, remembers you, opens screens, sets an alarm or a timer, looks at a photo you show it and answers aloud.
-- **Signal.** Link the R1 to your Signal account: read, type or say messages, one to one and in groups, with photos and voice notes. Auto mode lets the AI answer a contact for you.
+- **An AI that knows you.** One endless conversation that searches the web, remembers you, opens every screen, changes settings, sets alarms, reminders and timers, looks at a photo you show it and answers aloud.
+- **Signal.** Link the R1 to your Signal account: read, type or say messages, one to one and in groups, with photos, videos, voice notes and reactions. Auto mode lets the AI answer a contact for you.
+- **Signal calls.** Audio and video, one to one and in groups, made and taken on the R1.
+- **Online without Wi-Fi.** Switch the modem on, and with a SIM in the R1 goes online over LTE wherever there is no Wi-Fi.
+- **A USB modem with a VPN.** On a cable the R1 lends a computer its SIM's connection, through a WireGuard tunnel if you want one.
+- **A browser you talk to.** Say a site, a topic or a link's number: the page comes as text, and a touch has the R1 read it aloud.
+- **A bell.** Alarms, reminders and timers, as many as you like, set by saying when.
 - **Voice notes.** Recorded, transcribed, summarized, saved as Markdown and PDF.
 - **Live translator** between two languages.
 - **A real camera.** 2448×2448 photos merged from bursts of frames, 720p video at 60 fps with sound, and any photo redrawn as pixel art in about 13 seconds.
-- **A morning paper.** A daily edition of news and finance from 47 sources.
-- **Encrypted.** A passphrase locks your keys, passwords, Signal and settings.
-- **Your files on your computer.** Plug the R1 in and it shows up as a drive.
+- **A morning paper.** A daily edition of news and finance from 47 sources, and of anything else you ask for: say the subject, and the R1 finds its feeds.
+- **Encrypted.** A passphrase encrypts everything the R1 keeps of you: keys, passwords, Signal, settings, photos, videos, notes, news and the conversation.
+- **Your files on your computer.** Switch the drive on and the R1 shows up as a read-only drive; `r1 backup` copies all it keeps into one encrypted file, and `r1 restore` puts it back.
 - **No subscription.** You pay OpenAI only for what you use, up to a monthly limit you set.
 - **Rabbit OS is one command away**, whenever you want it back.
 
@@ -99,7 +104,7 @@
 
 ## How?
 
-Linux 4.19, from Rabbit's published source with 263 patches of our own, drives the hardware. One static Rust program is the whole system: `/init`, process 1. No Android, no shell, no vendor libraries. It programs the camera and the codecs register by register and draws every pixel itself. All of it is built with LLVM 23.1 for the R1's Cortex-A53: the program by Rust 1.99 at `opt-level = 3` with full LTO into one codegen unit, its C by clang at `-O3`, the kernel with ThinLTO.
+Linux 4.19, from Rabbit's published source with 265 patches of our own, drives the hardware. One static Rust program is the whole system: `/init`, process 1. No Android, no shell, no vendor libraries. It programs the camera and the codecs register by register, boots the LTE modem, draws every pixel itself, and speaks Signal's protocol, its calls with Opus, VP8 and VP9, and WireGuard in its own code. All of it is built with LLVM 23.1 for the R1's Cortex-A53: the program by Rust 1.99 at `opt-level = 3` with full LTO into one codegen unit, its C by clang at `-O3`, the kernel with ThinLTO.
 
 That fixes what held the R1 back:
 
@@ -112,7 +117,7 @@ That fixes what held the R1 back:
 
 As a side project, `r1` came about: a flasher that flashes and restores the R1 hassle-free from macOS or Linux, one file with nothing else to install. Its commands are in [cli.md](cli.md).
 
-The kernel patches and configuration are in [`kernel/`](kernel). The full source follows.
+The kernel patches and configuration are in [`kernel/`](kernel). The full source, 262,000 lines of Rust built as a functional core and an imperative shell, is in [r1metal-rabbit-r1-source](https://github.com/nesdeq/r1metal-rabbit-r1-source).
 
 ## Install
 
@@ -158,7 +163,7 @@ curl -LO $base/boot.img -LO $base/dtbo.img
 
 Paste your OpenAI key when asked; `r1` checks it and puts it on the R1. The first flash erases the R1. When `r1` is done, the R1 starts r1metal.
 
-**4. Choose a passphrase** of 6 to 12 characters when the R1 first starts, and type it again. It encrypts your keys, passwords, Signal and settings, and the R1 asks for it at every start. Nothing recovers a lost one: only a flash with `--wipe` starts over, erasing everything.
+**4. Choose a passphrase** of 6 to 12 characters when the R1 first starts, and type it again. It encrypts everything the R1 keeps of you, and the R1 asks for it at every start. Nothing recovers a lost one: only a flash with `--wipe` starts over, erasing everything.
 
 **5. Join your Wi-Fi** under Settings › WiFi.
 
@@ -171,7 +176,7 @@ Paste your OpenAI key when asked; `r1` checks it and puts it on the R1. The firs
 Download [Rabbit's stock firmware](https://github.com/rabbit-hmi-oss/firmware/releases/tag/v0.8.293), unzip it, and run:
 
 ```sh
-./r1 restore --stock rabbit_OS_v0.8.293_20250516110545
+./r1 stock rabbit_OS_v0.8.293_20250516110545
 ```
 
 [cli.md](cli.md) lists everything else `r1` can do.

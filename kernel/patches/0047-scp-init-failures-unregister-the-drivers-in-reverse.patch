@@ -1,8 +1,8 @@
 From b37afd1982164b0ddd40c4a6fd1c423212da5bcc Mon Sep 17 00:00:00 2001
 From: r1metal <r1metal@localhost>
 Date: Wed, 14 Oct 2026 16:33:18 +0200
-Subject: [PATCH] scp: init failures unwind what was done, and the crash log
- stays in its buffer
+Subject: [PATCH] scp: init failures unregister the drivers in reverse order,
+ and the crash log stays in its buffer
 
 - scp_init() stops when the dvfs driver never finished its init, and its
   error labels unregister what was registered, in reverse order.
